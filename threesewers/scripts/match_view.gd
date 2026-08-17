@@ -55,6 +55,7 @@ const FX_RISE := 64.0
 const FX_LIFE := 0.9
 const SCATTER_PX := 30.0
 const RUN_LEAN := 5.0                       # degrees a running kid leans
+const NIGHT_TINT := Color(0.29, 0.34, 0.53)  # gaslit blue the whole street sits in
 const SMOKE_GUARD_REAL_S := 300.0
 const SEWER_TEXTS := ["ONE SEWER…", "TWO SEWERS…", "THREE SEWERS…"]
 const PITCH_PATTER_CHANCE := 0.3
@@ -278,9 +279,13 @@ const STREET_R := 1480.0
 const WALK_W := 62.0                        # sidewalk between curb and building
 
 func _build_world() -> void:
-	# asphalt, tiled — a flat fill reads as a grey rectangle, tar and grit
-	# read as a street
-	_tiled("asphalt_tile", Rect2(STREET_L, STREET_TOP,
+	# night sky closing the far end of the canyon, behind the rooftops
+	_flat_prop("nightsky", Vector2(Tuning.PLATE.x, STREET_TOP - 60.0), bg, 1.0)
+	# cobbles, tiled — a flat fill reads as a grey rectangle; setts read as a
+	# street. Falls back to the asphalt tile if the night art is absent.
+	var street_tile := "cobble_tile" if Game.prop("cobble_tile") != null \
+		else "asphalt_tile"
+	_tiled(street_tile, Rect2(STREET_L, STREET_TOP,
 		STREET_R - STREET_L, STREET_BOT - STREET_TOP), Tuning.ASPHALT)
 	# sidewalks hugging each building line
 	_tiled("sidewalk_tile", Rect2(Tuning.WALL_L - WALK_W, STREET_TOP,
@@ -364,6 +369,59 @@ func _build_world() -> void:
 	_standing_prop("pigeon", Vector2(Tuning.WALL_L + 120.0, 1320))
 	_standing_prop("pigeon", Vector2(Tuning.WALL_L + 166.0, 1352))
 	_build_laundry()
+	_build_spectators()
+	_build_night()
+
+# The block turns out to watch: kids perched along both kerbs, well outside
+# the walls so they never read as fielders.
+func _build_spectators() -> void:
+	var ids: Array = Game.roster.keys()
+	ids.sort()
+	var spots := [
+		Vector2(Tuning.WALL_L - WALK_W * 0.55, 1520.0),
+		Vector2(Tuning.WALL_L - WALK_W * 0.75, 1660.0),
+		Vector2(Tuning.WALL_L - WALK_W * 0.50, 2230.0),
+		Vector2(Tuning.WALL_R + WALK_W * 0.60, 1420.0),
+		Vector2(Tuning.WALL_R + WALK_W * 0.75, 1720.0),
+		Vector2(Tuning.WALL_R + WALK_W * 0.55, 2140.0),
+	]
+	for i in spots.size():
+		var k := Kid.new(String(ids[(i * 5 + 3) % ids.size()]))
+		k.position = spots[i]
+		k.scale = Vector2(0.72, 0.72)
+		k.modulate = Color(0.88, 0.90, 0.98)     # sunk into the shadow of the kerb
+		stage.add_child(k)
+		k.play("idle", 4.0 + 0.5 * i)
+		k.face(1.0 if spots[i].x < Tuning.PLATE.x else -1.0)
+
+# Gaslight. Everything goes to deep blue, then warm pools are added back
+# under the lamps and over the infield so the play stays readable.
+func _build_night() -> void:
+	if Game.prop("lightpool") == null:
+		return
+	var tint := CanvasModulate.new()
+	tint.color = NIGHT_TINT
+	add_child(tint)
+	# the infield keeps a broad, soft pool — gameplay must stay legible
+	_pool(Vector2(Tuning.PLATE.x, 2250.0), 8.0, Color(1, 1, 1, 0.52), "lightpool_soft")
+	_pool(Vector2(Tuning.PLATE.x, 1620.0), 7.5, Color(1, 1, 1, 0.30), "lightpool_soft")
+	# lamps throw the hot pools
+	_pool(Vector2(Tuning.WALL_L - WALK_W * 0.5, 1180.0), 3.6, Color(1, 1, 1, 0.70))
+	_pool(Vector2(Tuning.WALL_R + WALK_W * 0.5, 1980.0), 3.6, Color(1, 1, 1, 0.70))
+	# shopfronts spill onto the kerb
+	_pool(Vector2(Tuning.WALL_L - WALK_W, 2470.0), 2.6, Color(1, 1, 1, 0.46))
+	_pool(Vector2(Tuning.WALL_R + WALK_W, 2470.0), 2.6, Color(1, 1, 1, 0.46))
+
+func _pool(pos: Vector2, size_mul: float, mod: Color, art := "lightpool") -> void:
+	var tex: Texture2D = Game.prop(art)
+	if tex == null:
+		return
+	var s := _spr(tex, pos, size_mul)
+	s.modulate = mod
+	var mat := CanvasItemMaterial.new()
+	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	s.material = mat
+	bg.add_child(s)
 
 # -- prop helpers: art is authored at 2x, Tuning.ART puts it back in world scale
 func _spr(tex: Texture2D, pos: Vector2, mul := 1.0) -> Sprite2D:

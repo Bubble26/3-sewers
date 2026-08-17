@@ -12,6 +12,7 @@ the spaldeen's pink as the only saturated colour on screen.
   art_chars.py  the twelve kids, the cop, the announcer (posed skeletons)
   art_props.py  street furniture, laundry, seamless brick/asphalt tiles
   art_world.py  facades, skyline, chalk scrawls — the street canyon
+  art_night.py  cobbles, lamplight pools, night sky — the gaslit mood
   art_cards.py  candy-store trading cards + the app icon
   art_ui.py     title logotype, paper stock, rack header
 
@@ -26,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import art_cards
 import art_chars
+import art_night
 import art_props
 import art_ui
 
@@ -49,6 +51,7 @@ def main(out_root=None):
     t0 = time.time()
     print("props   ...", flush=True)
     n_props = art_props.build(props)
+    n_props += art_night.build(props) or 0
     if art_world is not None:
         print("world   ...", flush=True)
         n_props += art_world.build(props) or 0
@@ -57,7 +60,7 @@ def main(out_root=None):
     print("ui      ...", flush=True)
     art_ui.build(ui)
     print("cards   ...", flush=True)
-    n_cards = art_cards.build(chars, art_chars.portrait, icon_dir=icon)
+    n_cards = art_cards.build(chars, art_chars.portrait)
 
     print("\n%d props, %d character frames, %d cards in %.0fs -> %s"
           % (n_props or 0, n_chars, n_cards or 0, time.time() - t0, out_root))

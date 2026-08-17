@@ -399,28 +399,38 @@ def build_hydrant():
     for k in range(5):
         p = epoint(cx + 46, 108, 6, 13, 72 * k - 20)
         c.circle(p[0], p[1], 1.8, fill=body_dd)
-    # front nozzle
-    c.ellipse([cx - 20, 104, cx + 10, 134], fill=body_dd)
-    c.ellipse([cx - 18, 101, cx + 6, 127], fill=body)
-    c.ellipse([cx - 14, 105, cx - 3, 116], fill=body_l)
+    # front nozzle — small, low, and capped. A big pale disc in the middle of
+    # the barrel turns the hydrant into a face.
+    c.ellipse([cx - 17, 108, cx + 5, 130], fill=body_dd)
+    c.ellipse([cx - 15, 106, cx + 3, 124], fill=body_d)
+    c.ellipse([cx - 13, 108, cx + 1, 122], fill=body)
+    c.ellipse([cx - 11, 110, cx - 3, 117], fill=body_l)
+    for k in range(5):
+        pnt = epoint(cx - 6, 115, 9, 9, 72 * k + 20)
+        c.circle(pnt[0], pnt[1], 1.3, fill=shade(body_dd, 0.85))
 
     # chain: dark links drooping from the bonnet collar to the nozzle cap.
     # It has to be DARKER than the hydrant — a pale strap across the body read
     # like a thermometer taped to it.
     link_d = shade(IRON, 0.72)
     link_l = mix(IRON, SLATE, 0.55)
-    ca, cb = (cx + 26, 68), (cx + 47, 98)
+    ca, cb = (cx + 30, 58), (cx + 49, 92)
     pts = []
-    for i in range(11):
-        t = i / 10.0
-        x = ca[0] + (cb[0] - ca[0]) * t
-        y = ca[1] + (cb[1] - ca[1]) * t + 15 * math.sin(math.pi * t)
+    for i in range(5):
+        t = i / 4.0
+        x = ca[0] + (cb[0] - ca[0]) * t + 8 * math.sin(math.pi * t)
+        y = ca[1] + (cb[1] - ca[1]) * t + 8 * math.sin(math.pi * t)
         pts.append((x, y))
-    c.line(pts, link_d, 4.2)
-    for i in range(0, 11, 2):
-        c.circle(pts[i][0], pts[i][1], 2.6, fill=link_d)
-        c.circle(pts[i][0] - 0.7, pts[i][1] - 0.8, 1.3, fill=link_l)
-    c.circle(ca[0], ca[1], 3.4, fill=link_d)
+    for i, (px, py) in enumerate(pts):
+        box = ([px - 5.0, py - 3.4, px + 5.0, py + 3.4] if i % 2 else
+               [px - 3.4, py - 5.0, px + 3.4, py + 5.0])
+        c.ellipse(box, fill=link_d)
+        inner = [box[0] + 2.0, box[1] + 2.0, box[2] - 2.0, box[3] - 2.0]
+        c.ellipse(inner, fill=body_dd)
+        c.circle(box[0] + 2.6, box[1] + 2.4, 1.0, fill=link_l)
+    # the lug it hangs from
+    c.circle(ca[0], ca[1] - 3, 4.4, fill=link_d)
+    c.circle(ca[0], ca[1] - 3, 2.0, fill=body_dd)
 
     # chipped paint: bare metal shows where the casting turns an edge and down
     # low where boots and fenders hit it — never as spots in the middle
@@ -429,7 +439,7 @@ def build_hydrant():
              (cx + 30, 78), (cx - 12, ground - 12), (cx + 8, ground - 16),
              (cx - 30, 46), (cx + 26, 40)]
     for (ex, ey) in edges:
-        r = rnd.uniform(2.0, 4.2)
+        r = rnd.uniform(1.6, 3.2)
         pts = [epoint(ex + rnd.uniform(-3, 3), ey + rnd.uniform(-5, 5),
                       r * rnd.uniform(0.5, 1.2), r * rnd.uniform(0.8, 1.8), a)
                for a in range(0, 360, 72)]
@@ -455,8 +465,9 @@ def build_stoop():
     rnd = random.Random(41)
     ground = h - 12
 
-    # BROWN stone. Greying it toward slate is what made this read as lumber.
-    st = mix(BROWNSTONE, RUST, 0.16)
+    # Warm brownstone, lifted well clear of the sooty brick tile it stands
+    # against — at the same value the whole stoop dissolves into the wall.
+    st = mix(mix(BROWNSTONE, RUST, 0.12), PAPER, 0.17)
     st_l = mix(st, PAPER, 0.30)      # tread top
     st_ll = mix(st, PAPER, 0.54)     # nosing in full sun
     st_d = shade(st, 0.76)           # riser face
@@ -542,11 +553,12 @@ def build_stoop():
         # a bitten corner off the nosing — a centred triangle reads as a UI
         # arrow, so keep it at the ends and irregular
         if rnd.random() < 0.8:
-            cxp = rnd.choice([xl + rnd.uniform(2, 10),
-                              xr + skew - rnd.uniform(6, 16)])
-            c.poly([(cxp, ty - 11), (cxp + rnd.uniform(7, 13), ty - 9),
-                    (cxp + rnd.uniform(2, 6), ty - 2)],
-                   fill=shade(void, 1.20))
+            cxp = rnd.choice([xl + rnd.uniform(2, 12),
+                              xr + skew - rnd.uniform(8, 20)])
+            cw = rnd.uniform(11, 19)
+            c.poly([(cxp, ty - 4), (cxp + cw, ty - 3),
+                    (cxp + cw * 0.62, ty + 3), (cxp + cw * 0.2, ty + 2)],
+                   fill=shade(void, 1.22))
 
     # ---- landing at the top
     c.rect([land_x, top_y - 8, w - 6, top_y], fill=st_l)
@@ -671,14 +683,15 @@ def build_model_t():
     # dark interior under the top
     c.poly([(222, 106), (440, 110), (440, 60), (226, 46)], fill=(30, 28, 30))
     # seat back
+    seat = mix(CLOTH["chocolate"], LACQUER, 0.62)
     c.poly([(322, 108), (372, 108), (368, 62), (326, 64)],
-           fill=shade(CLOTH["chocolate"], 0.72))
-    c.poly([(322, 108), (348, 108), (346, 64), (326, 64)],
-           fill=CLOTH["chocolate"])
+           fill=shade(seat, 0.70))
+    c.poly([(322, 108), (348, 108), (346, 64), (326, 64)], fill=seat)
+    c.line([(334, 66), (332, 106)], shade(seat, 0.72), 2)
     # steering wheel + column
     c.line([(240, 118), (258, 78)], shade(LACQUER, 0.62), 5)
-    c.ellipse([250, 56, 266, 98], fill=None, outline=(64, 60, 56), width=4)
-    c.ellipse([250, 56, 258, 98], fill=None, outline=(88, 84, 80), width=3)
+    c.ellipse([248, 60, 264, 100], fill=None, outline=(52, 48, 46), width=4)
+    c.ellipse([248, 60, 256, 100], fill=None, outline=(70, 66, 62), width=3)
 
     # cloth top
     top = CLOTH["charcoal"]
@@ -1083,11 +1096,11 @@ def build_trash():
         c.ellipse([x - rx, y - rx * 0.6, x + rx, y + rx * 0.6], fill=dk)
         c.ellipse([x - rx * 0.7, y - rx * 0.55, x + rx * 0.5, y + rx * 0.2],
                   fill=shade(GALV, 0.80))
-    for _ in range(24):
+    for _ in range(46):
         x = rnd.uniform(cx - tw, cx + tw)
         y = rnd.uniform(top_y, bot_y)
-        c.circle(x, y, rnd.uniform(0.7, 1.8),
-                 fill=rnd.choice([dk, lt, shade(RUST, 0.72)]))
+        c.circle(x, y, rnd.uniform(0.5, 1.2),
+                 fill=rnd.choice([dk, lt, lt, mix(shade(RUST, 0.74), GALV, 0.45)]))
 
     # lid, sitting askew
     c.poly([(cx - tw - 4, top_y + 2), (cx + tw + 2, top_y - 4),
@@ -1155,9 +1168,10 @@ def build_crate():
     c.text(((x0 + x1) * 0.5 + 1, y0 + 34), "ORANGES", f, ink_stamp)
     f2 = ak.font("serif_bold", int(6 * S * c.ss))
     c.text(((x0 + x1) * 0.5 + 1, y0 + 47), "FLA.", f2, ink_stamp)
-    for _ in range(34):
+    for _ in range(60):
         c.circle(rnd.uniform(x0, x1 + dxs), rnd.uniform(y0 + dys, y1),
-                 rnd.uniform(0.6, 1.5), fill=rnd.choice([shade(wood, 0.8), wood_l]))
+                 rnd.uniform(0.5, 1.1),
+                 fill=rnd.choice([shade(wood, 0.84), wood_l, shade(wood, 0.92)]))
 
     img = ak.finish(c, ink=3, light=True, grain_amt=7, seed=14)
     return sit(img, (x0 + x1) * 0.5 + 6, ground, (x1 - x0) * 0.56, 6, 0.30, 5)
@@ -1217,25 +1231,27 @@ def build_awning():
 
     # front roll bar, following the sag
     bar = [(fx0 + (fx1 - fx0) * (i / 16.0), front_y(i / 16.0)) for i in range(17)]
-    c.line(bar, shade(IRON, 1.15), 9)
-    c.line([(x, y - 2.4) for x, y in bar], shade(IRON, 1.7), 3)
+    c.line(bar, shade(IRON, 0.95), 9)
+    c.line([(x, y - 2.6) for x, y in bar], shade(IRON, 1.35), 3)
 
     # ---- valance: a straight band with shallow half-round scallops cut into
     # its lower edge (full circles read as a row of beach balls)
-    vh = 22
+    vh = 30
     ns = 11
     sw = (fx1 - fx0) / float(ns)
+    ry = 9.0                       # scallop depth: shallow, not a half-circle
     for k in range(ns):
         t0 = (k + 0.5) / ns
         vx0 = fx0 + k * sw
         vy = front_y(t0) + 3
         col = a if k % 2 == 0 else b
-        c.rect([vx0, vy, vx0 + sw + 0.8, vy + vh - sw * 0.30], fill=col)
-        c.ellipse([vx0, vy + vh - sw * 0.62, vx0 + sw, vy + vh],
-                  fill=col)
-        # the valance hangs in the canopy's shadow at the top
-        c.rect([vx0, vy, vx0 + sw + 0.8, vy + 7], fill=shade(col, 0.80))
-        c.ellipse([vx0 + 2.5, vy + vh - sw * 0.58, vx0 + sw - 2.5, vy + vh - 2],
+        # a straight hanging band with a shallow half-round bitten out of the
+        # bottom; a full circle per stripe reads as a row of coins on a string
+        c.rect([vx0, vy, vx0 + sw + 0.8, vy + vh - ry], fill=col)
+        c.ellipse([vx0, vy + vh - 2 * ry, vx0 + sw, vy + vh], fill=col)
+        # the valance hangs in the canopy's own shadow at the top
+        c.rect([vx0, vy, vx0 + sw + 0.8, vy + 9], fill=shade(col, 0.78))
+        c.ellipse([vx0 + 3, vy + vh - 2 * ry + 2, vx0 + sw - 3, vy + vh - 1.5],
                   fill=shade(col, 0.90))
     for _ in range(40):
         c.circle(rnd.uniform(fx0, fx1), rnd.uniform(by, fy + vh),
@@ -1263,38 +1279,38 @@ def build_pigeon():
         c.line([(fx, ground - 11), (fx, ground - 4)], shade(RUST, 0.86), 3.4)
         c.line([(fx - 5, ground - 3), (fx + 5, ground - 3)], shade(RUST, 0.86), 2.8)
     # tail — a clean dark wedge sticking out past the body
-    c.poly([(44, 24), (66, 32), (64, 43), (43, 37)], fill=shade(SLATE, 0.50))
-    c.poly([(44, 25), (62, 32), (61, 38), (43, 33)], fill=wing)
+    c.poly([(43, 24), (63, 32), (61, 43), (42, 37)], fill=shade(SLATE, 0.50))
+    c.poly([(43, 25), (59, 32), (58, 38), (42, 33)], fill=wing)
     for k in range(3):
-        c.line([(48, 28 + k * 3), (63, 34 + k * 2.6)], shade(SLATE, 0.44), 1.4)
+        c.line([(47, 28 + k * 3), (60, 34 + k * 2.6)], shade(SLATE, 0.44), 1.4)
     # body
-    c.ellipse([14, 19, 55, 48], fill=body_d)
-    c.ellipse([14, 17, 50, 43], fill=body)
+    c.ellipse([15, 19, 54, 48], fill=body_d)
+    c.ellipse([15, 17, 50, 43], fill=body)
     # breast, catching the light
-    c.ellipse([12, 22, 34, 46], fill=body_l)
-    c.ellipse([14, 24, 29, 41], fill=mix(body_l, CHALK, 0.35))
+    c.ellipse([13, 22, 34, 46], fill=body_l)
+    c.ellipse([15, 24, 29, 41], fill=mix(body_l, CHALK, 0.35))
     # wing — the dark mass that makes the bird read
-    c.poly([(25, 24), (52, 27), (56, 39), (36, 42), (25, 33)], fill=shade(SLATE, 0.48))
-    c.poly([(26, 25), (49, 28), (52, 37), (35, 39), (27, 32)], fill=wing)
+    c.poly([(25, 24), (51, 27), (55, 39), (36, 42), (25, 33)], fill=shade(SLATE, 0.48))
+    c.poly([(26, 25), (48, 28), (51, 37), (35, 39), (27, 32)], fill=wing)
     c.poly([(26, 25), (44, 27), (45, 32), (28, 31)], fill=wing_l)
     for k in range(3):
         c.line([(30 + k * 3, 33 + k * 2.4), (50 + k, 34 + k * 2.2)],
                shade(SLATE, 0.42), 1.6)
     # head + neck
-    c.circle(21, 17, 12, fill=body_d)
-    c.circle(20, 15, 11, fill=body)
-    c.circle(18, 13, 7.5, fill=body_l)
+    c.circle(22, 17, 12, fill=body_d)
+    c.circle(21, 15, 11, fill=body)
+    c.circle(19, 13, 7.5, fill=body_l)
     # iridescent throat
-    c.ellipse([15, 22, 30, 33], fill=mix(PATINA, SLATE, 0.45))
-    c.ellipse([16, 23, 26, 30], fill=mix(PATINA, CHALK, 0.30))
+    c.ellipse([16, 22, 31, 33], fill=mix(PATINA, SLATE, 0.45))
+    c.ellipse([17, 23, 27, 30], fill=mix(PATINA, CHALK, 0.30))
     # beak
-    c.poly([(12, 15), (2, 19), (12, 23)], fill=shade(GALV, 0.72))
-    c.poly([(12, 15), (5, 18.2), (12, 19.5)], fill=mix(CLOTH["oat"], PAPER, 0.3))
-    c.circle(12, 15, 2.4, fill=body_l)
+    c.poly([(13, 15), (4, 19), (13, 23)], fill=shade(GALV, 0.72))
+    c.poly([(13, 15), (7, 18.2), (13, 19.5)], fill=mix(CLOTH["oat"], PAPER, 0.3))
+    c.circle(13, 15, 2.4, fill=body_l)
     # eye — big and cartoon, it is what tells you which end is the head
-    c.circle(16, 13, 4.0, fill=CHALK)
-    c.circle(16, 13, 2.6, fill=INK)
-    c.circle(15.0, 12.0, 1.1, fill=CHALK)
+    c.circle(17, 13, 4.0, fill=CHALK)
+    c.circle(17, 13, 2.6, fill=INK)
+    c.circle(16.0, 12.0, 1.1, fill=CHALK)
     return ak.finish(c, ink=3, light=True, light_strength=0.8, grain_amt=5, seed=16)
 
 
@@ -1330,12 +1346,12 @@ def build_shirt():
     c.capsule((14, 76), (15, 81), 17, 16, dd)
     c.capsule((72, 76), (71, 81), 17, 16, shade(col, 0.58))
     # body: shoulders sag between the pins, hem waves
-    body = [(18, top + 2), (30, top + 6), (44, top + 8), (58, top + 6),
-            (70, top + 2), (74, 46), (72, 92), (74, 100), (60, 96),
-            (44, 102), (28, 96), (14, 100), (16, 92), (14, 46)]
+    body = [(18, top + 1), (30, top + 8), (44, top + 13), (58, top + 8),
+            (70, top + 1), (75, 46), (72, 92), (74, 102), (60, 95),
+            (44, 104), (28, 95), (13, 101), (16, 92), (14, 46)]
     c.poly(body, fill=dk)
-    c.poly([(18, top + 2), (44, top + 8), (62, top + 5), (66, 46),
-            (64, 94), (44, 102), (28, 96), (16, 98), (16, 46)], fill=col)
+    c.poly([(18, top + 1), (44, top + 13), (62, top + 6), (66, 46),
+            (64, 94), (44, 104), (28, 95), (16, 99), (16, 46)], fill=col)
     c.poly([(19, top + 3), (32, top + 7), (32, 92), (19, 96), (17, 50)],
            fill=lt)
     # shoulder seams
@@ -1381,14 +1397,16 @@ def build_union():
     c.capsule((19, 97), (19, 101), 18, 17, dd)
     c.capsule((51, 97), (51, 101), 18, 17, shade(col, 0.56))
     # torso
-    c.poly([(14, top + 2), (36, top + 5), (58, top + 2), (60, 40),
-            (57, 70), (36, 74), (15, 70), (12, 40)], fill=dk)
-    c.poly([(14, top + 2), (36, top + 5), (52, top + 3), (54, 40),
-            (52, 70), (36, 73), (16, 68), (14, 40)], fill=col)
+    c.poly([(14, top + 1), (36, top + 11), (58, top + 2), (60, 40),
+            (57, 70), (36, 76), (15, 70), (12, 40)], fill=dk)
+    c.poly([(14, top + 1), (36, top + 11), (52, top + 3), (54, 40),
+            (52, 70), (36, 75), (16, 68), (14, 40)], fill=col)
     c.poly([(15, top + 3), (26, top + 5), (26, 68), (16, 66)], fill=lt)
-    # neck opening
-    c.ellipse([27, top - 3, 45, top + 9], fill=lt)
-    c.ellipse([29, top - 1, 43, top + 7], fill=shade(col, 0.70))
+    # neck opening — a small dark scoop under a light collar band, not a
+    # pale egg sitting on the chest
+    c.ellipse([28, top + 2, 44, top + 13], fill=shade(col, 0.60))
+    c.ellipse([28, top + 1, 44, top + 8], fill=lt)
+    c.ellipse([30, top + 3, 42, top + 8], fill=shade(col, 0.66))
     # buttoned rear flap
     c.rrect([20, 40, 52, 68], 5, fill=shade(col, 0.92))
     c.line([(20, 41), (52, 40)], dd, 2.2)
@@ -1413,9 +1431,9 @@ def build_dress():
     top = 12
     _pins(c, 30, 58, top - 2)
     # bodice
-    c.poly([(24, top + 2), (44, top), (64, top + 2), (66, 30), (62, 52),
+    c.poly([(24, top), (44, top + 8), (64, top + 1), (66, 30), (62, 52),
             (26, 52), (22, 30)], fill=dk)
-    c.poly([(24, top + 2), (44, top + 1), (58, top + 3), (58, 30),
+    c.poly([(24, top), (44, top + 8), (58, top + 2), (58, 30),
             (56, 52), (26, 52), (24, 30)], fill=col)
     c.poly([(26, top + 3), (36, top + 2), (35, 52), (27, 50)], fill=lt)
     # skirt
@@ -1557,14 +1575,15 @@ def build_asphalt_tile():
         p1 = (x0 + math.cos(math.radians(ang)) * ln,
               y0 + math.sin(math.radians(ang)) * ln)
         path = jitter_path((x0, y0), p1, rnd, 6, 3.4)
-        t2.line(path, shade(ASPHALT_D, 0.88), 1.8)
-        if rnd.random() < 0.6:
+        t2.line(path, shade(ASPHALT_D, 0.82), 1.8)
+        t2.line([(px, py - 1.4) for px, py in path], shade(ASPHALT_D, 1.08), 1.0)
+        if rnd.random() < 0.7:
             mid = path[len(path) // 2]
             p2 = (mid[0] + rnd.uniform(-24, 24), mid[1] + rnd.uniform(-24, 24))
-            t2.line(jitter_path(mid, p2, rnd, 4, 2.6), shade(ASPHALT_D, 0.90), 1.5)
+            t2.line(jitter_path(mid, p2, rnd, 4, 2.6), shade(ASPHALT_D, 0.84), 1.4)
     # aggregate grit: even coverage on a jittered grid, barely-there contrast
-    grit = [shade(ASPHALT_D, 0.90), shade(ASPHALT_D, 1.08),
-            mix(ASPHALT_D, ASPHALT, 0.55), shade(ASPHALT_D, 0.84)]
+    grit = [shade(ASPHALT_D, 0.86), shade(ASPHALT_D, 1.14),
+            mix(ASPHALT_D, ASPHALT, 0.70), shade(ASPHALT_D, 0.78)]
     step = 5.0
     for iy in range(int(h / step)):
         for ix in range(int(w / step)):

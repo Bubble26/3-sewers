@@ -733,8 +733,9 @@ def portrait(kid_id, size):
     b = BODY[cfg["body"]]
     hr = b["hr"] * b["scale"]
     head_cy = GROUND - 98 * b["scale"] - b["th"] * b["scale"] - hr * 0.72
-    top = max(0, int(head_cy - hr * 2.05))
-    bot = min(H, int(head_cy + hr * 2.35))
+    # extra headroom so a cap or bonnet is not clipped by the card's arch
+    top = max(0, int(head_cy - hr * 2.35))
+    bot = min(H, int(head_cy + hr * 2.05))
     crop = img.crop((int(img.width / 2 - (bot - top) / 2), top,
                      int(img.width / 2 + (bot - top) / 2), bot))
     return crop.resize((size, size), Image.LANCZOS)
