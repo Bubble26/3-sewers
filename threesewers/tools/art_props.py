@@ -442,129 +442,156 @@ def build_hydrant():
 
 
 def build_stoop():
-    """150x110 world. First base: a brownstone stoop seen from the street side.
+    """150x110 world. First base: a brownstone stoop.
 
-    Drawn as a side-on flight climbing left-to-right, because a head-on stoop
-    at this size collapses into stacked pale planks. The near cheek wall is one
-    solid coursed mass of brown stone; the treads are only glimpsed as lit
-    nosings above each riser, which is what a stoop actually looks like from
-    the middle of the street.
+    Three-quarter view from the street: the flight climbs to the right and
+    away, the near riser faces are dark, and one bright nosing band per step is
+    what makes the thing read as stone stairs at 150px wide. The building it
+    belongs to is only a sliver of doorway at the top right — this is a base a
+    kid runs to, so the STAIRS have to own the frame.
     """
     w, h = W(150, 110)
     c = Canvas(w, h)
     rnd = random.Random(41)
-    ground = h - 10
+    ground = h - 12
 
     # BROWN stone. Greying it toward slate is what made this read as lumber.
-    st = mix(BROWNSTONE, RUST, 0.14)
-    st_l = mix(st, PAPER, 0.30)      # sunlit tread / top of a course
-    st_ll = mix(st, PAPER, 0.52)     # nosing catching full sun
-    st_d = shade(st, 0.74)           # cheek-wall face, turned away
-    st_dd = shade(st, 0.52)          # riser in shade
-    void = shade(st, 0.30)           # under the nosings / doorway
+    st = mix(BROWNSTONE, RUST, 0.16)
+    st_l = mix(st, PAPER, 0.30)      # tread top
+    st_ll = mix(st, PAPER, 0.54)     # nosing in full sun
+    st_d = shade(st, 0.76)           # riser face
+    st_dd = shade(st, 0.54)          # under the nosing
+    void = shade(st, 0.26)
 
-    n = 5
-    rise = 17
-    run = 20
-    x0 = 26                       # bottom step, near edge
+    n = 4
+    rise = 34
+    run = 44
+    skew = 13
+    x0 = 22
     top_y = ground - n * rise
+    land_x = x0 + n * run
 
-    # ---- the house wall the stoop climbs to, kept dark and simple
-    c.rect([x0 + n * run - 6, 2, w - 4, top_y + 6], fill=shade(st, 0.46))
-    c.rect([x0 + n * run - 6, 2, w - 4, 12], fill=shade(st, 0.62))
-    for k in range(5):
-        c.line([(x0 + n * run - 6, 14 + k * 22), (w - 4, 14 + k * 22)],
-               shade(st, 0.38), 2)
-    # doorway
-    c.rect([x0 + n * run + 22, 16, w - 26, top_y + 4], fill=void)
-    c.rect([x0 + n * run + 18, 12, w - 22, 22], fill=st_l)
+    # ---- doorway sliver, the only bit of building in frame
+    c.rect([land_x + 6, 10, w - 8, top_y - 2], fill=shade(st, 0.44))
+    c.rect([land_x + 18, 20, w - 20, top_y - 2], fill=void)
+    c.rect([land_x + 14, 14, w - 16, 24], fill=st_l)
+    c.rect([land_x + 14, 14, w - 16, 19], fill=st_ll)
 
-    # ---- the stair mass itself: risers dark, nosings bright
+    # ---- the solid stone mass of the flight
+    sil = [(x0, ground + 6)]
     for i in range(n):
-        bx = x0 + i * run
-        by = ground - i * rise
-        # tread top, receding away from the viewer
-        c.poly([(bx, by - rise), (bx + run + 8, by - rise),
-                (bx + run + 8, by - rise - 7), (bx + 8, by - rise - 7)],
-               fill=st_l)
-        # riser
-        c.rect([bx, by - rise, bx + run + 8, by], fill=st_dd)
-        c.rect([bx, by - rise, bx + run + 8, by - rise + 4], fill=void)
-        # the nosing: the one bright line per step that makes it read as stone
-        c.rect([bx, by - rise - 7, bx + run + 8, by - rise - 3], fill=st_ll)
-        c.rect([bx, by - rise - 3, bx + run + 8, by - rise - 1],
-               fill=shade(st_l, 0.86))
-        # worn dish in the middle of the tread
-        c.ellipse([bx + 10, by - rise - 7, bx + run + 2, by - rise - 2],
-                  fill=shade(st_l, 0.93))
-        for _ in range(7):
-            c.circle(rnd.uniform(bx + 2, bx + run + 6),
-                     rnd.uniform(by - rise + 4, by - 2),
-                     rnd.uniform(0.8, 2.2),
-                     fill=rnd.choice([shade(st_dd, 0.86), shade(st_dd, 1.12)]))
-        # chipped nosing corner
-        if rnd.random() < 0.7:
-            cxp = rnd.uniform(bx + 6, bx + run)
-            c.poly([(cxp, by - rise - 3), (cxp + 8, by - rise - 3),
-                    (cxp + 4, by - rise + 3)], fill=shade(st_dd, 0.84))
+        ty = ground - (i + 1) * rise
+        xl = x0 + i * run
+        sil.append((xl, ty))
+        sil.append((xl + run + skew, ty))
+    sil += [(w - 6, top_y), (w - 6, ground + 6)]
+    c.poly(sil, fill=st_d)
 
-    # ---- near cheek wall: one raked stone mass with visible coursing
-    cheek = [(4, ground + 4), (4, ground - 26),
-             (x0 + n * run - 4, top_y - 30),
-             (x0 + n * run - 4, top_y + 6), (4, ground + 4)]
-    c.poly(cheek, fill=st_d)
-    # its raked coping, lit
-    c.poly([(4, ground - 26), (x0 + n * run - 4, top_y - 30),
-            (x0 + n * run - 4, top_y - 20), (4, ground - 16)], fill=st_ll)
-    c.poly([(4, ground - 18), (x0 + n * run - 4, top_y - 22),
-            (x0 + n * run - 4, top_y - 18), (4, ground - 14)],
-           fill=shade(st, 0.86))
-    # coursing joints, following the rake
-    for k in range(1, 4):
-        yy = k * 15
-        c.line([(4, ground - 14 + yy), (x0 + n * run - 4, top_y - 18 + yy)],
-               shade(st, 0.56), 2)
-    for k in range(1, 5):
-        xx = 4 + k * (x0 + n * run - 8) / 5.0
-        t = (xx - 4) / float(x0 + n * run - 8)
-        ytop = (ground - 14) + (top_y - 18 - (ground - 14)) * t
-        c.line([(xx, ytop + 4), (xx, ground + 4)], shade(st, 0.60), 2)
-    for _ in range(40):
-        t = rnd.random()
-        wx = 4 + (x0 + n * run - 10) * t
-        ytop = (ground - 14) + (top_y - 18 - (ground - 14)) * t
-        c.circle(wx, rnd.uniform(ytop + 3, ground + 2), rnd.uniform(0.9, 2.4),
-                 fill=rnd.choice([shade(st_d, 0.84), shade(st_d, 1.12), st]))
+    def mass_left(y):
+        i = int((ground - y) // rise)
+        if i <= 0:
+            return x0
+        return x0 + min(i, n) * run
 
-    # ---- iron railing above the cheek wall: newel, rake, real balusters
+    # coursed ashlar. Without this the side of the stoop is one flat brown
+    # field the size of a kid, and the cel wedge slices it in half like a bad
+    # gradient. Real brownstone is stacked blocks and reads that way at 75px.
+    ch = 21.0
+    kk = 0
+    yy = ground + 2
+    while yy > top_y - 2:
+        lx = mass_left(yy)
+        c.line([(lx, yy), (w - 6, yy)], shade(st, 0.56), 2.2)
+        c.line([(lx, yy + 2), (w - 6, yy + 2)], shade(st, 0.94), 1.4)
+        jx = x0 + (34 if kk % 2 else 0)
+        while jx < w - 8:
+            if jx > mass_left(yy - ch) + 4:
+                c.line([(jx, yy - ch + 1), (jx + rnd.uniform(-1.5, 1.5), yy)],
+                       shade(st, 0.62), 2.0)
+            jx += 68
+        yy -= ch
+        kk += 1
+
+    # ---- steps, far to near so each riser overlaps the tread behind it
+    for i in range(n - 1, -1, -1):
+        ty = ground - (i + 1) * rise
+        xl = x0 + i * run
+        xr = xl + run
+        # tread top surface, receding up-right
+        c.poly([(xl, ty), (xr + skew, ty), (xr + skew, ty - 11),
+                (xl + skew, ty - 11)], fill=st_l)
+        c.poly([(xl, ty), (xl + skew, ty - 11), (xl + skew + 18, ty - 11),
+                (xl + 18, ty)], fill=shade(st_l, 0.88))
+        # riser face — clearly darker than the coursed side wall, otherwise
+        # the steps dissolve into the mass
+        c.rect([xl, ty, xr + skew, ty + rise], fill=st_dd)
+        c.rect([xl, ty, xr + skew, ty + 7], fill=void)
+        c.rect([xl + 5, ty + 10, xr + skew - 4, ty + rise - 3],
+               fill=shade(st_dd, 1.10))
+        # the nosing: one bright line per step
+        c.rect([xl, ty - 11, xr + skew, ty - 5], fill=st_ll)
+        c.rect([xl, ty - 5, xr + skew, ty - 1], fill=shade(st_l, 0.86))
+        # worn dish where a thousand feet landed
+        c.ellipse([xl + 10, ty - 11, xr + skew - 8, ty - 4],
+                  fill=shade(st_l, 0.94))
+        for _ in range(14):
+            c.circle(rnd.uniform(xl + 3, xr + skew - 3),
+                     rnd.uniform(ty + 9, ty + rise - 2),
+                     rnd.uniform(0.7, 1.6),
+                     fill=rnd.choice([shade(st_dd, 0.90), shade(st_dd, 1.12)]))
+        # a bitten corner off the nosing — a centred triangle reads as a UI
+        # arrow, so keep it at the ends and irregular
+        if rnd.random() < 0.8:
+            cxp = rnd.choice([xl + rnd.uniform(2, 10),
+                              xr + skew - rnd.uniform(6, 16)])
+            c.poly([(cxp, ty - 11), (cxp + rnd.uniform(7, 13), ty - 9),
+                    (cxp + rnd.uniform(2, 6), ty - 2)],
+                   fill=shade(void, 1.20))
+
+    # ---- landing at the top
+    c.rect([land_x, top_y - 8, w - 6, top_y], fill=st_l)
+    c.rect([land_x, top_y - 8, w - 6, top_y - 4], fill=st_ll)
+
+    # ---- weathering on the stone, kept inside the mass
+    for _ in range(240):
+        wx = rnd.uniform(x0, w - 8)
+        i = max(0, min(n, int((wx - x0) // run)))
+        floor = ground - i * rise
+        c.circle(wx, rnd.uniform(floor - 6, ground + 2), rnd.uniform(0.5, 1.4),
+                 fill=rnd.choice([shade(st_d, 0.90), shade(st_d, 1.08), st]))
+    # damp stain creeping up from the sidewalk
+    ov = c.overlay()
+    ov.poly([(x0, ground + 6), (w - 6, ground + 6), (w - 6, ground - 30),
+             (x0, ground - 14)], fill=(26, 18, 12, 44))
+    c.merge(ov)
+
+    # ---- iron railing: newel, raked handrail, real balusters onto the treads
     rail = mix(IRON, SLATE, 0.50)
     rail_d = shade(IRON, 0.78)
-    lo = (16, ground - 66)
-    hi = (x0 + n * run - 8, top_y - 66)
+    lo = (x0 + 6, ground - rise - 52)
+    hi = (land_x + 8, top_y - 52)
 
     def rake_y(x):
         t = (x - lo[0]) / float(hi[0] - lo[0])
         return lo[1] + (hi[1] - lo[1]) * t
 
-    def cope_y(x):
-        t = (x - 4) / float(x0 + n * run - 8)
-        return (ground - 22) + (top_y - 26 - (ground - 22)) * t
-
-    for k in range(6):
-        bx = lo[0] + (hi[0] - lo[0]) * k / 5.0
-        c.rect([bx - 2.4, rake_y(bx), bx + 2.4, cope_y(bx)], fill=rail_d)
-        c.rect([bx - 2.4, rake_y(bx), bx - 0.4, cope_y(bx)], fill=rail)
+    for k in range(7):
+        bx = lo[0] + (hi[0] - lo[0]) * k / 6.0
+        i = max(0, min(n - 1, int((bx - x0) / run)))
+        foot = ground - (i + 1) * rise - 5
+        c.rect([bx - 2.6, rake_y(bx), bx + 2.6, foot], fill=rail_d)
+        c.rect([bx - 2.6, rake_y(bx), bx - 0.4, foot], fill=rail)
     c.capsule(lo, hi, 8, 8, rail_d)
     c.capsule((lo[0], lo[1] - 2.4), (hi[0], hi[1] - 2.4), 3.6, 3.6, rail)
-    # newel post at the bottom
-    c.rect([lo[0] - 5, lo[1] - 6, lo[0] + 5, cope_y(lo[0]) + 2], fill=rail_d)
-    c.rect([lo[0] - 5, lo[1] - 6, lo[0] - 1, cope_y(lo[0]) + 2], fill=rail)
+    # newel post
+    c.rect([lo[0] - 5, lo[1] - 6, lo[0] + 5, ground - rise - 4], fill=rail_d)
+    c.rect([lo[0] - 5, lo[1] - 6, lo[0] - 1, ground - rise - 4], fill=rail)
     c.circle(lo[0], lo[1] - 10, 6.0, fill=rail_d)
     c.circle(lo[0] - 1.6, lo[1] - 11.4, 3.2, fill=rail)
-    c.rect([hi[0] - 4, hi[1] - 4, hi[0] + 4, cope_y(hi[0])], fill=rail_d)
+    c.rect([hi[0] - 4, hi[1] - 4, hi[0] + 4, top_y - 6], fill=rail_d)
 
     img = ak.finish(c, ink=3, light=True, light_strength=0.85, grain_amt=6, seed=6)
-    return sit(img, w * 0.42, ground + 6, w * 0.42, 8, 0.32, 6)
+    return sit(img, w * 0.46, ground + 8, w * 0.46, 8, 0.32, 6)
 
 
 # ================================================================== furniture

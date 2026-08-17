@@ -302,18 +302,30 @@ func _build_world() -> void:
 	# far rooftops closing the top of the street
 	_flat_prop("skyline", Vector2(Tuning.PLATE.x, STREET_TOP + 40.0), bg, 1.0,
 		Color(1, 1, 1, 0.85))
-	# tenement windows down both walls — skipped when the facade art already
-	# carries its own window rhythm, so they never double up
+	# Windows for the upper storeys. The facade art covers the lower wall with
+	# its own window rhythm, so these only fill in above where it reaches.
 	var win_tex: Texture2D = Game.prop("window")
-	if Game.prop("facade_l") == null:
-		for wy in [760.0, 1080.0, 1420.0, 1760.0, 2100.0, 2440.0]:
-			for wx in [Tuning.WALL_L - WALK_W - 120.0, Tuning.WALL_R + WALK_W + 120.0]:
-				if absf(wy - Tuning.WINDOW_POS.y) < 90.0 \
-						and absf(wx - Tuning.WINDOW_POS.x) < 160.0:
-					continue                 # leave room for THE window
-				var w := _spr(win_tex, Vector2(wx, wy), 1.0)
-				w.modulate = Color(1, 1, 1, 0.9)
-				bg.add_child(w)
+	var facade_top := STREET_BOT
+	var ftex: Texture2D = Game.prop("facade_l")
+	if ftex != null:
+		var fit := (Tuning.WALL_L - WALK_W - STREET_L) / (ftex.get_width() * Tuning.ART)
+		facade_top = STREET_BOT - ftex.get_height() * Tuning.ART * fit
+	for wy in [760.0, 1080.0, 1420.0, 1760.0, 2100.0, 2440.0]:
+		if wy > facade_top - 60.0:
+			continue
+		for wx in [Tuning.WALL_L - WALK_W - 120.0, Tuning.WALL_R + WALK_W + 120.0]:
+			if absf(wy - Tuning.WINDOW_POS.y) < 90.0 \
+					and absf(wx - Tuning.WINDOW_POS.x) < 160.0:
+				continue                     # leave room for THE window
+			var w := _spr(win_tex, Vector2(wx, wy), 1.0)
+			w.modulate = Color(1, 1, 1, 0.9)
+			bg.add_child(w)
+	# rooftop water tower and a lazy plume off the manhole
+	_flat_prop("watertower", Vector2(Tuning.WALL_R + 180.0, STREET_TOP + 150.0),
+		bg, 1.0, Color(1, 1, 1, 0.9))
+	_flat_prop("manhole_steam",
+		Vector2(Tuning.WALL_R + WALK_W * 0.5, 2180.0), bg, 1.0,
+		Color(1, 1, 1, 0.22))
 	# THE window — swapped to broken glass on the window HR
 	window_spr = _spr(win_tex, Tuning.WINDOW_POS, 1.25)
 	bg.add_child(window_spr)
@@ -333,8 +345,8 @@ func _build_world() -> void:
 		num.rotation_degrees = -4.0
 		num.modulate = Color(1, 1, 1, 0.8)
 		bg.add_child(num)
-	_flat_prop("chalk_marks", Vector2(Tuning.WALL_L + 190.0, 1760.0), bg, 1.0,
-		Color(1, 1, 1, 0.55))
+	_flat_prop("chalk_marks", Vector2(Tuning.WALL_L + 118.0, 1840.0), bg, 0.85,
+		Color(1, 1, 1, 0.42))
 	_flat_prop("gutter_grate", Vector2(Tuning.WALL_R + WALK_W * 0.5, 2300.0), bg, 1.0)
 	# chalk second base + foul lines
 	_chalk_square(Tuning.BASE_2, 66.0)
@@ -390,18 +402,19 @@ func _tiled(prop_name: String, area: Rect2, fallback: Color) -> void:
 	bg.add_child(s)
 
 func _facade(prop_name: String, area: Rect2) -> void:
+	# Brick fills the whole canyon wall; the facade — which carries a
+	# ground-floor shopfront — is placed once, sitting on the street. Tiling
+	# it would stack a grocer's window on every storey.
+	_tiled("brick_tile", area, Tuning.BRICKC)
 	var tex: Texture2D = Game.prop(prop_name)
 	if tex == null:
-		_tiled("brick_tile", area, Tuning.BRICKC)
 		return
-	# facades repeat vertically up the street canyon
+	var fit := area.size.x / (tex.get_width() * Tuning.ART)
 	var s := Sprite2D.new()
 	s.texture = tex
-	s.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	s.region_enabled = true
-	s.region_rect = Rect2(Vector2.ZERO, area.size / Tuning.ART)
-	s.scale = Vector2(Tuning.ART, Tuning.ART)
-	s.position = area.position + area.size * 0.5
+	s.scale = Vector2(Tuning.ART, Tuning.ART) * fit
+	s.position = Vector2(area.position.x + area.size.x * 0.5,
+		area.end.y - tex.get_height() * Tuning.ART * fit * 0.5)
 	bg.add_child(s)
 
 func _standing_prop(prop_name: String, pos: Vector2) -> void:
