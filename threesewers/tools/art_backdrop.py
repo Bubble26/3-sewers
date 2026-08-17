@@ -282,9 +282,8 @@ def build_backdrop(view, props_dir, chars_dir=None, rs=2, seed=3):
     put("manhole", P.PLATE_X, 2350.0, 0.0, 1.15, "center", flat=True)
     for i, sy_w in enumerate(SEWERS_Y):
         put("sewer", P.PLATE_X, sy_w, 0.0, 1.0, "center", flat=True)
-        _, syy, ss = view.project(P.PLATE_X + 150.0, sy_w, 0.0)
-        sxx, _, _ = view.project(P.PLATE_X + 150.0, sy_w, 0.0)
-        fnt = A.font("serif_bold", max(8, int(120 * ss * view.xk * rs)))
+        sxx, syy, ss = view.project(P.PLATE_X + 330.0, sy_w, 0.0)
+        fnt = A.font("serif_bold", max(8, int(80 * ss * view.xk * rs)))
         ImageDraw.Draw(img).text((sxx * rs, syy * rs), str(i + 1), font=fnt,
                                  fill=(228, 222, 200, 150), anchor="mm")
     put("fire_escape", WALL_L - WALK, 1430.0, 620.0, tint=night)

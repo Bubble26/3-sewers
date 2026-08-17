@@ -27,6 +27,10 @@ BALL = "prp_spaldeen"
 LOUD = 0.72           # ordinary props and kids
 BACKDROP_LOUD = 0.52  # tiles and facades cover the whole screen; hold tighter
 BACKDROP_HINT = ("tile", "facade", "skyline", "curb", "cornice", "sidewalk")
+# Light is not pigment. These are additive glows and atmosphere — a warm lamp
+# pool is *supposed* to be the warmest thing where it falls, and it tints the
+# street rather than competing with the ball as an object.
+EXEMPT = ("lightpool", "steam", "nightsky", "shadow", "bg_")
 
 _SRGB = [((v / 255.0 + 0.055) / 1.055) ** 2.4 if v / 255.0 > 0.04045
          else (v / 255.0) / 12.92 for v in range(256)]
@@ -81,7 +85,7 @@ def main():
     print("spaldeen chroma C*: %.1f  (everything else must sit below it)\n" % ball)
     bad = []
     for name, c, path in sorted(rows, key=lambda r: -r[1]):
-        if name == BALL:
+        if name == BALL or any(e in name for e in EXEMPT):
             continue
         frac = BACKDROP_LOUD if any(h in name for h in BACKDROP_HINT) else LOUD
         limit = ball * frac

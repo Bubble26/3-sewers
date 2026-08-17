@@ -47,7 +47,7 @@ const VIEW_NEAR_Y := 2400.0      # the camera plane, just behind the batter
 const VIEW_PORTRAIT := {"dw": 720.0, "dh": 1200.0, "horizon_f": 0.250,
 	"near_f": 1.88, "z_far": 74.0, "xk": 9.40}
 const VIEW_LANDSCAPE := {"dw": 1280.0, "dh": 720.0, "horizon_f": 0.225,
-	"near_f": 1.74, "z_far": 10.3, "xk": 1.86}
+	"near_f": 1.02, "z_far": 10.3, "xk": 1.86}
 
 var vw := 1280.0          # design width
 var vh := 720.0           # design height

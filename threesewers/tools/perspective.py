@@ -92,6 +92,6 @@ class View:
 PORTRAIT = View("portrait", 720, 1200,
                 horizon_f=0.250, near_f=1.88, z_far=74.0, xk=9.40, near_y=2400.0)
 LANDSCAPE = View("landscape", 1280, 720,
-                 horizon_f=0.225, near_f=1.74, z_far=10.3, xk=1.86, near_y=2400.0)
+                 horizon_f=0.225, near_f=1.02, z_far=10.3, xk=1.86, near_y=2400.0)
 
 VIEWS = {"portrait": PORTRAIT, "landscape": LANDSCAPE}
