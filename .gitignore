@@ -6,3 +6,4 @@ threesewers/.godot/
 # Python bytecode from the art generators
 __pycache__/
 *.pyc
+node_modules/

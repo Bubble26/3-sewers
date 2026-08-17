@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #14100e; overflow: hidden; }
+  #wrap { position: relative; width: 720px; height: 1280px; }
+  canvas { display: block; }
+  /* cheap film pass: vignette + grain over the GL canvas */
+  #vignette { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 90% 75% at 50% 42%,
+      rgba(0,0,0,0) 46%, rgba(10,7,6,0.55) 82%, rgba(8,5,4,0.85) 100%); }
+  #grain { position: absolute; inset: 0; pointer-events: none; opacity: 0.05; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="gl" width="720" height="1280"></canvas>
+  <div id="vignette"></div>
+  <canvas id="grain" width="720" height="1280"></canvas>
+</div>
+<script type="importmap">
+{ "imports": { "three": "./node_modules/three/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ---- world mapping: 100 world px = 1 unit, plate at origin --------------
+// game world: plate (640,2350), walls x 235/1045, sidewalks +62, far y 600
+const W2U = 0.01;
+const wx = (x) => (x - 640) * W2U;
+const wz = (y) => (2400 - y) * W2U;          // +z runs up the street
+const KID_H = 1.6;                            // 160 world px
+
+const A = '../../assets';
+const renderer = new THREE.WebGLRenderer({
+  canvas: document.getElementById('gl'), antialias: true });
+renderer.setSize(720, 1280, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.4;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x181210, 10.0, 36.0);
+
+// camera stands just behind the batter, low, looking up the street
+const cam = new THREE.PerspectiveCamera(58, 720 / 1280, 0.1, 60);
+cam.position.set(0, 1.72, wz(2400) - 2.5);
+cam.lookAt(0, 1.42, 9.0);
+
+const tex = (p, rx = 1, ry = 1) => {
+  const t = new THREE.TextureLoader().load(p);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+};
+
+// ---- ground: cobbles (tile = 128 world px = 1.28 u) ---------------------
+const L = 20.0;
+const cob = tex(`${A}/props/prp_cobble_tile.png`, 9.34 / 1.28, L / 1.28);
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(9.34, L),
+  new THREE.MeshStandardMaterial({ map: cob, roughness: 0.92, metalness: 0.0 }));
+ground.rotation.x = -Math.PI / 2;
+ground.position.set(0, 0, L / 2 - 1.5);
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ---- walls: brick, towering off-frame ----------------------------------
+const brick = tex(`${A}/props/prp_brick_tile.png`, L / 1.28, 26 / 1.28);
+for (const side of [-1, 1]) {
+  const wall = new THREE.Mesh(
+    new THREE.PlaneGeometry(L, 26),
+    new THREE.MeshStandardMaterial({ map: brick, roughness: 0.95 }));
+  wall.rotation.y = -side * Math.PI / 2;
+  wall.position.set(side * 4.67, 13, L / 2 - 1.5);
+  wall.receiveShadow = true;
+  scene.add(wall);
+  // lit tenement windows down the block
+  for (let z = 2.5; z < 17; z += 1.9) {
+    for (let h = 2.6; h < 9; h += 2.2) {
+      if (Math.random() > 0.30) continue;
+      const glow = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.55, 0.8),
+        new THREE.MeshBasicMaterial({ color: 0xffce8a, fog: false }));
+      glow.rotation.y = -side * Math.PI / 2;
+      glow.position.set(side * 4.64, h, z);
+      scene.add(glow);
+    }
+  }
+}
+
+// ---- far building closing the canyon -----------------------------------
+const farB = new THREE.Mesh(
+  new THREE.BoxGeometry(10.5, 12, 1),
+  new THREE.MeshStandardMaterial({ color: 0x3a2f28, roughness: 0.95 }));
+farB.position.set(0, 6, 19.5);
+scene.add(farB);
+for (let fx = -4; fx <= 4; fx += 1.15) {
+  for (let fy = 1.6; fy < 11; fy += 1.5) {
+    if (Math.random() > 0.42) continue;
+    const wm = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.42, 0.62),
+      new THREE.MeshBasicMaterial({ color: 0xffc87d, fog: false }));
+    wm.position.set(fx, fy, 18.99);
+    scene.add(wm);
+  }
+}
+
+// ---- sky ---------------------------------------------------------------
+const skyT = new THREE.TextureLoader().load(`${A}/props/prp_nightsky.png`);
+skyT.colorSpace = THREE.SRGBColorSpace;
+const sky = new THREE.Mesh(new THREE.PlaneGeometry(60, 16),
+  new THREE.MeshBasicMaterial({ map: skyT, fog: false }));
+sky.position.set(0, 14, 30);
+scene.add(sky);
+
+// ---- lights ------------------------------------------------------------
+scene.add(new THREE.AmbientLight(0x362c26, 3.0));
+const moon = new THREE.DirectionalLight(0x8a86a0, 0.5);
+moon.position.set(-6, 20, 10);
+scene.add(moon);
+
+function lamp(x, z) {
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.07, 3.4, 8),
+    new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.6 }));
+  post.position.set(x, 1.7, z);
+  post.castShadow = true;
+  scene.add(post);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffd898, fog: false }));
+  head.position.set(x, 3.5, z);
+  scene.add(head);
+  const li = new THREE.PointLight(0xffb35c, 30.0, 14.0, 1.8);
+  li.position.set(x, 3.4, z);
+  li.castShadow = true;
+  li.shadow.mapSize.set(1024, 1024);
+  li.shadow.bias = -0.002;
+  scene.add(li);
+}
+lamp(wx(235 - 31), wz(1180));     // the game's two gas lamps
+lamp(wx(1045 + 31), wz(1980));
+// warm practical over the plate so the batter reads
+const plateLi = new THREE.PointLight(0xffc06a, 22.0, 9.0, 1.8);
+plateLi.position.set(0.7, 3.4, -1.6);
+plateLi.castShadow = true;
+scene.add(plateLi);
+
+// ---- billboarded kids from the real game sprites -----------------------
+const loadKid = (file, x, z, h = KID_H, tint = 0xffffff) => {
+  const t = new THREE.TextureLoader().load(`${A}/characters/${file}`, (tt) => {
+    tt.colorSpace = THREE.SRGBColorSpace;
+    const aspect = tt.image.width / tt.image.height;
+    spr.scale.set(h * aspect, h, 1);
+  });
+  const mat = new THREE.MeshStandardMaterial({
+    map: t, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide,
+    color: tint, roughness: 0.9 });
+  const spr = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+  spr.position.set(x, h / 2, z);
+  scene.add(spr);
+  return spr;
+};
+
+loadKid('chr_tommy_bat_back_0.png', wx(688), wz(2352), 2.1);   // the batter looms
+loadKid('chr_sal_pitch_3.png', wx(640), wz(2060));             // pitcher mid-windup
+loadKid('chr_nellie_idle_0.png', wx(470), wz(1990));           // SS
+loadKid('chr_gus_idle_0.png', wx(880), wz(2120));              // 1B
+loadKid('chr_pearl_idle_0.png', wx(430), wz(1490));            // LF
+loadKid('chr_vito_idle_0.png', wx(850), wz(1490));             // RF
+// the block watches from the kerbs
+const spec = [[204, 2280], [190, 2010], [215, 1720], [1076, 2360], [1090, 2060],
+  [1062, 1760], [204, 1430], [1080, 1480]];
+for (let i = 0; i < spec.length; i++) {
+  const ids = ['ezra', 'patsy', 'sadie', 'whistles', 'corny', 'tommy', 'mabel', 'nellie'];
+  loadKid(`chr_${ids[i]}_idle_${i % 4}.png`, wx(spec[i][0]), wz(spec[i][1]),
+    KID_H * 0.92, 0x9a8d84);
+}
+
+// ---- the spaldeen, mid-hop, the one saturated thing --------------------
+const ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12),
+  new THREE.MeshStandardMaterial({ color: 0xe4626f, roughness: 0.4,
+    emissive: 0x3c0e14, emissiveIntensity: 0.4 }));
+ball.position.set(wx(560), 0.62, wz(2120));
+ball.castShadow = true;
+scene.add(ball);
+
+// ---- laundry strung between the walls ----------------------------------
+const garments = ['shirt', 'union', 'dress'];
+for (const [z, sagY] of [[6.2, 4.4], [10.5, 5.0]]) {
+  const pts = [];
+  for (let i = 0; i <= 20; i++) {
+    const u = i / 20;
+    pts.push(new THREE.Vector3(-4.67 + 9.34 * u,
+      sagY + 1.1 - 0.9 * Math.sin(Math.PI * u), z));
+  }
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0x0d0a08 })));
+  for (const k of [4, 9, 14, 17]) {
+    const u = k / 20;
+    const g = tex(`${A}/props/prp_${garments[k % 3]}.png`);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.65),
+      new THREE.MeshStandardMaterial({ map: g, transparent: true,
+        alphaTest: 0.3, side: THREE.DoubleSide, color: 0x8d8078 }));
+    m.position.set(-4.67 + 9.34 * u, sagY + 0.75 - 0.9 * Math.sin(Math.PI * u), z);
+    scene.add(m);
+  }
+}
+
+// ---- chalk foul lines painted onto the ground --------------------------
+const chalkMat = new THREE.MeshBasicMaterial({ color: 0xf3ead6,
+  transparent: true, opacity: 0.62 });
+for (const side of [-1, 1]) {
+  for (let k = 0; k < 12; k++) {
+    const u = k / 12 + 0.02;
+    const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.09), chalkMat);
+    dash.rotation.x = -Math.PI / 2;
+    dash.rotation.z = side * 0.62;
+    dash.position.set(side * 4.0 * u, 0.012, 0.6 + 15.0 * u);
+    scene.add(dash);
+  }
+}
+const plate = new THREE.Mesh(new THREE.CircleGeometry(0.85, 24),
+  new THREE.MeshStandardMaterial({ color: 0x241d18, roughness: 0.55 }));
+plate.rotation.x = -Math.PI / 2;
+plate.position.set(0, 0.011, 0.55);
+plate.receiveShadow = true;
+scene.add(plate);
+
+// ---- grain overlay ------------------------------------------------------
+const g = document.getElementById('grain').getContext('2d');
+const gi = g.createImageData(720, 1280);
+for (let i = 0; i < gi.data.length; i += 4) {
+  const v = 118 + Math.random() * 60;
+  gi.data[i] = gi.data[i + 1] = gi.data[i + 2] = v;
+  gi.data[i + 3] = 255;
+}
+g.putImageData(gi, 0, 0);
+
+let frames = 0;
+function loop() {
+  renderer.render(scene, cam);
+  if (++frames === 24) window.__done = true;   // textures settled
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
