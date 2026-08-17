@@ -11,7 +11,7 @@ signal ui_pitch(p: Dictionary)
 # ---------------------------------------------------------------- view constants
 # (world layout + feel constants come from Tuning; these are presentation-only)
 const FIELDER_SCALE := 0.8
-const BATTER_POS := Vector2(700, 2350)
+const BATTER_POS := Vector2(688, 2352)
 const PITCH_HAND_OFF := Vector2(0, -40)     # release point above pitcher origin
 const PITCH_BOUNCE_Y := 2278.0              # one-bounce point short of the plate
 const PITCH_BOUNCE_LANE_X := 46.0
@@ -65,7 +65,8 @@ const SETTLE_PAD := 0.35
 # ---------------------------------------------------------------- kid sprite node
 class Kid extends Node2D:
 	const ANIM_N := {"idle": 4, "bat_stance": 2, "swing": 6, "run": 8, "pitch": 8,
-		"throw": 4, "catch": 3, "slide": 4, "celebrate": 4, "sulk": 2, "walk": 4}
+		"throw": 4, "catch": 3, "slide": 4, "celebrate": 4, "sulk": 2, "walk": 4,
+		"bat_back": 2, "swing_back": 6}
 
 	var kid_id := ""
 	var anim := ""
@@ -89,6 +90,8 @@ class Kid extends Node2D:
 		spr = Sprite2D.new()
 		add_child(spr)
 
+	var wpos := Vector2.ZERO          # world position; screen is derived
+	var depth_mul := 1.0              # extra size trim, e.g. background kids
 	var _facing := 1.0
 	var _lean := 0.0
 
@@ -99,15 +102,24 @@ class Kid extends Node2D:
 		if t == null or spr.texture == t:
 			return
 		spr.texture = t
-		spr.scale = Vector2(Tuning.ART * _facing, Tuning.ART)
 		spr.offset = Vector2(0, -t.get_height() * 0.5)
+
+	# One projection for everything: where the kid stands on the street decides
+	# both where it lands on screen and how big it is.
+	func _apply_projection() -> void:
+		var pr := Tuning.project(wpos, 0.0)
+		position = Vector2(pr.x, pr.y)
+		var sc := Tuning.sprite_scale(pr.z) * depth_mul
+		spr.scale = Vector2(sc * _facing, sc)
+		if shadow != null:
+			shadow.scale = Vector2(sc, sc) * 0.78
+		z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0))
 
 	# The kids are drawn front-on, so travel direction is sold by mirroring
 	# them and leaning them into the run.
 	func face(dx: float, lean_deg := 0.0) -> void:
 		if absf(dx) > 0.5:
 			_facing = signf(dx)
-			spr.scale.x = Tuning.ART * _facing
 		_lean = lean_deg * (_facing if lean_deg != 0.0 else 1.0)
 		spr.rotation_degrees = _lean
 
@@ -123,6 +135,7 @@ class Kid extends Node2D:
 			_set_tex(_frames[0])
 
 	func _process(delta: float) -> void:
+		_apply_projection()
 		if _frames.is_empty():
 			return
 		_t += delta
@@ -143,7 +156,7 @@ var core := MatchCore.new()
 var bg: Node2D
 var stage: Node2D
 var fx: Node2D
-var cam: Camera2D
+var world_root: Node2D
 var hud: CanvasLayer
 var cards: TitleCards
 
@@ -192,6 +205,8 @@ var _h_roll_t := 0.0
 var _h_roll_px := 0.0
 var _h_roll_dir := Vector2.ZERO
 var _sewer_prev_y := 0.0
+var bw := Vector2.ZERO             # ball world position
+var bh := 0.0                      # ball height off the cobbles
 
 # hud refs
 var score_panel: PanelContainer
@@ -225,6 +240,7 @@ func _ready() -> void:
 	core.setup(Game.cpu_team, Game.player_team, Game.roster, 1, Tuning.INNINGS)
 	_build_layers()
 	_build_world()
+	get_viewport().size_changed.connect(_on_resized)
 	_build_ball()
 	_build_hud()
 	if Game.smoke:
@@ -236,22 +252,27 @@ func _ready() -> void:
 	run_match()
 
 func _build_layers() -> void:
+	# Pick the projection from the real screen shape, then fit the design
+	# space to it. Portrait is the reference composition; landscape sits the
+	# horizon lower. Both ship, so the same build runs either way on a phone.
+	var vp := get_viewport_rect().size
+	Tuning.use_view(vp.y > vp.x)
+	world_root = Node2D.new()
+	world_root.name = "view"
+	var k: float = maxf(vp.x / Tuning.vw, vp.y / Tuning.vh)
+	world_root.scale = Vector2(k, k)
+	world_root.position = vp * 0.5 - Vector2(Tuning.vw, Tuning.vh) * 0.5 * k
+	add_child(world_root)
 	bg = Node2D.new()
 	bg.name = "bg"
-	add_child(bg)
+	world_root.add_child(bg)
 	stage = Node2D.new()
 	stage.name = "stage"
-	stage.y_sort_enabled = true
-	add_child(stage)
+	stage.y_sort_enabled = false      # depth is explicit via z_index now
+	world_root.add_child(stage)
 	fx = Node2D.new()
 	fx.name = "fx"
-	add_child(fx)
-	cam = Camera2D.new()
-	cam.zoom = Vector2(Tuning.CAM_ZOOM, Tuning.CAM_ZOOM)
-	cam.position = _cam_default()
-	cam.enabled = true
-	add_child(cam)
-	cam.make_current()
+	world_root.add_child(fx)
 	hud = CanvasLayer.new()
 	hud.layer = 10
 	add_child(hud)
@@ -268,8 +289,30 @@ func _build_layers() -> void:
 	flicker.add_child(film)
 	add_child(flicker)
 
-func _cam_default() -> Vector2:
-	return Vector2(Tuning.PLATE.x, CAM_CHASE_MAX_Y)
+# The phone can be turned over mid-game: pick the other projection, refit the
+# view and re-lay the baked street. Kids and the ball project every frame, so
+# they need no help.
+func _on_resized() -> void:
+	var vp := get_viewport_rect().size
+	if vp.x <= 0.0 or vp.y <= 0.0:
+		return
+	Tuning.use_view(vp.y > vp.x)
+	var k: float = maxf(vp.x / Tuning.vw, vp.y / Tuning.vh)
+	world_root.scale = Vector2(k, k)
+	world_root.position = vp * 0.5 - Vector2(Tuning.vw, Tuning.vh) * 0.5 * k
+	for c in bg.get_children():
+		c.queue_free()
+	window_spr = null
+	_build_world()
+
+func _view_punch(amount: float, t := 0.5) -> void:
+	if _cam_tw != null:
+		_cam_tw.kill()
+	var base: float = maxf(get_viewport_rect().size.x / Tuning.vw,
+		get_viewport_rect().size.y / Tuning.vh)
+	_cam_tw = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_cam_tw.tween_property(world_root, "scale",
+		Vector2(base, base) * (1.0 + amount), t)
 
 # ---------------------------------------------------------------- world
 const STREET_TOP := 600.0
@@ -279,284 +322,100 @@ const STREET_R := 1480.0
 const WALK_W := 62.0                        # sidewalk between curb and building
 
 func _build_world() -> void:
-	# night sky closing the far end of the canyon, behind the rooftops
-	_flat_prop("nightsky", Vector2(Tuning.PLATE.x, STREET_TOP - 60.0), bg, 1.0)
-	# cobbles, tiled — a flat fill reads as a grey rectangle; setts read as a
-	# street. Falls back to the asphalt tile if the night art is absent.
-	var street_tile := "cobble_tile" if Game.prop("cobble_tile") != null \
-		else "asphalt_tile"
-	_tiled(street_tile, Rect2(STREET_L, STREET_TOP,
-		STREET_R - STREET_L, STREET_BOT - STREET_TOP), Tuning.ASPHALT)
-	# sidewalks hugging each building line
-	_tiled("sidewalk_tile", Rect2(Tuning.WALL_L - WALK_W, STREET_TOP,
-		WALK_W, STREET_BOT - STREET_TOP), Tuning.ASPHALT.lightened(0.12))
-	_tiled("sidewalk_tile", Rect2(Tuning.WALL_R, STREET_TOP,
-		WALK_W, STREET_BOT - STREET_TOP), Tuning.ASPHALT.lightened(0.12))
-	# the buildings that make the canyon
-	_facade("facade_l", Rect2(STREET_L, STREET_TOP,
-		Tuning.WALL_L - WALK_W - STREET_L, STREET_BOT - STREET_TOP))
-	_facade("facade_r", Rect2(Tuning.WALL_R + WALK_W, STREET_TOP,
-		STREET_R - Tuning.WALL_R - WALK_W, STREET_BOT - STREET_TOP))
-	# curb line where sidewalk meets asphalt
-	for cx in [Tuning.WALL_L - WALK_W * 0.5, Tuning.WALL_R + WALK_W * 0.5]:
-		var curb := Line2D.new()
-		curb.points = PackedVector2Array([Vector2(cx, STREET_TOP), Vector2(cx, STREET_BOT)])
-		curb.width = 6.0
-		curb.default_color = Color(Tuning.INK, 0.45)
-		bg.add_child(curb)
-	# far rooftops closing the top of the street
-	_flat_prop("skyline", Vector2(Tuning.PLATE.x, STREET_TOP + 40.0), bg, 1.0,
-		Color(1, 1, 1, 0.85))
-	# Windows for the upper storeys. The facade art covers the lower wall with
-	# its own window rhythm, so these only fill in above where it reaches.
-	var win_tex: Texture2D = Game.prop("window")
-	var facade_top := STREET_BOT
-	var ftex: Texture2D = Game.prop("facade_l")
-	if ftex != null:
-		var fit := (Tuning.WALL_L - WALK_W - STREET_L) / (ftex.get_width() * Tuning.ART)
-		facade_top = STREET_BOT - ftex.get_height() * Tuning.ART * fit
-	for wy in [760.0, 1080.0, 1420.0, 1760.0, 2100.0, 2440.0]:
-		if wy > facade_top - 60.0:
+	# The street is baked in perspective by tools/art_backdrop.py through the
+	# same projection Tuning uses, so scenery and sprites share one vanishing
+	# point. Only things the game has to change at runtime stay live.
+	var key := "portrait" if Tuning.v_portrait else "landscape"
+	var path := "res://assets/bg/bg_%s.png" % key
+	if ResourceLoader.exists(path):
+		var back := Sprite2D.new()
+		back.texture = load(path)
+		back.centered = false
+		back.scale = Vector2(Tuning.ART, Tuning.ART)
+		bg.add_child(back)
+	# THE window, swapped to broken glass on the window home run
+	var wtex: Texture2D = Game.prop("window")
+	if wtex != null:
+		window_spr = Sprite2D.new()
+		window_spr.texture = wtex
+		var pr := Tuning.project(Tuning.WINDOW_POS, 520.0)
+		window_spr.position = Vector2(pr.x, pr.y)
+		window_spr.scale = Vector2.ONE * Tuning.sprite_scale(pr.z) * 1.3
+		window_spr.z_index = 10
+		bg.add_child(window_spr)
+	_chalk_lines()
+
+func _chalk_lines() -> void:
+	# Chalk is drawn live so it sits on top of the cobbles at the right depth.
+	_chalk_run(Tuning.PLATE, Vector2(Tuning.WALL_L, 2110))
+	_chalk_run(Tuning.PLATE, Vector2(Tuning.WALL_R, 2110))
+	var box := 120.0
+	for side in [-1.0, 1.0]:
+		var x: float = Tuning.PLATE.x + side * 150.0
+		_chalk_run(Vector2(x - box * 0.5, Tuning.PLATE.y + box),
+			Vector2(x - box * 0.5, Tuning.PLATE.y - box), 1.0)
+		_chalk_run(Vector2(x + box * 0.5, Tuning.PLATE.y + box),
+			Vector2(x + box * 0.5, Tuning.PLATE.y - box), 1.0)
+
+func _chalk_run(from: Vector2, to: Vector2, alpha := 0.72) -> void:
+	# A straight line in the world is still straight on screen, but its width
+	# has to taper with depth, so it is drawn as a run of short segments.
+	var steps := 26
+	for i in steps:
+		if i % 2 == 1:
 			continue
-		for wx in [Tuning.WALL_L - WALK_W - 120.0, Tuning.WALL_R + WALK_W + 120.0]:
-			if absf(wy - Tuning.WINDOW_POS.y) < 90.0 \
-					and absf(wx - Tuning.WINDOW_POS.x) < 160.0:
-				continue                     # leave room for THE window
-			var w := _spr(win_tex, Vector2(wx, wy), 1.0)
-			w.modulate = Color(1, 1, 1, 0.9)
-			bg.add_child(w)
-	# rooftop water tower and a lazy plume off the manhole
-	_flat_prop("watertower", Vector2(Tuning.WALL_R + 180.0, STREET_TOP + 150.0),
-		bg, 1.0, Color(1, 1, 1, 0.9))
-	_flat_prop("manhole_steam",
-		Vector2(Tuning.WALL_R + WALK_W * 0.5, 2180.0), bg, 1.0,
-		Color(1, 1, 1, 0.22))
-	# THE window — swapped to broken glass on the window HR
-	window_spr = _spr(win_tex, Tuning.WINDOW_POS, 1.25)
-	bg.add_child(window_spr)
-	# fire escapes
-	for fe_pos in [Tuning.FE_L, Tuning.FE_R]:
-		bg.add_child(_spr(Game.prop("fire_escape"), fe_pos, 1.0))
-	# flat street furniture painted onto the asphalt
-	bg.add_child(_spr(Game.prop("manhole"), Tuning.PLATE, 1.2))
-	for i in Tuning.SEWERS_Y.size():
-		bg.add_child(_spr(Game.prop("sewer"),
-			Vector2(Tuning.PLATE.x, Tuning.SEWERS_Y[i]), 1.0))
-		var num := Label.new()
-		num.text = str(i + 1)
-		num.add_theme_font_size_override("font_size", 44)
-		num.add_theme_color_override("font_color", Tuning.CHALK)
-		num.position = Vector2(Tuning.PLATE.x + 78, Tuning.SEWERS_Y[i] - 34)
-		num.rotation_degrees = -4.0
-		num.modulate = Color(1, 1, 1, 0.8)
-		bg.add_child(num)
-	_flat_prop("chalk_marks", Vector2(Tuning.WALL_L + 118.0, 1840.0), bg, 0.85,
-		Color(1, 1, 1, 0.42))
-	_flat_prop("gutter_grate", Vector2(Tuning.WALL_R + WALK_W * 0.5, 2300.0), bg, 1.0)
-	# chalk second base + foul lines
-	_chalk_square(Tuning.BASE_2, 66.0)
-	_dashed_chalk(Tuning.PLATE, Vector2(Tuning.WALL_L, 2110))
-	_dashed_chalk(Tuning.PLATE, Vector2(Tuning.WALL_R, 2110))
-	# standing props live on the stage so kids sort around them
-	_standing_prop("stoop", Tuning.BASE_1)
-	_standing_prop("hydrant", Tuning.BASE_3)
-	_standing_prop("model_t", Tuning.CAR_POS)
-	_standing_prop("lamp", Vector2(Tuning.WALL_L - WALK_W * 0.5, 1180))
-	_standing_prop("lamp", Vector2(Tuning.WALL_R + WALK_W * 0.5, 1980))
-	_standing_prop("trash", Vector2(Tuning.WALL_L - WALK_W * 0.6, 2020))
-	_standing_prop("crate", Vector2(Tuning.WALL_R + WALK_W * 0.7, 1620))
-	_standing_prop("awning", Vector2(Tuning.WALL_R + WALK_W + 150.0, 2260))
-	_standing_prop("pigeon", Vector2(Tuning.WALL_L + 120.0, 1320))
-	_standing_prop("pigeon", Vector2(Tuning.WALL_L + 166.0, 1352))
-	_build_laundry()
-	_build_spectators()
-	_build_night()
-
-# The block turns out to watch: kids perched along both kerbs, well outside
-# the walls so they never read as fielders.
-func _build_spectators() -> void:
-	var ids: Array = Game.roster.keys()
-	ids.sort()
-	var spots := [
-		Vector2(Tuning.WALL_L - WALK_W * 0.55, 1520.0),
-		Vector2(Tuning.WALL_L - WALK_W * 0.75, 1660.0),
-		Vector2(Tuning.WALL_L - WALK_W * 0.50, 2230.0),
-		Vector2(Tuning.WALL_R + WALK_W * 0.60, 1420.0),
-		Vector2(Tuning.WALL_R + WALK_W * 0.75, 1720.0),
-		Vector2(Tuning.WALL_R + WALK_W * 0.55, 2140.0),
-	]
-	for i in spots.size():
-		var k := Kid.new(String(ids[(i * 5 + 3) % ids.size()]))
-		k.position = spots[i]
-		k.scale = Vector2(0.72, 0.72)
-		k.modulate = Color(0.88, 0.90, 0.98)     # sunk into the shadow of the kerb
-		stage.add_child(k)
-		k.play("idle", 4.0 + 0.5 * i)
-		k.face(1.0 if spots[i].x < Tuning.PLATE.x else -1.0)
-
-# Gaslight. Everything goes to deep blue, then warm pools are added back
-# under the lamps and over the infield so the play stays readable.
-func _build_night() -> void:
-	if Game.prop("lightpool") == null:
-		return
-	var tint := CanvasModulate.new()
-	tint.color = NIGHT_TINT
-	add_child(tint)
-	# the infield keeps a broad, soft pool — gameplay must stay legible
-	_pool(Vector2(Tuning.PLATE.x, 2250.0), 8.0, Color(1, 1, 1, 0.52), "lightpool_soft")
-	_pool(Vector2(Tuning.PLATE.x, 1620.0), 7.5, Color(1, 1, 1, 0.30), "lightpool_soft")
-	# lamps throw the hot pools
-	_pool(Vector2(Tuning.WALL_L - WALK_W * 0.5, 1180.0), 3.6, Color(1, 1, 1, 0.70))
-	_pool(Vector2(Tuning.WALL_R + WALK_W * 0.5, 1980.0), 3.6, Color(1, 1, 1, 0.70))
-	# shopfronts spill onto the kerb
-	_pool(Vector2(Tuning.WALL_L - WALK_W, 2470.0), 2.6, Color(1, 1, 1, 0.46))
-	_pool(Vector2(Tuning.WALL_R + WALK_W, 2470.0), 2.6, Color(1, 1, 1, 0.46))
-
-func _pool(pos: Vector2, size_mul: float, mod: Color, art := "lightpool") -> void:
-	var tex: Texture2D = Game.prop(art)
-	if tex == null:
-		return
-	var s := _spr(tex, pos, size_mul)
-	s.modulate = mod
-	var mat := CanvasItemMaterial.new()
-	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
-	s.material = mat
-	bg.add_child(s)
+		var t0 := float(i) / steps
+		var t1 := float(i + 1) / steps
+		var a := from.lerp(to, t0)
+		var b := from.lerp(to, t1)
+		var pa := Tuning.project(a)
+		var pb := Tuning.project(b)
+		var seg := Line2D.new()
+		seg.points = PackedVector2Array([Vector2(pa.x, pa.y), Vector2(pb.x, pb.y)])
+		seg.width = maxf(1.0, 9.0 * pa.z * Tuning.v_xk * Tuning.ART)
+		seg.default_color = Color(Tuning.CHALK, alpha)
+		seg.z_index = 1
+		bg.add_child(seg)
 
 # -- prop helpers: art is authored at 2x, Tuning.ART puts it back in world scale
-func _spr(tex: Texture2D, pos: Vector2, mul := 1.0) -> Sprite2D:
+func _spr(tex: Texture2D, world: Vector2, mul := 1.0, height := 0.0) -> Sprite2D:
 	var s := Sprite2D.new()
 	s.texture = tex
-	s.position = pos
-	s.scale = Vector2(Tuning.ART, Tuning.ART) * mul
+	var pr := Tuning.project(world, height)
+	s.position = Vector2(pr.x, pr.y)
+	s.scale = Vector2.ONE * Tuning.sprite_scale(pr.z) * mul
+	s.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0))
 	return s
-
-func _flat_prop(prop_name: String, pos: Vector2, parent: Node2D, mul := 1.0,
-		mod := Color(1, 1, 1, 1)) -> void:
-	var tex: Texture2D = Game.prop(prop_name)
-	if tex == null:
-		return
-	var s := _spr(tex, pos, mul)
-	s.modulate = mod
-	parent.add_child(s)
-
-func _tiled(prop_name: String, area: Rect2, fallback: Color) -> void:
-	var tex: Texture2D = Game.prop(prop_name)
-	if tex == null:
-		var poly := Polygon2D.new()
-		poly.polygon = PackedVector2Array([area.position,
-			area.position + Vector2(area.size.x, 0), area.end,
-			area.position + Vector2(0, area.size.y)])
-		poly.color = fallback
-		bg.add_child(poly)
-		return
-	var s := Sprite2D.new()
-	s.texture = tex
-	s.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	s.region_enabled = true
-	s.region_rect = Rect2(Vector2.ZERO, area.size / Tuning.ART)
-	s.scale = Vector2(Tuning.ART, Tuning.ART)
-	s.position = area.position + area.size * 0.5
-	bg.add_child(s)
-
-func _facade(prop_name: String, area: Rect2) -> void:
-	# Brick fills the whole canyon wall; the facade — which carries a
-	# ground-floor shopfront — is placed once, sitting on the street. Tiling
-	# it would stack a grocer's window on every storey.
-	_tiled("brick_tile", area, Tuning.BRICKC)
-	var tex: Texture2D = Game.prop(prop_name)
-	if tex == null:
-		return
-	var fit := area.size.x / (tex.get_width() * Tuning.ART)
-	var s := Sprite2D.new()
-	s.texture = tex
-	s.scale = Vector2(Tuning.ART, Tuning.ART) * fit
-	s.position = Vector2(area.position.x + area.size.x * 0.5,
-		area.end.y - tex.get_height() * Tuning.ART * fit * 0.5)
-	bg.add_child(s)
-
-func _standing_prop(prop_name: String, pos: Vector2) -> void:
-	var tex: Texture2D = Game.prop(prop_name)
-	if tex == null:
-		return
-	var holder := Node2D.new()
-	holder.position = pos
-	var spr := _spr(tex, Vector2.ZERO, 1.0)
-	spr.offset = Vector2(0, -tex.get_size().y * 0.5)
-	holder.add_child(spr)
-	stage.add_child(holder)
-
-func _chalk_square(center: Vector2, side_len: float) -> void:
-	var half := side_len * 0.5
-	var sq := Line2D.new()
-	sq.points = PackedVector2Array([center + Vector2(-half, -half),
-		center + Vector2(half, -half), center + Vector2(half, half),
-		center + Vector2(-half, half)])
-	sq.closed = true
-	sq.width = 5.0
-	sq.default_color = Tuning.CHALK
-	bg.add_child(sq)
-
-func _dashed_chalk(from: Vector2, to: Vector2) -> void:
-	var total := from.distance_to(to)
-	var dir := (to - from).normalized()
-	var dash := 34.0
-	var gap := 26.0
-	var d := 0.0
-	while d < total:
-		var seg := Line2D.new()
-		var e := minf(d + dash, total)
-		seg.points = PackedVector2Array([from + dir * d, from + dir * e])
-		seg.width = 5.0
-		seg.default_color = Tuning.CHALK
-		bg.add_child(seg)
-		d += dash + gap
-
-func _build_laundry() -> void:
-	var holder := Node2D.new()
-	holder.position = Vector2(Tuning.PLATE.x, 2560)   # front of stage — drapes the frame
-	var span := 420.0
-	var sag := 42.0
-	var line := Line2D.new()
-	var pts := PackedVector2Array()
-	for i in 17:
-		var u := float(i) / 16.0
-		var x := -span + span * 2.0 * u
-		pts.append(Vector2(x, sag * sin(PI * u) - sag))
-	line.points = pts
-	line.width = 4.0
-	line.default_color = Color(Tuning.INK, 0.8)
-	holder.add_child(line)
-	var garments := ["shirt", "union", "dress", "shirt", "union"]
-	for i in garments.size():
-		var u := 0.14 + 0.18 * i
-		var x := -span + span * 2.0 * u
-		var tex: Texture2D = Game.prop(garments[i])
-		var g := _spr(tex, Vector2(x, sag * sin(PI * u) - sag
-			+ tex.get_size().y * Tuning.ART * 0.5 - 4.0), 1.0)
-		g.rotation_degrees = randf_range(-4.0, 4.0)
-		holder.add_child(g)
-	stage.add_child(holder)
 
 func _build_ball() -> void:
 	ball = Node2D.new()
 	ball_shadow = Sprite2D.new()
 	ball_shadow.texture = Game.prop("spaldeen")
 	ball_shadow.modulate = Color(0, 0, 0, 0.3)
-	ball_shadow.scale = Vector2(1.3, 0.55) * Tuning.ART
 	ball.add_child(ball_shadow)
 	ball_spr = Sprite2D.new()
 	ball_spr.texture = Game.prop("spaldeen")
-	ball_spr.scale = Vector2(BALL_SCALE, BALL_SCALE) * Tuning.ART
 	ball.add_child(ball_spr)
 	ball.visible = false
 	stage.add_child(ball)
 
+func _apply_ball() -> void:
+	var pr := Tuning.project(bw, bh)
+	ball.position = Vector2(pr.x, pr.y)
+	var sc := Tuning.sprite_scale(pr.z)
+	ball_spr.scale = Vector2(BALL_SCALE, BALL_SCALE) * sc
+	ball.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + 1
+	# the shadow stays on the ground, so it is projected without the height
+	var gr := Tuning.project(bw, 0.0)
+	ball_shadow.position = Vector2(gr.x, gr.y) - ball.position
+	ball_shadow.scale = Vector2(1.3, 0.55) * sc
+	ball_shadow.modulate = Color(0, 0, 0, clampf(0.34 - bh * 0.0002, 0.10, 0.34))
+
 # ---------------------------------------------------------------- kids on the field
 func _spawn_kid(id: String, pos: Vector2, kid_scale := 1.0) -> Kid:
 	var k := Kid.new(id)
-	k.position = pos
-	k.scale = Vector2(kid_scale, kid_scale)
+	k.wpos = pos
+	k.depth_mul = kid_scale
 	stage.add_child(k)
 	return k
 
@@ -570,7 +429,11 @@ func _setup_sides(force := false) -> void:
 		var lineup: Dictionary = core.positions[fs]
 		var i := 0
 		for pos_key in MatchCore.POS_LIST:
-			var k := _spawn_kid(lineup[pos_key], Tuning.FIELD_POS[pos_key], FIELDER_SCALE)
+			# The catcher crouches behind the camera in this view, so he is
+			# played but never drawn — rendering him fills the whole frame.
+			if pos_key == "C":
+				continue
+			var k := _spawn_kid(lineup[pos_key], Tuning.FIELD_POS[pos_key], 1.0)
 			k.play("idle", 6.0 + 0.4 * i)
 			fielders[pos_key] = k
 			i += 1
@@ -585,8 +448,9 @@ func _ensure_batter() -> void:
 	if batter_node != null and is_instance_valid(batter_node):
 		batter_node.queue_free()
 	batter_node = _spawn_kid(bid, BATTER_POS)
-	batter_node.rest_anim = "bat_stance"
-	batter_node.play("bat_stance", 4.0)
+	# the camera is over his shoulder, so the batter wears the back-view art
+	batter_node.rest_anim = "bat_back"
+	batter_node.play("bat_back", 4.0)
 
 func _sync_runners() -> void:
 	# core.bases is the truth; heal any drift before each pitch
@@ -602,7 +466,7 @@ func _sync_runners() -> void:
 			runner_nodes.erase(id)
 	for id in want:
 		if runner_nodes.has(id):
-			runner_nodes[id].position = want[id]
+			runner_nodes[id].wpos = want[id]
 			runner_nodes[id].play("idle", 6.0)
 		else:
 			var k := _spawn_kid(id, want[id])
@@ -695,8 +559,8 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 		_vis_commit_t = _cross_t + clampf(float(_plan["err_ms"]) / 1000.0,
 			-Tuning.SWING_EARLY, Tuning.SWING_LATE - 0.02)
 	ball.visible = true
-	ball.position = _pA
-	ball_spr.position = Vector2(0, -PITCH_ARC_H)
+	bw = _pA
+	bh = PITCH_ARC_H
 	_bt = 0.0
 	_ball_mode = "pitch"
 
@@ -716,7 +580,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	_vis_committed = true
 	_commit_err = (_bt - _cross_t) * 1000.0
 	if batter_node != null and is_instance_valid(batter_node):
-		batter_node.play("swing", 14.0, false)
+		batter_node.play("swing_back", 14.0, false)
 	hint_lbl.visible = false
 
 func _process(delta: float) -> void:
@@ -730,7 +594,7 @@ func _process_ball(delta: float) -> void:
 		if not _vis_committed and _vis_commit_t >= 0.0 and _bt >= _vis_commit_t:
 			_vis_committed = true
 			if batter_node != null and is_instance_valid(batter_node):
-				batter_node.play("swing", 14.0, false)
+				batter_node.play("swing_back", 14.0, false)
 		# batting hint while the window is open
 		if _human_bat:
 			hint_lbl.visible = not _committed \
@@ -738,36 +602,38 @@ func _process_ball(delta: float) -> void:
 		# ball along its timeline
 		if _bt < _ta:
 			var u := _bt / _ta
-			ball.position = _pA.lerp(_pB, u)
-			ball_spr.position.y = -(PITCH_ARC_H * (1.0 - u) + PITCH_ARC_BOB * sin(PI * u))
+			bw = _pA.lerp(_pB, u)
+			bh = PITCH_ARC_H * (1.0 - u) + PITCH_ARC_BOB * sin(PI * u)
 		elif _bt < _cross_t:
 			var u := (_bt - _ta) / _tb
-			ball.position = _pB.lerp(_pC, u)
-			ball_spr.position.y = -(_rest_h * PITCH_ARC_H * sin(PI * u))
+			bw = _pB.lerp(_pC, u)
+			bh = _rest_h * PITCH_ARC_H * sin(PI * u)
 		elif not _vis_committed:
 			var u := minf((_bt - _cross_t) / MITT_TIME, 1.0)
-			ball.position = _pC.lerp(_mitt, u)
-			ball_spr.position.y = -(PITCH_ARC_BOB * u)
+			bw = _pC.lerp(_mitt, u)
+			bh = PITCH_ARC_BOB * (1.0 - u)
+		_apply_ball()
 		# contact pending: ball holds at the plate until the window closes
 		if _bt >= _cross_t + Tuning.SWING_LATE:
 			_resolve_pitch()
 	elif _ball_mode == "hit":
 		_bt += delta
-		var pos := ball.position
+		var pos := bw
 		if _bt <= _h_dur:
 			var u := _bt / _h_dur
 			pos = _h_from.lerp(_h_land, u)
-			ball_spr.position.y = -_hit_height(u)
+			bh = _hit_height(u)
 		else:
 			var rt := _bt - _h_dur
 			if rt < _h_roll_t:
 				var ru := rt / _h_roll_t
 				var k := 1.0 - (1.0 - ru) * (1.0 - ru)
 				pos = _h_land + _h_roll_dir * _h_roll_px * k
-				ball_spr.position.y = -maxf(0.0, HIT_PEAK["ground"] * 0.3 * sin(PI * ru * 2.0) * (1.0 - ru))
+				bh = maxf(0.0, HIT_PEAK["ground"] * 0.3 * sin(PI * ru * 2.0) * (1.0 - ru))
 			else:
-				ball.position = _h_land + _h_roll_dir * _h_roll_px
-				ball_spr.position.y = 0.0
+				bw = _h_land + _h_roll_dir * _h_roll_px
+				bh = 0.0
+				_apply_ball()
 				_ball_mode = ""
 				_ball_flying = false
 				ball_done.emit()
@@ -779,9 +645,9 @@ func _process_ball(delta: float) -> void:
 				if _sewer_prev_y > sy and pos.y <= sy:
 					_fx_label(SEWER_TEXTS[i], Vector2(pos.x, sy))
 			_sewer_prev_y = pos.y
-			var target := clampf(pos.y - CAM_CHASE_LEAD, CAM_CHASE_MIN_Y, CAM_CHASE_MAX_Y)
-			cam.position.y = lerpf(cam.position.y, target, minf(1.0, CAM_CHASE_LERP * delta))
-		ball.position = pos
+			pass
+		bw = pos
+		_apply_ball()
 
 func _hit_height(u: float) -> float:
 	if _h_loft == "ground":
@@ -809,7 +675,7 @@ func _resolve_pitch() -> void:
 
 # ---------------------------------------------------------------- hit timeline
 func _launch_hit(play: Dictionary) -> void:
-	_h_from = ball.position
+	_h_from = bw
 	_h_carry = float(play["carry"])
 	_h_loft = String(play["loft"])
 	_h_window = bool(play["window"])
@@ -852,8 +718,8 @@ func _launch_hit(play: Dictionary) -> void:
 		_h_roll_px = HR_ROLL_PX
 		_h_roll_dir = Vector2(0, -1)
 	_sewer_prev_y = _h_from.y
-	if _h_carry > 0.5 and _cam_tw != null:
-		_cam_tw.kill()
+	if _h_carry > 0.5:
+		_view_punch(0.06, 0.7)
 	_bt = 0.0
 	_ball_flying = true
 	_ball_mode = "hit"
@@ -865,23 +731,23 @@ func _await_ball() -> void:
 func _ball_throw_to(target: Vector2, dur: float) -> void:
 	var tw := create_tween()
 	tw.set_parallel(true)
-	tw.tween_property(ball, "position", target, dur)
+	tw.tween_property(self, "bw", target, dur)
 	tw.tween_method(func(u: float) -> void:
-		ball_spr.position.y = -THROW_ARC_H * sin(PI * u), 0.0, 1.0, dur)
+		bh = THROW_ARC_H * sin(PI * u), 0.0, 1.0, dur)
 	await tw.finished
 
 func _ball_to_mitt() -> void:
 	var tw := create_tween()
-	tw.tween_property(ball, "position", _mitt, MITT_TIME)
+	tw.tween_property(self, "bw", _mitt, MITT_TIME)
 	# cosmetic — not awaited
 
 func _foul_pop() -> void:
 	var tw := create_tween()
 	tw.set_parallel(true)
-	tw.tween_property(ball, "position",
-		ball.position + Vector2(randf_range(-140.0, 140.0), 70.0), 0.35)
+	tw.tween_property(self, "bw",
+		bw + Vector2(randf_range(-140.0, 140.0), 70.0), 0.35)
 	tw.tween_method(func(u: float) -> void:
-		ball_spr.position.y = -90.0 * sin(PI * u), 0.0, 1.0, 0.35)
+		bh = 90.0 * sin(PI * u), 0.0, 1.0, 0.35)
 
 # ---------------------------------------------------------------- choreography
 func _choreo(ev: Dictionary) -> void:
@@ -1061,14 +927,14 @@ func _move_runner(m: Dictionary) -> float:
 	node.play("run", 11.0)
 	var tw := create_tween()
 	var legs := 0
-	var prev: Vector2 = node.position
+	var prev: Vector2 = node.wpos
 	for step in range(from_i + 1, to_i + 1):
 		var dest: Vector2 = _base_pos[mini(step, 3)]
 		var dx := dest.x - prev.x
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(node):
 				node.face(dx, RUN_LEAN))
-		tw.tween_property(node, "position", dest, RUN_LEG_T)
+		tw.tween_property(node, "wpos", dest, RUN_LEG_T)
 		prev = dest
 		legs += 1
 	var total := legs * RUN_LEG_T
@@ -1104,7 +970,7 @@ func _lean_runners() -> void:
 		node.play("run", 9.0)
 		var toward: Vector2 = _base_pos[i].lerp(_base_pos[mini(i + 1, 3)], 0.3)
 		var tw := create_tween()
-		tw.tween_property(node, "position", toward, 0.3)
+		tw.tween_property(node, "wpos", toward, 0.3)
 
 func _retreat_runners(moved_ids: Array) -> void:
 	for id in runner_nodes.keys():
@@ -1118,7 +984,7 @@ func _retreat_runners(moved_ids: Array) -> void:
 			continue
 		node.play("run", 9.0)
 		var tw := create_tween()
-		tw.tween_property(node, "position", _base_pos[i], 0.25)
+		tw.tween_property(node, "wpos", _base_pos[i], 0.25)
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(node):
 				node.play("idle", 6.0))
@@ -1130,7 +996,7 @@ func _batter_jog(frac: float) -> void:
 	batter_node.play("run", 11.0)
 	batter_node.face(Tuning.BASE_1.x - BATTER_POS.x, RUN_LEAN)
 	var tw := create_tween()
-	tw.tween_property(batter_node, "position",
+	tw.tween_property(batter_node, "wpos",
 		BATTER_POS.lerp(Tuning.BASE_1, frac), 0.32)
 
 func _batter_out_at_first() -> void:
@@ -1139,7 +1005,7 @@ func _batter_out_at_first() -> void:
 	var node := batter_node
 	batter_node = null
 	var tw := create_tween()
-	tw.tween_property(node, "position", Tuning.BASE_1, 0.16)
+	tw.tween_property(node, "wpos", Tuning.BASE_1, 0.16)
 	tw.tween_callback(func() -> void:
 		if is_instance_valid(node):
 			node.play("slide", 10.0, false))
@@ -1164,12 +1030,12 @@ func _fielder_chase(fpos: String) -> void:
 	var k: Kid = fielders.get(fpos)
 	if k == null or not is_instance_valid(k):
 		return
-	var to := _h_land + (k.position - _h_land).normalized() * 26.0
-	var dur := clampf(k.position.distance_to(to) / 650.0, 0.2, 0.6)
+	var to := _h_land + (k.wpos - _h_land).normalized() * 26.0
+	var dur := clampf(k.wpos.distance_to(to) / 650.0, 0.2, 0.6)
 	k.play("run", 11.0)
-	k.face(to.x - k.position.x, RUN_LEAN)
+	k.face(to.x - k.wpos.x, RUN_LEAN)
 	var tw := create_tween()
-	tw.tween_property(k, "position", to, dur)
+	tw.tween_property(k, "wpos", to, dur)
 	tw.tween_callback(func() -> void:
 		if is_instance_valid(k):
 			k.face(0.0, 0.0)
@@ -1196,19 +1062,19 @@ func _return_fielders() -> void:
 		if not is_instance_valid(k):
 			continue
 		var home: Vector2 = Tuning.FIELD_POS[pos_key]
-		if k.position.distance_to(home) < 6.0:
+		if k.wpos.distance_to(home) < 6.0:
 			continue
 		k.play("run", 10.0)
-		k.face(home.x - k.position.x, RUN_LEAN)
+		k.face(home.x - k.wpos.x, RUN_LEAN)
 		var tw := create_tween()
-		tw.tween_property(k, "position", home, 0.4)
+		tw.tween_property(k, "wpos", home, 0.4)
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(k):
 				k.face(0.0, 0.0)
 				k.play("idle", 6.0))
 
 func _catcher_take() -> void:
-	_fielder_catch("C")
+	pass                                  # the catcher is off-camera here
 
 func _scatter_fielders() -> void:
 	for pos_key in fielders:
@@ -1218,8 +1084,8 @@ func _scatter_fielders() -> void:
 		var dash := Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)).normalized() * SCATTER_PX
 		k.play("run", 12.0)
 		var tw := create_tween()
-		tw.tween_property(k, "position", k.position + dash, 0.12)
-		tw.tween_property(k, "position", k.position, 0.28)
+		tw.tween_property(k, "wpos", k.wpos + dash, 0.12)
+		tw.tween_property(k, "wpos", k.wpos, 0.28)
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(k):
 				k.play("idle", 6.0))
@@ -1248,29 +1114,29 @@ func _cheese_beat(cheese_len: float) -> void:
 	ticker(Announcer.line("cheese"))
 	var cop := Kid.new("cop")
 	cop.rest_anim = "walk"
-	cop.position = Vector2(Tuning.WALL_L - 120.0, 1800.0)
+	cop.wpos = Vector2(Tuning.WALL_L - 120.0, 1800.0)
 	stage.add_child(cop)
 	cop.play("walk", 7.0)
 	cop.face(1.0, 0.0)
 	var cop_tw := create_tween()
-	cop_tw.tween_property(cop, "position",
+	cop_tw.tween_property(cop, "wpos",
 		Vector2(Tuning.WALL_R + 120.0, 1800.0), cheese_len + 0.8)
 	cop_tw.tween_callback(func() -> void:
 		if is_instance_valid(cop):
 			cop.queue_free())
 	for k0 in _field_kids():
 		var k: Kid = k0
-		var here := k.position
+		var here := k.wpos
 		var wall_x := Tuning.WALL_L + 70.0 if here.x < Tuning.PLATE.x else Tuning.WALL_R - 70.0
 		k.play("run", 12.0)
 		k.face(wall_x - here.x, RUN_LEAN)
 		var tw := create_tween()
-		tw.tween_property(k, "position", Vector2(wall_x, here.y), cheese_len * 0.45)
+		tw.tween_property(k, "wpos", Vector2(wall_x, here.y), cheese_len * 0.45)
 		tw.tween_interval(cheese_len * 0.1)
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(k):
 				k.face(here.x - wall_x, RUN_LEAN))
-		tw.tween_property(k, "position", here, cheese_len * 0.45)
+		tw.tween_property(k, "wpos", here, cheese_len * 0.45)
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(k):
 				k.face(0.0, 0.0)
@@ -1333,10 +1199,7 @@ func _card(text: String, sub := "", hold := 0.9, slam := false) -> void:
 	_card_busy = false
 
 func _cam_home() -> void:
-	if _cam_tw != null:
-		_cam_tw.kill()
-	_cam_tw = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_cam_tw.tween_property(cam, "position", _cam_default(), CAM_HOME_T)
+	_view_punch(0.0, CAM_HOME_T)
 
 func _fx_label(text: String, world_pos: Vector2) -> void:
 	var lbl := Label.new()
@@ -1346,7 +1209,11 @@ func _fx_label(text: String, world_pos: Vector2) -> void:
 	lbl.add_theme_color_override("font_shadow_color", Color(Tuning.INK, 0.8))
 	lbl.add_theme_constant_override("shadow_offset_x", 3)
 	lbl.add_theme_constant_override("shadow_offset_y", 3)
-	lbl.position = world_pos + Vector2(-120.0, -20.0)
+	var pr := Tuning.project(world_pos, 120.0)
+	var sc: float = clampf(pr.z * Tuning.v_xk * 0.5, 0.30, 1.30)
+	lbl.scale = Vector2(sc, sc)
+	lbl.position = Vector2(pr.x - 120.0 * sc, pr.y)
+	lbl.z_index = 3000
 	fx.add_child(lbl)
 	var tw := create_tween()
 	tw.set_parallel(true)

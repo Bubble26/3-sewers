@@ -48,7 +48,7 @@ ORDER = ["mabel", "ezra", "patsy", "sadie", "nellie", "sal",
 STOCK = (233, 216, 181)            # aged pasteboard — warm, not grey
 STOCK_L = (245, 233, 205)
 STOCK_D = (206, 186, 148)
-RULE = (104, 76, 50)               # worn brown printing ink for the rules
+RULE = (92, 66, 42)                # worn brown printing ink for the rules
 INK2 = A.INK_SOFT
 # The second printing plate. A real candy-store series ran one brown key
 # plate and rotated a spot colour; the order is hand-set so that no two cards
@@ -59,8 +59,22 @@ ACCENTS = [
     A.CLOTH["navy"], A.CLOTH["plum"], A.CLOTH["moss"], A.RUST,
     A.CLOTH["steel"], A.CLOTH["chocolate"], A.PATINA, A.CLOTH["plum"],
 ]
-PLATE = (196, 180, 150)            # photographic plate ground (warm sepia grey)
-PLATE_D = (132, 116, 92)
+PLATE = (198, 182, 150)            # photographic plate ground (warm sepia grey)
+PLATE_D = (122, 98, 70)            # the studio backdrop falling off into shade
+SEPIA = (150, 116, 76)             # the tone the whole plate is printed in
+
+# ---- portrait panel geometry (card pixels) --------------------------------
+# The panel is an arched window; inside it the bust is vignetted into a
+# portrait-shaped cameo, the way a 1920s studio photograph was printed.
+PAN = (66, 74, 534, 438)           # x0, y0, x1, y1
+PAN_RISE = 132
+CAMEO_RX = 0.350                   # oval half-width as a fraction of panel W
+CAMEO_RY = 0.560                   # oval half-height as a fraction of panel H
+CAMEO_CY = 0.420                   # oval centre, fraction of panel H
+CAMEO_FEATHER = 0.062              # dissolve width, fraction of panel H
+EYE_Y_MIN = 0.475                  # the eye line may sit anywhere in this band
+EYE_Y_MAX = 0.560
+EYE_IO = 0.325                     # inter-ocular distance / cameo oval width
 
 
 # ---------------------------------------------------------------- type
@@ -184,9 +198,14 @@ def _placeholder_portrait(kid_id, size):
     ``art_cards.py`` is runnable on its own.
     """
     if isinstance(size, (tuple, list)):
-        w, h = int(size[0]), int(size[1])
+        req = (int(size[0]), int(size[1]))
     else:
-        w = h = int(size)
+        req = (int(size), int(size))
+    # Draw at a bounded size and scale up. The card asks for a bust roughly a
+    # thousand pixels wide, and a supersampled canvas that big is minutes of
+    # silhouette dilation for art that exists only until the real one lands.
+    k = min(1.0, 384.0 / max(1, max(req)))
+    w, h = max(1, int(req[0] * k)), max(1, int(req[1] * k))
     look = _PLACEHOLDER_LOOK.get(kid_id, _PLACEHOLDER_LOOK["mabel"])
     skin = A.SKIN[look[0]]
     hair = A.HAIR[look[1]]
@@ -305,8 +324,11 @@ def _placeholder_portrait(kid_id, size):
             c.circle(fx, fy, 0.9 * u, fill=A.shade(skin, 0.70))
     # a low cel strength: at bust scale the kernel's wedge is a hard diagonal
     # across the whole image, so the form shading carries the volume instead
-    return A.finish(c, ink=3, light=True, light_strength=0.22, rim=True,
-                    grain_amt=0)
+    img = A.finish(c, ink=3, light=True, light_strength=0.22, rim=True,
+                   grain_amt=0)
+    if (img.width, img.height) != req:
+        img = img.resize(req, Image.LANCZOS)
+    return img
 
 
 # skin, hair, cloth, hat, mouth, freckles
@@ -326,12 +348,12 @@ _PLACEHOLDER_LOOK = {
 }
 
 
-def _call_portrait(portrait_fn, kid_id, w, h):
+def _call_portrait(portrait_fn, kid_id, side):
     """Ask the caller for a portrait; tolerate int-or-tuple size conventions."""
     if portrait_fn is None:
         portrait_fn = _placeholder_portrait
     img = None
-    for arg in ((w, h), max(w, h)):
+    for arg in (side, (side, side)):
         try:
             img = portrait_fn(kid_id, arg)
             if img is not None:
@@ -339,16 +361,146 @@ def _call_portrait(portrait_fn, kid_id, w, h):
         except Exception:
             img = None
     if img is None:
-        img = _placeholder_portrait(kid_id, (w, h))
-    img = img.convert("RGBA")
-    # contain inside the requested box, bottom-anchored (busts sit low)
-    s = min(w / img.width, h / img.height)
-    if abs(s - 1.0) > 0.01:
-        img = img.resize((max(1, int(round(img.width * s))),
-                          max(1, int(round(img.height * s)))), Image.LANCZOS)
-    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    out.alpha_composite(img, ((w - img.width) // 2, h - img.height))
+        img = _placeholder_portrait(kid_id, side)
+    return img.convert("RGBA")
+
+
+# ---------------------------------------------------------------- framing
+# Twelve kids drawn by another hand arrive at twelve different head sizes and
+# head heights, because their body types differ. A card series cannot have
+# that: the whole point of a series is that the frame is a constant and only
+# the face inside it changes. So the bust is registered on the one landmark
+# every portrait shares — the pair of white eyes.
+def _blobs(mask, w, h):
+    """Connected components of a 1-bit mask (small images only, no numpy)."""
+    px = mask.load()
+    seen = bytearray(w * h)
+    out = []
+    for y in range(h):
+        for x in range(w):
+            if not px[x, y] or seen[y * w + x]:
+                continue
+            stack = [(x, y)]
+            seen[y * w + x] = 1
+            sx = sy = n = 0
+            x0 = x1 = x
+            y0 = y1 = y
+            while stack:
+                cx, cy = stack.pop()
+                sx += cx
+                sy += cy
+                n += 1
+                if cx < x0: x0 = cx
+                if cx > x1: x1 = cx
+                if cy < y0: y0 = cy
+                if cy > y1: y1 = cy
+                for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                    if 0 <= nx < w and 0 <= ny < h and px[nx, ny] \
+                            and not seen[ny * w + nx]:
+                        seen[ny * w + nx] = 1
+                        stack.append((nx, ny))
+            out.append((n, sx / n, sy / n, x1 - x0 + 1, y1 - y0 + 1))
     return out
+
+
+def _eye_anchor(img):
+    """(cx, cy, inter-ocular) in source pixels, found from the white sclera.
+
+    Falls back to a sane guess if a portrait has no visible eye whites, so an
+    unexpected portrait style degrades to "roughly centred" instead of blowing
+    up the build.
+    """
+    n = 150
+    small = img.resize((n, n), Image.LANCZOS).convert("RGBA")
+    p = small.load()
+    m = Image.new("1", (n, n), 0)
+    mp = m.load()
+    for y in range(n):
+        for x in range(n):
+            r, g, b, a = p[x, y]
+            # eye whites are CHALK: bright, warm-neutral, never a colour cast
+            if a > 200 and r > 228 and g > 222 and b > 194 and abs(r - b) < 52:
+                mp[x, y] = 1
+    cand = [c for c in _blobs(m, n, n)
+            if 6 <= c[0] <= 520 and 0.16 * n < c[2] < 0.66 * n
+            and c[3] <= c[4] * 2.3]          # eyes are round; teeth are wide
+    best = None
+    for i in range(len(cand)):
+        for j in range(i + 1, len(cand)):
+            a_, b_ = cand[i], cand[j]
+            dy = abs(a_[2] - b_[2])
+            dx = abs(a_[1] - b_[1])
+            if dy > 0.045 * n or not (0.07 * n < dx < 0.36 * n):
+                continue
+            score = a_[0] + b_[0] - dy * 22   # level, and the biggest pair
+            if best is None or score > best[0]:
+                best = (score, a_, b_)
+    s = img.width / float(n)
+    if best is None:
+        return img.width * 0.5, img.height * 0.46, img.width * 0.20
+    _, a_, b_ = best
+    return ((a_[1] + b_[1]) * 0.5 * s, (a_[2] + b_[2]) * 0.5 * s,
+            abs(a_[1] - b_[1]) * s)
+
+
+def _bust(portrait_fn, kid_id, pw, ph, ss):
+    """The registered, vignetted bust, as a panel-sized RGBA layer.
+
+    Returns the layer at ``(pw*ss, ph*ss)``. The bust is scaled so the eye
+    line and inter-ocular width are the same on every card — but only mostly:
+    the measured size is pulled toward the series mean with an exponent, so
+    Vito still reads as a bigger kid than Pearl.
+    """
+    W, H = int(pw * ss), int(ph * ss)
+    # Ask for roughly the size the bust will actually occupy. Asking for more
+    # buys nothing — a portrait_fn that renders small and upscales gives back
+    # the same detail either way — and costs a lot if the callee draws at the
+    # size it is handed.
+    src = _call_portrait(portrait_fn, kid_id, min(1100, max(512, int(W * 0.62))))
+    ex, ey, io = _eye_anchor(src)
+    io = max(io, src.width * 0.04)
+    ovw = 2.0 * CAMEO_RX * W
+    scale = (ovw * EYE_IO * ((io / src.width) / 0.208) ** 0.45) / io
+    bust = src.resize((max(1, int(src.width * scale)),
+                       max(1, int(src.height * scale))), Image.LANCZOS)
+    if scale > 1.6:
+        # The bust arrives well under the size the card shows it at, so its
+        # ink line lands as a soft grey band next to type that is razor sharp.
+        # Put the edge back without touching the flat cel fills.
+        bust = bust.filter(ImageFilter.UnsharpMask(radius=int(2 * ss),
+                                                   percent=70, threshold=4))
+
+    # Hang the bust from the crown, not the eye line. Caps and cloches are
+    # tall and they are what hits the arch first; a kid whose hat is already
+    # clipped in the source must not then be pushed further up. The eye line
+    # is still held inside a band so nobody's chin lands on the card's name.
+    bb = bust.getchannel("A").point(lambda v: 255 if v > 24 else 0).getbbox()
+    top = bb[1] if bb else 0
+    oy = H * 0.045 - top
+    eyc = (ey * scale + oy) / float(H)
+    if eyc < EYE_Y_MIN:
+        oy += (EYE_Y_MIN - eyc) * H
+    elif eyc > EYE_Y_MAX:
+        oy += (EYE_Y_MAX - eyc) * H
+
+    lay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    lay.alpha_composite(bust, (int(W * 0.5 - ex * scale), int(oy)))
+    # a whisper of sepia — enough to read as one printing, not enough to make
+    # twelve kids the same colour
+    tint = Image.new("RGBA", (W, H), SEPIA + (0,))
+    tint.putalpha(lay.getchannel("A").point(lambda v: int(v * 0.07)))
+    lay.alpha_composite(tint)
+
+    # the cameo: the bust dissolves into the backdrop below the collar, which
+    # is both how a 1920s vignette was printed and how a standing pose's arms
+    # stop looking like arms cropped off at the elbow
+    cam = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(cam).ellipse(
+        [W * (0.5 - CAMEO_RX), H * (CAMEO_CY - CAMEO_RY),
+         W * (0.5 + CAMEO_RX), H * (CAMEO_CY + CAMEO_RY)], fill=255)
+    cam = cam.filter(ImageFilter.GaussianBlur(H * CAMEO_FEATHER))
+    lay.putalpha(ImageChops.multiply(lay.getchannel("A"), cam))
+    return lay
 
 
 # ---------------------------------------------------------------- the card
@@ -372,37 +524,52 @@ def _stat_cell(c, cx, top, label, value, rnd):
             c.circle(px - r * 0.12, py - r * 0.12, r * 0.55, fill=STOCK_L)
 
 
-def _ribbon(c, box, text, band):
+RIB_TAIL = 46
+
+
+def _ribbon_band(c, box, band):
+    """The quirk ribbon's colour — spot plate only, no type."""
     x0, y0, x1, y1 = box
     mid = (y0 + y1) * 0.5
-    tail = 46
-    # tails (behind, darker stock)
     band_d = A.shade(band, 0.70)
-    for sx, ex in ((x0, x0 + tail + 6), (x1, x1 - tail - 6)):
+    for sx, ex in ((x0, x0 + RIB_TAIL + 6), (x1, x1 - RIB_TAIL - 6)):
         d = 1 if ex > sx else -1
         c.poly([(sx, y0 + 7), (ex, y0 - 3), (ex, y1 + 3), (sx, y1 - 7),
                 (sx + d * 17, mid)], fill=band_d)
-    bx0, bx1 = x0 + tail, x1 - tail
+    bx0, bx1 = x0 + RIB_TAIL, x1 - RIB_TAIL
     c.poly([(bx0, y0 - 3), (bx1, y0 - 3), (bx1, y1 + 3), (bx0, y1 + 3)], fill=band)
     # top light band so the ribbon has a form, not a flat fill
     c.poly([(bx0, y0 - 3), (bx1, y0 - 3), (bx1, y0 + 9), (bx0, y0 + 9)],
            fill=A.shade(band, 1.14))
+
+
+def _ribbon_text(c, box, text):
+    """The quirk name — key plate."""
+    x0, y0, x1, y1 = box
+    bx0, bx1 = x0 + RIB_TAIL, x1 - RIB_TAIL
     size, tr = fit_spaced(c, text.upper(), "serif_bold", 27, 4.0, bx1 - bx0 - 34)
-    cspaced(c, ((bx0 + bx1) / 2, mid + 2), text.upper(), "serif_bold", size,
-            A.shade(A.CHALK, 0.99), tr)
+    cspaced(c, ((bx0 + bx1) / 2, (y0 + y1) * 0.5 + 2), text.upper(),
+            "serif_bold", size, A.shade(A.CHALK, 0.99), tr)
 
 
 def draw_card(kid_id, info, number, portrait_fn):
     rnd = random.Random(sum(ord(ch) * (i + 7) for i, ch in enumerate(kid_id)))
     W, H = CARD_W, CARD_H
     c = A.Canvas(W, H)
+    # The spot-colour plate is drawn on its own canvas and laid down a hair
+    # out of register, the way a two-pass candy-store press actually ran. It
+    # is the cheapest honest signal that this is a printed thing: the ribbon's
+    # colour sits a half-pixel off its own lettering.
+    spot = c.overlay()
     accent = ACCENTS[(number - 1) % len(ACCENTS)]
     # every sheet came off the press a slightly different shade of buff
     stock_c = A.mix(A.shade(STOCK, rnd.uniform(0.975, 1.02)),
                     (214, 190, 152), rnd.uniform(0.0, 0.18))
 
     # ---- pasteboard stock -------------------------------------------
-    pad, rad = 6, 22
+    # 14px at 2x is ~7px at world size: a guillotined corner that has been
+    # thumbed for ninety years, not a UI panel's radius.
+    pad, rad = 5, 14
     clip = Image.new("L", c.img.size, 0)
     ImageDraw.Draw(clip).rounded_rectangle(
         [pad * SS, pad * SS, (W - pad) * SS, (H - pad) * SS],
@@ -415,64 +582,63 @@ def draw_card(kid_id, info, number, portrait_fn):
     c.img.putalpha(ImageChops.multiply(c.img.getchannel("A"), clip))
 
     # ---- printed rules ----------------------------------------------
-    c.rrect([21, 21, W - 21, H - 21], 12, outline=RULE, width=3)
-    c.rrect([30, 30, W - 30, H - 30], 7, outline=A.mix(RULE, stock_c, 0.50),
+    c.rrect([20, 20, W - 20, H - 20], 8, outline=RULE, width=3.5)
+    c.rrect([29, 29, W - 29, H - 29], 5, outline=A.mix(RULE, stock_c, 0.50),
             width=1.5)
 
     # ---- series mark -------------------------------------------------
-    sy = 55
+    sy = 52
     cspaced(c, (W / 2, sy), "SANDLOT STARS", "serif_bold", 22, RULE, 6.5)
     smw = spaced_w(c, "SANDLOT STARS", "serif_bold", 22, 6.5)
     flo = A.mix(accent, A.INK, 0.18)
     for sgn in (-1, 1):
         x = W / 2 + sgn * (smw / 2 + 16)
-        c.line([(x, sy), (x + sgn * 34, sy)], flo, 2)
+        spot.line([(x, sy), (x + sgn * 34, sy)], flo, 2)
         lx = x + sgn * 43
-        c.poly([(lx - sgn * 8, sy), (lx, sy - 5), (lx + sgn * 8, sy),
-                (lx, sy + 5)], fill=flo)
+        spot.poly([(lx - sgn * 8, sy), (lx, sy - 5), (lx + sgn * 8, sy),
+                   (lx, sy + 5)], fill=flo)
 
     # ---- portrait plate ----------------------------------------------
-    px0, py0, px1, py1 = 74, 84, W - 74, 430
-    rise = 112
+    px0, py0, px1, py1 = PAN
+    rise = PAN_RISE
+    pw, ph = (px1 - px0), (py1 - py0)
     # ink frame: the arch, grown
     arch_path(c.d, (px0 - 6, py0 - 6, px1 + 6, py1 + 6), rise + 6, SS, A.INK)
 
+    # The backdrop is printed in the card's own spot colour. This is what the
+    # second plate was FOR: one pass of brown key ink and one of colour, so
+    # the photograph's ground, the ribbon and the stat header all come off the
+    # same stone. It is also the only colour event in the top half of the card.
+    ground = A.mix(PLATE_D, accent, 0.62)
     plate = A.Canvas(W, H)
-    pw, ph = (px1 - px0), (py1 - py0)
-    plate.img.alpha_composite(pulp(pw, ph, PLATE, rnd, SS, spread=0.03,
+    plate.img.alpha_composite(pulp(pw, ph, ground, rnd, SS, spread=0.03,
                                    n=200, blur=7),
                               (px0 * SS, py0 * SS))
-    # studio backdrop: light pool behind the head, corners falling off
-    pcx, pcy = (px0 + px1) / 2, py0 + 132
-    for i in range(22):
-        t = i / 21.0
-        r = 300 - i * 11
-        plate.ellipse([pcx - r, pcy - r * 0.86, pcx + r, pcy + r * 0.86],
-                      fill=A.mix(PLATE, A.mix(A.PAPER, A.CHALK, 0.5), t * 0.75))
-    # the backdrop cloth meets the floor low in the frame
-    plate.rect([px0, py1 - 62, px1, py1], fill=A.mix(PLATE, PLATE_D, 0.62))
-    plate.ellipse([px0 - 30, py1 - 96, px1 + 30, py1 - 30],
-                  fill=A.mix(PLATE, PLATE_D, 0.62))
-    plate.ellipse([px0 + 52, py1 - 74, px1 - 52, py1 + 40],
-                  fill=A.mix(PLATE_D, A.INK, 0.34))
-
-    por = _call_portrait(portrait_fn, kid_id, int(pw * 2), int(ph * 2))
-    por = por.resize((pw * SS, ph * SS), Image.LANCZOS)
-    plate.img.alpha_composite(por, (px0 * SS, py0 * SS))
+    # studio backdrop: a pool of light behind the head, falling off to the
+    # shaded corners of the backdrop cloth
+    pcx, pcy = (px0 + px1) / 2, py0 + ph * 0.46
+    lit = A.mix(PLATE, A.CHALK, 0.58)
+    for i in range(34):
+        t = i / 33.0
+        r = pw * 0.46 * (1.0 - t * 0.90)
+        plate.ellipse([pcx - r, pcy - r * 0.92, pcx + r, pcy + r * 0.92],
+                      fill=A.mix(ground, lit, t ** 0.62))
+    pimg = plate.img.filter(ImageFilter.GaussianBlur(pw * SS * 0.055))
+    pimg.alpha_composite(_bust(portrait_fn, kid_id, pw, ph, SS),
+                         (px0 * SS, py0 * SS))
 
     mask = Image.new("L", c.img.size, 0)
     arch_path(ImageDraw.Draw(mask), (px0, py0, px1, py1), rise, SS, 255)
-    pimg = plate.img
     pimg.putalpha(ImageChops.multiply(pimg.getchannel("A"), mask))
     # vignette the plate like an old photograph — corners only
     vig = Image.new("L", c.img.size, 0)
     ImageDraw.Draw(vig).ellipse(
-        [(px0 - 26) * SS, (py0 - 40) * SS, (px1 + 26) * SS, (py1 + 40) * SS],
+        [(px0 - 18) * SS, (py0 - 30) * SS, (px1 + 18) * SS, (py1 + 30) * SS],
         fill=255)
-    vig = vig.filter(ImageFilter.GaussianBlur(22 * SS / 4))
-    vg = Image.new("RGBA", c.img.size, (58, 44, 30, 0))
+    vig = vig.filter(ImageFilter.GaussianBlur(pw * SS * 0.10))
+    vg = Image.new("RGBA", c.img.size, (52, 38, 24, 0))
     vg.putalpha(ImageChops.multiply(
-        vig.point(lambda v: int((255 - v) * 0.60)), pimg.getchannel("A")))
+        vig.point(lambda v: int((255 - v) * 0.20)), pimg.getchannel("A")))
     pimg.alpha_composite(vg)
     c.img.alpha_composite(pimg)
 
@@ -483,34 +649,41 @@ def draw_card(kid_id, info, number, portrait_fn):
     # ---- name ---------------------------------------------------------
     parts = info["name"].split()
     given, surname = parts[0], " ".join(parts[1:]) if len(parts) > 1 else ""
-    cspaced(c, (W / 2, 460), given.upper(), "serif_bold", 23, RULE, 5.5)
+    cspaced(c, (W / 2, 470), given.upper(), "serif_bold", 23, RULE, 5.5)
     if surname:
         size, tr = fit_spaced(c, surname.upper(), "serif_bold", 50, 4.0, 466, 26)
-        cspaced(c, (W / 2, 497), surname.upper(), "serif_bold", size, A.INK, tr)
-    c.line([(W / 2 - 116, 522), (W / 2 + 116, 522)],
+        cspaced(c, (W / 2, 508), surname.upper(), "serif_bold", size, A.INK, tr)
+    c.line([(W / 2 - 116, 534), (W / 2 + 116, 534)],
            A.mix(RULE, stock_c, 0.42), 1.6)
     for sgn in (-1, 1):
-        c.circle(W / 2 + sgn * 126, 522, 2.6, fill=A.mix(accent, A.INK, 0.18))
+        spot.circle(W / 2 + sgn * 126, 534, 2.6, fill=A.mix(accent, A.INK, 0.18))
 
     # ---- archetype ----------------------------------------------------
     arch_txt = info["arch"]
     asz = 24
     while text_w(c, arch_txt, "italic", asz) > 462 and asz > 15:
         asz -= 1
-    ctext(c, (W / 2, 545), arch_txt, "italic", asz, A.shade(RULE, 1.10))
+    ctext(c, (W / 2, 558), arch_txt, "italic", asz, A.shade(RULE, 1.10))
 
     # ---- quirk ribbon --------------------------------------------------
-    _ribbon(c, (42, 572, W - 42, 618), info["qname"], accent)
+    rib = (42, 584, W - 42, 630)
+    _ribbon_band(spot, rib, accent)
     qd = info["qdesc"]
     qsz = 20
     while text_w(c, qd, "italic", qsz) > 456 and qsz > 13:
         qsz -= 1
-    ctext(c, (W / 2, 643), qd, "italic", qsz, A.shade(INK2, 1.06))
+    ctext(c, (W / 2, 655), qd, "italic", qsz, A.shade(INK2, 1.06))
 
     # ---- stat block ----------------------------------------------------
-    sx0, sy0, sx1, sy1 = 50, 664, W - 50, 786
+    sx0, sy0, sx1, sy1 = 50, 672, W - 50, 792
     c.rect([sx0, sy0, sx1, sy1], fill=A.shade(stock_c, 0.965))
-    c.rect([sx0, sy0, sx1, sy0 + 26], fill=accent)
+    spot.rect([sx0, sy0, sx1, sy0 + 26], fill=accent)
+
+    # ---- the colour pass goes down here, a hair out of register ---------
+    ox, oy = rnd.choice(((2, -1), (-2, 1), (1, 2), (-1, -2), (2, 1), (-2, -1)))
+    c.img.alpha_composite(ImageChops.offset(spot.img, ox * SS, oy * SS))
+    _ribbon_text(c, rib, info["qname"])
+
     c.rect([sx0, sy0, sx1, sy1], outline=RULE, width=2)
     c.line([(sx0, sy0 + 26), (sx1, sy0 + 26)], RULE, 1.6)
     cw = (sx1 - sx0) / 5.0
@@ -525,7 +698,7 @@ def draw_card(kid_id, info, number, portrait_fn):
             A.mix(RULE, stock_c, 0.18), 4.5)
 
     # ---- card number, printed on a spaldeen roundel ---------------------
-    nx, ny, nr = W - 74, 57, 26
+    nx, ny, nr = W - 72, 54, 26
     c.sphere(nx, ny, nr, A.PINK, A.shade(A.PINK, 0.74), 0.24)
     c.circle(nx - nr * 0.34, ny - nr * 0.38, nr * 0.26,
              fill=A.mix(A.PINK_L, A.CHALK, 0.5))
@@ -535,7 +708,7 @@ def draw_card(kid_id, info, number, portrait_fn):
     # A flat sheet of pasteboard has no rounded form for the cel wedge to
     # describe — the hard step just reads as a scan artifact — so the card
     # takes the kernel's ink and grain, and a smooth wash from the same sun.
-    img = A.finish(c, ink=2, light=False, grain_amt=6, seed=number * 17 + 3)
+    img = A.finish(c, ink=3, light=False, grain_amt=6, seed=number * 17 + 3)
     img = _sunwash(img)
     img = _wear(img, rnd, rad)
     return img
@@ -567,10 +740,10 @@ def _wear(img, rnd, rad):
     # darkened, thumbed edges
     edge = Image.new("L", (w, h), 0)
     ImageDraw.Draw(edge).rounded_rectangle([3, 3, w - 4, h - 4], radius=rad,
-                                           outline=255, width=24)
+                                           outline=255, width=26)
     edge = edge.filter(ImageFilter.GaussianBlur(15))
     dark = Image.new("RGBA", (w, h), (74, 54, 36, 0))
-    dark.putalpha(ImageChops.multiply(edge.point(lambda v: int(v * 0.20)), a))
+    dark.putalpha(ImageChops.multiply(edge.point(lambda v: int(v * 0.28)), a))
     img.alpha_composite(dark)
 
     # a stain or two, kept faint
@@ -579,20 +752,23 @@ def _wear(img, rnd, rad):
     for _ in range(2):
         cx = rnd.uniform(60, w - 60)
         cy = rnd.uniform(70, h - 70)
-        r = rnd.uniform(40, 78)
+        r = rnd.uniform(46, 84)
         sd.ellipse([cx - r, cy - r * rnd.uniform(0.6, 1.0),
                     cx + r, cy + r * rnd.uniform(0.6, 1.0)], fill=255)
     stain = stain.filter(ImageFilter.GaussianBlur(16))
     st = Image.new("RGBA", (w, h), (132, 96, 52, 0))
-    st.putalpha(ImageChops.multiply(stain.point(lambda v: int(v * 0.10)), a))
+    st.putalpha(ImageChops.multiply(stain.point(lambda v: int(v * 0.15)), a))
     img.alpha_composite(st)
 
-    # one soft corner scuff where the pulp has worn light
+    # two soft scuffs where the pulp has worn light: one corner, one crease
     scuff = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(scuff).ellipse([w - 96, h - 74, w + 34, h + 44], fill=255)
+    sk = ImageDraw.Draw(scuff)
+    sk.ellipse([w - 96, h - 74, w + 34, h + 44], fill=255)
+    cy = rnd.uniform(h * 0.30, h * 0.72)
+    sk.line([(-10, cy), (w + 10, cy + rnd.uniform(-26, 26))], fill=120, width=7)
     scuff = scuff.filter(ImageFilter.GaussianBlur(13))
     sc = Image.new("RGBA", (w, h), (246, 236, 212, 0))
-    sc.putalpha(ImageChops.multiply(scuff.point(lambda v: int(v * 0.24)), a))
+    sc.putalpha(ImageChops.multiply(scuff.point(lambda v: int(v * 0.26)), a))
     img.alpha_composite(sc)
     return img
 
@@ -639,13 +815,26 @@ def draw_icon(size=1024, ss=2):
     bg.rect([0, horizon + 14 * u, S, horizon + 30 * u], fill=A.ASPHALT_L)
     scatter(bg, (0, horizon + 30 * u, S, S), 200,
             [A.ASPHALT_D, A.shade(A.ASPHALT, 1.12)], rnd, 2 * u, 5 * u)
-    # the sewer, half out of frame at the bottom edge
-    bg.ellipse([250 * u, 924 * u, 774 * u, 1150 * u], fill=A.INK)
-    bg.ellipse([264 * u, 936 * u, 760 * u, 1150 * u], fill=A.IRON)
-    bg.ellipse([334 * u, 972 * u, 690 * u, 1118 * u], outline=A.PATINA,
-               width=11 * u)
-    bg_img = A.finish(bg, ink=0, light=True, light_strength=0.55, rim=False,
-                      grain_amt=8, seed=5)
+    # the sewer lid, the thing the whole game is named after — a full circle
+    # sitting in the street, not an arc leaving the frame
+    scx, scy, scr = 388 * u, 930 * u, 220 * u
+    bg.ellipse([scx - scr, scy - scr * 0.46, scx + scr, scy + scr * 0.46],
+               fill=A.INK)
+    # the lid face has to sit LIGHTER than the street or it is a puddle
+    bg.ellipse([scx - scr * 0.90, scy - scr * 0.40,
+                scx + scr * 0.90, scy + scr * 0.40],
+               fill=A.mix(A.ASPHALT_L, A.IRON, 0.34))
+    bg.ellipse([scx - scr * 0.90, scy - scr * 0.40,
+                scx + scr * 0.86, scy + scr * 0.36],
+               fill=A.mix(A.ASPHALT_L, A.IRON, 0.16))
+    bg.ellipse([scx - scr * 0.60, scy - scr * 0.26,
+                scx + scr * 0.60, scy + scr * 0.26], outline=A.PATINA,
+               width=13 * u)
+    # A flat wall and a flat street have no rounded form for the kernel's cel
+    # wedge to describe: it just lays a hard diagonal seam across the brick.
+    # Same sun, continuous ramp.
+    bg_img = A.finish(bg, ink=0, light=False, grain_amt=8, seed=5)
+    bg_img = _sunwash(bg_img)
 
     # ---- chalk strike box on the wall ----------------------------------
     ck = A.Canvas(S, S, ss)
@@ -666,38 +855,50 @@ def draw_icon(size=1024, ss=2):
     bg_img.alpha_composite(ck_img)
 
     # ---- broomstick bat, behind the ball -------------------------------
+    # Fat enough to survive the trip to 40px: at that size the stick is two
+    # pixels of light on a dark ground, and two pixels is the whole diagonal.
     bat = A.Canvas(S, S, ss)
-    a = math.radians(-38)
-    p0 = (-70 * u, 1040 * u)
-    p1 = (p0[0] + math.cos(a) * 1680 * u, p0[1] + math.sin(a) * 1680 * u)
-    bat.form_capsule(p0, p1, 54 * u, 44 * u, A.CLOTH["oat"],
+    a = math.radians(-36)
+    p0 = (-90 * u, 1060 * u)
+    p1 = (p0[0] + math.cos(a) * 1720 * u, p0[1] + math.sin(a) * 1720 * u)
+    bat.form_capsule(p0, p1, 76 * u, 62 * u, A.CLOTH["oat"],
                      A.shade(A.CLOTH["oat"], 0.70))
     # friction tape on the grip
     for i in range(4):
-        t = 0.05 + i * 0.048
+        t = 0.06 + i * 0.050
         q0 = (p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t)
-        q1 = (p0[0] + (p1[0] - p0[0]) * (t + 0.036),
-              p0[1] + (p1[1] - p0[1]) * (t + 0.028))
-        bat.capsule(q0, q1, 55 * u, 54 * u, A.IRON)
-    bat_img = A.finish(bat, ink=9 * u, light=True, light_strength=0.9, rim=True)
+        q1 = (p0[0] + (p1[0] - p0[0]) * (t + 0.038),
+              p0[1] + (p1[1] - p0[1]) * (t + 0.030))
+        bat.capsule(q0, q1, 77 * u, 76 * u, A.IRON)
+    bat_img = A.finish(bat, ink=10 * u, light=True, light_strength=0.9, rim=True)
     bat_img = A.drop_shadow(bat_img, 10 * u, 14 * u, 8 * u, 0.40)
     bg_img.alpha_composite(bat_img)
 
     # ---- the spaldeen — the one loud thing in the whole project ---------
     ball = A.Canvas(S, S, ss)
-    bcx, bcy, br = 546 * u, 462 * u, 262 * u
+    bcx, bcy, br = 520 * u, 452 * u, 268 * u
+    ink_w = 15 * u
     ball.sphere(bcx, bcy, br, A.PINK, A.shade(A.PINK, 0.80), 0.26)
     # keep the lit side high-chroma rather than letting the cel pass grey it
     ball.circle(bcx - br * 0.30, bcy - br * 0.34, br * 0.52,
                 fill=A.mix(A.PINK, A.PINK_L, 0.42))
-    # specular pop, chalk-white, where the sun is
-    ball.ellipse([bcx - br * 0.66, bcy - br * 0.72,
-                  bcx - br * 0.16, bcy - br * 0.24],
-                 fill=A.mix(A.PINK_L, A.CHALK, 0.55))
-    ball.ellipse([bcx - br * 0.58, bcy - br * 0.66,
-                  bcx - br * 0.31, bcy - br * 0.44], fill=A.CHALK)
-    ball_img = A.finish(ball, ink=15 * u, light=True, light_strength=0.35,
+    # one specular, chalk-white, where the sun is. Two nested highlights read
+    # as a cherry on a cocktail once the icon is thumbnail-sized.
+    ball.ellipse([bcx - br * 0.60, bcy - br * 0.66,
+                  bcx - br * 0.26, bcy - br * 0.32], fill=A.CHALK)
+    ball_img = A.finish(ball, ink=ink_w, light=True, light_strength=0.35,
                         rim=True, grain_amt=5, seed=9)
+    # The kernel builds its ink by dilating the silhouette with a SQUARE
+    # kernel. On a line this thick the square shows: the ring bulges on the
+    # diagonals and scallops along the top. The ball is a known circle, so
+    # clip the finished sprite back to one — the ink stays the kernel's, it
+    # just stops being lumpy.
+    rr = br + ink_w
+    disc = Image.new("L", (S * ss, S * ss), 0)
+    ImageDraw.Draw(disc).ellipse([(bcx - rr) * ss, (bcy - rr) * ss,
+                                  (bcx + rr) * ss, (bcy + rr) * ss], fill=255)
+    disc = disc.resize((S, S), Image.LANCZOS)
+    ball_img.putalpha(ImageChops.multiply(ball_img.getchannel("A"), disc))
     ball_img = A.drop_shadow(ball_img, 18 * u, 24 * u, 13 * u, 0.44)
     bg_img.alpha_composite(ball_img)
 

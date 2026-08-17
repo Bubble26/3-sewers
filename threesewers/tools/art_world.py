@@ -7,11 +7,13 @@ is haze, and the only thing allowed to be bright is a kid's chalk.
 
     python3 art_world.py [outdir] [names...]
 
-Facades tile on a torus in both axes (match_view draws them with
-texture_repeat and a region larger than the art), so every primitive is
-replayed at its wrapping offsets. One vertical repeat is one tenement:
-cornice at the top, storeys of windows, shopfront at the pavement — so a
-column of repeats reads as a block of buildings receding up the street.
+Facades are drawn on a torus (every primitive is replayed at its wrapping
+offsets) so a column of them stacks without a seam, but match_view places
+each one ONCE, bottom-aligned on the pavement — so the shopfront must stay
+at the very bottom of the art. Nothing may be rolled vertically.
+
+One repeat is one tenement: cornice at the top, storeys of windows,
+shopfront at the pavement.
 """
 import math
 import os
@@ -23,9 +25,9 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import artkit as ak  # noqa: E402
-from artkit import (ASPHALT, ASPHALT_D, ASPHALT_L, BRICK, BRICK_D, BRICK_L,  # noqa: E402
-                    BROWNSTONE, CHALK, CLOTH, GOLD, INK, IRON, PAPER, PATINA,
-                    RUST, SLATE, Canvas, mix, shade)
+from artkit import (ASPHALT, ASPHALT_D, ASPHALT_L, BRICK, BRICK_D,  # noqa: E402
+                    BROWNSTONE, CHALK, CLOTH, GOLD, IRON, PAPER, RUST, SLATE,
+                    Canvas, mix, shade)
 
 S = 2  # assets are authored at 2x world size
 
@@ -159,11 +161,12 @@ def _wall(t, w, h, rnd, base, course, joints=False, seed_mul=1):
 
     dark = shade(base, 0.80)
     lite = shade(base, 1.10)
-    # broad tonal patches so the wall isn't a flat rectangle
-    for _ in range(240):
+    # broad tonal patches so the wall isn't a flat rectangle. Kept wide and
+    # shallow — weathering follows the courses; round blobs read as camouflage.
+    for _ in range(110):
         x, y = rnd.uniform(0, w), rnd.uniform(0, h)
-        rx, ry = rnd.uniform(16, 110), rnd.uniform(9, 52)
-        f = rnd.uniform(0.86, 1.12)
+        rx, ry = rnd.uniform(40, 150), rnd.uniform(7, 26)
+        f = rnd.uniform(0.93, 1.06)
         t.ellipse([x - rx, y - ry, x + rx, y + ry], fill=shade(base, f))
 
     # course lines (mortar). thin, low contrast, no moire at game size
@@ -222,21 +225,29 @@ def _soot(t, w, h, rnd, bands=(), n_blot=34, n_run=22):
 
 
 def _lintel(t, cx, y, ww, stone):
-    """Stone lintel over an opening: lit top face, hard shadow underneath."""
-    lw = ww + 20
-    t.rect([cx - lw / 2, y - 15, cx + lw / 2, y], fill=stone)
-    t.rect([cx - lw / 2, y - 15, cx + lw / 2, y - 11], fill=shade(stone, 1.14))
-    t.rect([cx - lw / 2, y - 3.5, cx + lw / 2, y], fill=shade(stone, 0.80))
-    t.rect([cx - lw / 2, y - 16.5, cx + lw / 2, y - 15], fill=shade(stone, 0.72))
+    """Stone lintel over an opening: lit top face, hard shadow underneath.
+
+    Chunky on purpose — at game scale the whole window is eleven pixels tall,
+    so the cap has to be a slab, not a moulding.
+    """
+    lw = ww + 26
+    t.rect([cx - lw / 2, y - 20, cx + lw / 2, y], fill=stone)
+    t.rect([cx - lw / 2, y - 20, cx + lw / 2, y - 14], fill=shade(stone, 1.18))
+    t.rect([cx - lw / 2, y - 6.0, cx + lw / 2, y], fill=shade(stone, 0.74))
+    # the ink line that stops it dissolving into the brick
+    t.rect([cx - lw / 2 - 2, y - 23, cx + lw / 2 + 2, y - 20],
+           fill=mix(ak.INK, stone, 0.34))
 
 
 def _sill(t, cx, y, ww, stone, wall):
-    lw = ww + 26
-    t.rect([cx - lw / 2, y, cx + lw / 2, y + 9], fill=stone)
-    t.rect([cx - lw / 2, y, cx + lw / 2, y + 3], fill=shade(stone, 1.16))
-    t.rect([cx - lw / 2, y + 9, cx + lw / 2, y + 15], fill=shade(stone, 0.52))
+    lw = ww + 32
+    t.rect([cx - lw / 2, y, cx + lw / 2, y + 12], fill=stone)
+    t.rect([cx - lw / 2, y, cx + lw / 2, y + 4], fill=shade(stone, 1.20))
+    t.rect([cx - lw / 2, y + 12, cx + lw / 2, y + 19], fill=shade(stone, 0.42))
+    t.rect([cx - lw / 2 - 2, y + 19, cx + lw / 2 + 2, y + 22],
+           fill=mix(ak.INK, wall, 0.44))
     # the sill throws a little shadow onto the wall below it
-    t.rect([cx - lw / 2, y + 15, cx + lw / 2, y + 20], fill=shade(wall, 0.86))
+    t.rect([cx - lw / 2, y + 22, cx + lw / 2, y + 28], fill=shade(wall, 0.84))
 
 
 def _sash(t, x0, y0, x1, y1, frame, cols, rows):
@@ -276,13 +287,17 @@ def _window(t, cx, y0, ww, wh, wall, stone, frame, state, rnd, glow):
         _sill(t, cx, y1, ww, stone, wall)
         return
 
-    # reveal: the opening is a hole in the wall, darkest under the lintel
-    t.rect([x0 - 3, y0, x1 + 3, y1], fill=shade(wall, 0.50))
-    t.rect([x0 - 3, y0, x1 + 3, y0 + 6], fill=shade(wall, 0.32))
-    t.rect([x0 - 3, y0, x0 + 2, y1], fill=shade(wall, 0.40))
-    t.rect([x1 - 1, y0, x1 + 3, y1], fill=shade(wall, 0.66))
+    # reveal: the opening is a hole in the wall. Deep and near-ink, because
+    # this is the only outline the window gets — a light sash floating on
+    # brick reads as a light blob once the wall is 336px wide on a phone.
+    rv = mix(ak.INK, wall, 0.26)
+    t.rect([x0 - 6, y0 - 1, x1 + 6, y1 + 2], fill=rv)
+    t.rect([x0 - 4, y0 + 1, x1 + 4, y1], fill=shade(wall, 0.44))
+    t.rect([x0 - 4, y0 + 1, x1 + 4, y0 + 9], fill=shade(wall, 0.24))
+    t.rect([x0 - 4, y0 + 1, x0 + 2, y1], fill=shade(wall, 0.34))
+    t.rect([x1 - 1, y0 + 1, x1 + 4, y1], fill=shade(wall, 0.62))
 
-    gx0, gy0, gx1, gy1 = x0 + 2, y0 + 5, x1 - 1, y1 - 2
+    gx0, gy0, gx1, gy1 = x0 + 2, y0 + 7, x1 - 1, y1 - 2
     gh = gy1 - gy0
     if state == "lit":
         glass = shade(LAMPLIT, rnd.uniform(0.88, 1.06))
@@ -319,13 +334,15 @@ def _window(t, cx, y0, ww, wh, wall, stone, frame, state, rnd, glow):
         t.rect([gx1 - cw, gy0, gx1, gy1], fill=shade(cl, 0.90))
         t.rect([gx0, gy0, gx1, gy0 + gh * 0.10], fill=shade(cl, 0.94))
 
-    # reflection: a thin sliver of sky, on some panes only, never bright
-    if state in ("dark", "open") and rnd.random() < 0.42:
-        k = rnd.uniform(0.22, 0.42)
-        sx = gx0 + (gx1 - gx0) * rnd.uniform(0.04, 0.30)
+    # reflection: a thin sliver of sky, on a minority of panes, never bright,
+    # and it leans either way so the wall doesn't read as combed
+    if state in ("dark", "open") and rnd.random() < 0.24:
+        k = rnd.uniform(0.20, 0.38) * rnd.choice((-1, 1))
+        sx = gx0 + (gx1 - gx0) * (0.62 if k < 0 else 0.16)
         t.poly([(sx, gy1 - 3), (sx + ww * k, gy0 + 2),
-                (sx + ww * k * 1.5, gy0 + 2), (sx + ww * 0.09, gy1 - 3)],
-               fill=shade(mix(glass, SLATE, 0.34), 1.08))
+                (sx + ww * k * 1.5, gy0 + 2),
+                (sx + ww * 0.09 * (1 if k > 0 else -1), gy1 - 3)],
+               fill=shade(mix(glass, SLATE, 0.30), 1.02))
 
     rows = 2 if wh > 74 else 1
     _sash(t, gx0, gy0, gx1, gy1, frame, 2, rows)
@@ -357,32 +374,37 @@ def _cornice(t, w, y, dep, stone, rnd, brackets=True, dentils=True):
 
     # roof edge / sky gap above
     t.rect([-4, y - dep * 0.20, w + 4, y], fill=shade(stone, 0.30))
-    # crown moulding
-    t.rect([-4, Y(0.00), w + 4, Y(0.11)], fill=shade(stone, 1.06))
-    t.rect([-4, Y(0.11), w + 4, Y(0.17)], fill=md)
-    t.rect([-4, Y(0.17), w + 4, Y(0.22)], fill=dk)
+    # crown moulding — one fat lit lip with a hard dark line under it, so the
+    # roof edge is a single decisive shape at game size
+    t.rect([-4, Y(0.00), w + 4, Y(0.14)], fill=shade(stone, 1.14))
+    t.rect([-4, Y(0.14), w + 4, Y(0.20)], fill=md)
+    t.rect([-4, Y(0.20), w + 4, Y(0.26)], fill=mix(ak.INK, stone, 0.30))
     # fascia
-    t.rect([-4, Y(0.22), w + 4, Y(0.50)], fill=stone)
-    t.rect([-4, Y(0.22), w + 4, Y(0.27)], fill=shade(stone, 1.10))
-    yb = Y(0.50)
+    t.rect([-4, Y(0.26), w + 4, Y(0.52)], fill=stone)
+    t.rect([-4, Y(0.26), w + 4, Y(0.32)], fill=shade(stone, 1.08))
+    yb = Y(0.52)
     if dentils:
-        n = max(6, int(w / 16))
+        n = max(6, int(w / 22))
         for i in range(n + 1):
             x = i * (w / n)
-            t.rect([x + 3, yb - dep * 0.13, x + 11, yb], fill=shade(stone, 1.06))
-            t.rect([x + 9, yb - dep * 0.13, x + 11, yb], fill=shade(stone, 0.74))
+            t.rect([x + 3, yb - dep * 0.15, x + 14, yb], fill=shade(stone, 1.08))
+            t.rect([x + 11, yb - dep * 0.15, x + 14, yb], fill=shade(stone, 0.60))
+        t.rect([-4, yb - dep * 0.15 - 2.5, w + 4, yb - dep * 0.15],
+               fill=mix(ak.INK, stone, 0.36))
     if brackets:
-        n = 7
+        n = 5
         for i in range(n + 1):
             x = i * (w / n)
-            t.poly([(x - 9, yb), (x + 9, yb), (x + 5, Y(0.80)),
-                    (x - 5, Y(0.80))], fill=md)
-            t.poly([(x - 9, yb), (x - 1, yb), (x - 3, Y(0.80)),
-                    (x - 5, Y(0.80))], fill=lt)
+            t.poly([(x - 14, yb), (x + 14, yb), (x + 8, Y(0.84)),
+                    (x - 8, Y(0.84))], fill=md)
+            t.poly([(x - 14, yb), (x - 3, yb), (x - 5, Y(0.84)),
+                    (x - 8, Y(0.84))], fill=lt)
+            t.poly([(x + 6, yb), (x + 14, yb), (x + 8, Y(0.84)),
+                    (x + 4, Y(0.84))], fill=mix(ak.INK, stone, 0.42))
     # soffit shadow — the cornice hangs over the wall
-    t.rect([-4, Y(0.80), w + 4, Y(1.0)], fill=shade(stone, 0.34))
-    t.rect([-4, Y(0.92), w + 4, Y(1.0)], fill=shade(stone, 0.26))
-    t.rect([-4, Y(1.0), w + 4, Y(1.0) + 7], fill=shade(stone, 0.42))
+    t.rect([-4, Y(0.84), w + 4, Y(1.0)], fill=shade(stone, 0.30))
+    t.rect([-4, Y(0.93), w + 4, Y(1.0)], fill=mix(ak.INK, stone, 0.22))
+    t.rect([-4, Y(1.0), w + 4, Y(1.0) + 9], fill=shade(stone, 0.38))
 
 
 def _ghost_sign(t, x0, y0, x1, y1, lines, rnd, tone):
@@ -392,7 +414,7 @@ def _ghost_sign(t, x0, y0, x1, y1, lines, rnd, tone):
     hh = (y1 - y0) / n
     for i, (txt, sz) in enumerate(lines):
         _tile_text(ov, ((x0 + x1) * 0.5, y0 + hh * (i + 0.5)), txt, sz,
-                   tone + (46,), sz * 0.18)
+                   tone + (74,), sz * 0.18)
     img = ov.c.resolve()
     img = img.filter(ImageFilter.GaussianBlur(1.1))
     # eat holes out of it so the paint looks flaked
@@ -499,9 +521,14 @@ def _shopfront_l(t, w, y0, h, wall, stone, rnd):
         if i == 2:
             continue  # the doorway
         t.rect([a, gy0, b, gy1], fill=shade(GLASS_DK, 0.78))
+        # the shop interior goes to gloom as it goes back
+        for k in range(6):
+            f2 = k / 5.0
+            t.rect([a, gy0 + (gy1 - gy0) * (0.30 + f2 * 0.58), b, gy1],
+                   fill=shade(GLASS_DK, 0.74 - f2 * 0.09))
         # transom over the shop glass
-        t.rect([a, gy0, b, gy0 + 16], fill=shade(GLASS_DK, 1.28))
-        t.rect([a, gy0 + 16, b, gy0 + 19], fill=frame)
+        t.rect([a, gy0, b, gy0 + 16], fill=shade(GLASS_DK, 1.06))
+        t.rect([a, gy0 + 16, b, gy0 + 20], fill=mix(ak.INK, frame, 0.34))
         # dim goods stacked in the window
         for _ in range(9):
             bx = rnd.uniform(a + 6, b - 22)
@@ -531,11 +558,12 @@ def _shopfront_l(t, w, y0, h, wall, stone, rnd):
     t.rect([da, gy0, da + 4, ground], fill=shade(wall, 0.44))
     t.rect([db - 4, gy0, db, ground], fill=shade(wall, 0.22))
 
-    # iron piers
+    # iron piers — fat enough to read as cast iron at 45 screen pixels
     for x in piers:
-        t.rect([x - 8, gy0 - 8, x + 8, ground], fill=shade(frame, 0.66))
-        t.rect([x - 8, gy0 - 8, x - 3, ground], fill=shade(frame, 0.92))
-        t.rect([x + 5, gy0 - 8, x + 8, ground], fill=shade(frame, 0.48))
+        t.rect([x - 12, gy0 - 10, x + 12, ground], fill=mix(ak.INK, frame, 0.30))
+        t.rect([x - 10, gy0 - 8, x + 10, ground], fill=shade(frame, 0.66))
+        t.rect([x - 10, gy0 - 8, x - 4, ground], fill=shade(frame, 0.94))
+        t.rect([x + 6, gy0 - 8, x + 10, ground], fill=shade(frame, 0.44))
 
     # panelled bulkhead + base course
     t.rect([-4, gy1, w + 4, ground - 14], fill=shade(frame, 0.66))
@@ -573,15 +601,30 @@ def _shopfront_r(t, w, y0, h, wall, stone, rnd):
 
     a, b = 10, w * 0.52
     t.rect([a, gy0, b, gy1], fill=shade(GLASS_DK, 0.82))
-    t.rect([a, gy0, b, gy0 + 15], fill=shade(GLASS_DK, 1.34))
-    t.rect([a, gy0 + 15, b, gy0 + 18], fill=frame)
-    # jars on a shelf, low contrast
-    for i in range(7):
-        jx = a + 14 + i * ((b - a - 26) / 6.0)
-        jh = rnd.uniform(16, 26)
-        t.rect([jx - 6, gy1 - 30 - jh, jx + 6, gy1 - 30],
-               fill=shade(mix(CLOTH["oat"], ASPHALT, 0.5), rnd.uniform(0.7, 0.95)))
-    t.rect([a + 4, gy1 - 32, b - 4, gy1 - 26], fill=shade(frame, 0.80))
+    for k in range(6):
+        f2 = k / 5.0
+        t.rect([a, gy0 + (gy1 - gy0) * (0.28 + f2 * 0.60), b, gy1],
+               fill=shade(GLASS_DK, 0.76 - f2 * 0.10))
+    t.rect([a, gy0, b, gy0 + 15], fill=shade(GLASS_DK, 1.08))
+    t.rect([a, gy0 + 15, b, gy0 + 19], fill=mix(ak.INK, frame, 0.34))
+    # two shelves of jars, low contrast, so the plate glass isn't a void
+    for sy, n_j in ((gy1 - 30, 7), (gy1 - 74, 6)):
+        for i in range(n_j):
+            jx = a + 14 + i * ((b - a - 26) / (n_j - 1.0))
+            jh = rnd.uniform(14, 24)
+            t.rect([jx - 6, sy - jh, jx + 6, sy],
+                   fill=shade(mix(CLOTH["oat"], ASPHALT, 0.5),
+                              rnd.uniform(0.62, 0.88)))
+            t.rect([jx - 7, sy - jh - 3, jx + 7, sy - jh],
+                   fill=shade(mix(CLOTH["oat"], ASPHALT, 0.5), 0.52))
+        t.rect([a + 4, sy, b - 4, sy + 6], fill=shade(frame, 0.80))
+        t.rect([a + 4, sy + 6, b - 4, sy + 9], fill=shade(frame, 0.50))
+    # gold-leaf lettering painted straight onto the plate glass — the thing
+    # every shop window in 1926 had, and it gives the void something to be
+    _tile_text(t, ((a + b) * 0.5, gy0 + 44), "ICE  CREAM", 19,
+               shade(mix(CLOTH["cream"], ASPHALT, 0.34), 0.72), 3.5)
+    _tile_text(t, ((a + b) * 0.5, gy0 + 74), "NEWS", 14,
+               shade(mix(CLOTH["cream"], ASPHALT, 0.42), 0.70), 2.0)
     t.poly([(a + 6, gy1 - 7), (a + (b - a) * 0.22, gy0 + 21),
             (a + (b - a) * 0.30, gy0 + 21), (a + 6, gy1 - (gy1 - gy0) * 0.58)],
            fill=shade(mix(GLASS_DK, SLATE, 0.24), 0.94))
@@ -597,14 +640,15 @@ def _shopfront_r(t, w, y0, h, wall, stone, rnd):
 
     # narrow side window
     a2, b2 = w * 0.85, w - 8
-    t.rect([a2, gy0, b2, gy1], fill=shade(GLASS_DK, 0.76))
-    t.rect([a2, gy0, b2, gy0 + 15], fill=shade(GLASS_DK, 1.24))
+    t.rect([a2, gy0, b2, gy1], fill=shade(GLASS_DK, 0.70))
+    t.rect([a2, gy0, b2, gy0 + 15], fill=shade(GLASS_DK, 1.04))
     _sash(t, a2, gy0, b2, gy1, frame, 1, 2)
 
     for x in (0, w * 0.55, w * 0.83, w):
-        t.rect([x - 7, gy0 - 7, x + 7, ground], fill=shade(frame, 0.64))
-        t.rect([x - 7, gy0 - 7, x - 3, ground], fill=shade(frame, 0.90))
-        t.rect([x + 4, gy0 - 7, x + 7, ground], fill=shade(frame, 0.46))
+        t.rect([x - 12, gy0 - 9, x + 12, ground], fill=mix(ak.INK, frame, 0.30))
+        t.rect([x - 10, gy0 - 7, x + 10, ground], fill=shade(frame, 0.64))
+        t.rect([x - 10, gy0 - 7, x - 4, ground], fill=shade(frame, 0.92))
+        t.rect([x + 6, gy0 - 7, x + 10, ground], fill=shade(frame, 0.42))
 
     t.rect([-4, gy1, w + 4, ground - 14], fill=shade(frame, 0.64))
     t.rect([-4, gy1, w + 4, gy1 + 5], fill=shade(frame, 0.96))
@@ -652,25 +696,32 @@ def _build_facade(cfg):
 
     _wall_extras(t, w, top, bottom, wall, stone, rnd)
 
+    # Which windows are alive is decided up front, so the building keeps a
+    # deliberate rhythm — a couple of lamps, a couple of drawn shades, and
+    # everything else dark — instead of a per-window dice roll that lights
+    # half the block.
+    cells = [(s, b) for s in range(n) for b in range(bays)]
+    rnd.shuffle(cells)
+    special = {}
+    for st, k in (("lit", cfg["nlit"]), ("shade", 2), ("curtain", 2),
+                  ("open", 1), ("brick", 1)):
+        for _ in range(k):
+            if not cells:
+                break
+            c = cells.pop()
+            if st == "brick" and c[0] == 0:
+                cells.insert(0, c)
+                continue
+            special[c] = st
+
     for s in range(n):
         ytop = top + s * sh + (sh - wh) * 0.52
         for b in range(bays):
-            cx = bw * (b + 0.5)
-            r = rnd.random()
-            lit = cfg["lit"]
-            if r < lit:
-                st = "lit"
-            elif r < lit + 0.15:
-                st = "shade"
-            elif r < lit + 0.22:
-                st = "open"
-            elif r < lit + 0.32:
-                st = "curtain"
-            elif r < lit + 0.35 and s > 0:
-                st = "brick"
-            else:
-                st = "dark"
-            _window(t, cx, ytop, ww, wh, wall, stone, frame, st, rnd, glow)
+            # nothing on a tenement is plumb; nudge every opening a hair
+            cx = bw * (b + 0.5) + rnd.uniform(-2.0, 2.0)
+            yy = ytop + rnd.uniform(-1.6, 1.6)
+            st = special.get((s, b), "dark")
+            _window(t, cx, yy, ww, wh, wall, stone, frame, st, rnd, glow)
         # a string course between storeys on the stone building
         if cfg["joints"] and s < n - 1:
             y = top + (s + 1) * sh - 6
@@ -685,6 +736,22 @@ def _build_facade(cfg):
     _posters(t, w, bottom - W(36), bottom - W(3), rnd, 4)
     cfg["shopfn"](t, w, bottom, shop_h, wall, stone, rnd)
 
+    # The building's own corners. Without these the wall is a cropped
+    # rectangle butted against the pavement; with them it is a building with
+    # an edge, and it carries the same ink line as everything else on screen.
+    # Vertical edges only — a line across the top or bottom would print a
+    # seam when the tile stacks.
+    edge = mix(ak.INK, wall, 0.16)
+    for x0, x1 in ((-2, 5), (w - 5, w + 2)):
+        t.rect([x0, -6, x1, h + 6], fill=edge)
+    for k in range(9):
+        f = k / 8.0
+        a = int(70 * (1.0 - f) ** 1.5)
+        eov = t.c.overlay()
+        eov.rect([5 + k * 2, -6, 7 + k * 2, h + 6], fill=(24, 18, 14, a))
+        eov.rect([w - 7 - k * 2, -6, w - 5 - k * 2, h + 6], fill=(24, 18, 14, a))
+        t.c.merge(eov)
+
     img = ak.finish(t.c, ink=0, light=False, grain_amt=5, seed=cfg["seed"])
     if gs is not None:
         img.alpha_composite(gs)
@@ -697,10 +764,39 @@ def _build_facade(cfg):
     # push the whole wall back: a flat haze so it never fights the kids
     haze = Image.new("RGBA", img.size, cfg["haze"] + (cfg["haze_a"],))
     img.alpha_composite(haze)
-    # roll the finished tile so opposite sides of the street never line up
-    if cfg.get("roll"):
-        img = ImageChops.offset(img, 0, int(cfg["roll"]))
+    # the sun is upper-left, so the wall is a shade brighter on that side and
+    # sinks toward the far edge. Horizontal only: the tile still repeats
+    # vertically without a seam.
+    img.alpha_composite(_sun_rake(img.size, cfg["haze"]))
+    # the pavement end of the wall goes darkest of all, so the kids' feet
+    # always have a dark ground behind them
+    img.alpha_composite(vgrad_alpha(
+        Image.new("RGBA", img.size, shade(cfg["haze"], 0.34) + (255,)),
+        [(0.0, 0.0), (0.80, 0.0), (0.955, 0.22), (1.0, 0.30)]))
     return img
+
+
+def _sun_rake(size, tone):
+    """A soft left-to-right ramp: lit edge, shadowed far edge."""
+    w, h = size
+    ramp = Image.new("L", (w, 1))
+    px = ramp.load()
+    for x in range(w):
+        t = x / max(1, w - 1)
+        px[x, 0] = int(max(0.0, (t - 0.10) / 0.90) ** 1.25 * 62)
+    lay = Image.new("RGBA", size, shade(tone, 0.44) + (255,))
+    lay.putalpha(ramp.resize(size))
+    lit = Image.new("RGBA", size, ak.SUN + (255,))
+    lramp = Image.new("L", (w, 1))
+    lp = lramp.load()
+    for x in range(w):
+        t = x / max(1, w - 1)
+        lp[x, 0] = int(max(0.0, 1.0 - t / 0.42) ** 1.6 * 20)
+    lit.putalpha(lramp.resize(size))
+    out = Image.new("RGBA", size, (0, 0, 0, 0))
+    out.alpha_composite(lit)
+    out.alpha_composite(lay)
+    return out
 
 
 def build_facade_l():
@@ -709,7 +805,7 @@ def build_facade_l():
         seed=6101, wall=BRICK_WALL, stone=shade(mix(BROWNSTONE, PAPER, 0.24), 0.66),
         frame=shade(mix(CLOTH["cream"], ASPHALT, 0.52), 0.72),
         course=7, joints=False, cornice=62, brackets=True, dentils=True,
-        storeys=4, bays=3, win=(58, 84), shop=204, lit=0.12, pipe=None,
+        storeys=4, bays=3, win=(58, 84), shop=204, nlit=2, pipe=None,
         haze=mix(ASPHALT, RUST, 0.16), haze_a=40,
         ghost=[("FINE", 52), ("TEAS", 52)], shopfn=_shopfront_l))
 
@@ -720,8 +816,8 @@ def build_facade_r():
         seed=6202, wall=STONE_WALL, stone=shade(mix(SLATE, PAPER, 0.30), 0.62),
         frame=shade(mix(CLOTH["dust"], ASPHALT, 0.50), 0.64),
         course=13, joints=True, cornice=52, brackets=False, dentils=True,
-        storeys=5, bays=4, win=(46, 66), shop=190, lit=0.09, pipe=0.245,
-        haze=mix(ASPHALT, SLATE, 0.40), haze_a=44, roll=W(212),
+        storeys=5, bays=4, win=(46, 66), shop=190, nlit=2, pipe=0.092,
+        haze=mix(ASPHALT, SLATE, 0.40), haze_a=44,
         ghost=None, shopfn=_shopfront_r))
 
 
@@ -754,7 +850,7 @@ def _sky_watertower(c, cx, base, ht, col):
 
 def _sky_spire(c, cx, base, ht, col):
     """A church: a squat tower, a belfry, and a long thin steeple."""
-    bw = ht * 0.115
+    bw = ht * 0.150
     c.rect([cx - bw, base - ht * 0.44, cx + bw, base + 24], fill=col)
     c.rect([cx - bw * 1.22, base - ht * 0.50, cx + bw * 1.22,
             base - ht * 0.44], fill=col)
@@ -910,7 +1006,6 @@ def _laundry(c, tops, col, rnd, chance=0.45):
 def build_skyline():
     """1400x260 world. Far rooftops closing the top of the street."""
     w, h = W(1400, 260)
-    rnd = random.Random(7331)
 
     def hazed(draw, stops):
         """Draw one depth layer and sink it into its own share of the haze."""
@@ -924,25 +1019,54 @@ def build_skyline():
         im.alpha_composite(hz)
         return im
 
-    # --- warm haze standing behind everything, so the band never reads as a
-    #     hole punched in the screen
-    hz = Canvas(w, h, ss=2)
-    hz.rect([0, 0, w, h], fill=SKY_GLOW + (255,))
-    sky = vgrad_alpha(hz.resolve(),
-                      [(0.0, 0.0), (0.10, 0.54), (0.32, 0.50), (0.58, 0.26),
-                       (0.86, 0.05), (1.0, 0.0)])
+    # --- Dusk standing behind everything. This has to be near-OPAQUE through
+    #     the middle of the band: the canyon walls are drawn under the skyline
+    #     in match_view, and a translucent sky lets brick courses ghost
+    #     through the gaps between rooftops. It cools and darkens as it comes
+    #     down so closing the gaps doesn't mean a bright bar across the top.
+    hz = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    hp = hz.load()
+    lo = mix(SKY_GLOW, SKY_FAR, 0.62)
+    for y in range(h):
+        t = y / max(1, h - 1)
+        k = min(1.0, max(0.0, (t - 0.06) / 0.46))
+        col = mix(SKY_GLOW, lo, k ** 0.9)
+        for x in range(w):
+            hp[x, y] = col + (255,)
+    sky = vgrad_alpha(hz, [(0.0, 0.0), (0.13, 0.56), (0.32, 0.94),
+                           (0.66, 0.92), (0.84, 0.42), (1.0, 0.0)])
 
-    # --- far: almost dissolved, its feet lost in the murk
+    # Each depth gets its own random stream, so retuning one layer doesn't
+    # reshuffle the other two.
+    rf, rm, rn = random.Random(7331), random.Random(7332), random.Random(7333)
+
+    # --- far: almost dissolved, its feet lost in the murk. Two landmarks
+    #     stand clear of the sawtooth so the eye has somewhere to rest: the
+    #     parish steeple and a setback office tower downtown.
     def far(c):
-        _sky_run(c, w, h * 0.54, h * 0.10, h * 0.44, SKY_FAR, rnd,
+        _sky_run(c, w, h * 0.54, h * 0.10, h * 0.44, SKY_FAR, rf,
                  wmin=60, wmax=190)
-        for bx, bw2, bh2 in ((w * 0.09, 74, h * 0.62), (w * 0.545, 62, h * 0.56)):
+        for bx, bw2, bh2 in ((w * 0.09, 74, h * 0.62),
+                             (w * 0.545, 62, h * 0.56)):
             c.rect([bx, h * 0.54 - bh2, bx + bw2, h * 0.62], fill=SKY_FAR)
             c.rect([bx - 5, h * 0.54 - bh2 - 7, bx + bw2 + 5, h * 0.54 - bh2],
                    fill=SKY_FAR)
             _sky_windows(c, bx, h * 0.54 - bh2 + 12, bx + bw2, h * 0.54,
-                         SKY_FAR, rnd)
-        _sky_spire(c, w * 0.735, h * 0.60, h * 0.52, SKY_FAR)
+                         SKY_FAR, rf)
+        # the setback tower: the 1920s zoning silhouette, three steps and a
+        # flagpole. Drawn a shade darker than its layer so it holds together.
+        land = shade(SKY_FAR, 0.92)
+        tx, tw2 = w * 0.402, 96
+        for sh_, ins in ((0.62, 0.00), (0.80, 0.17), (0.95, 0.34)):
+            c.rect([tx + tw2 * ins, h * 0.60 - h * sh_,
+                    tx + tw2 * (1.0 - ins), h * 0.64], fill=land)
+            c.rect([tx + tw2 * ins - 4, h * 0.60 - h * sh_ - 6,
+                    tx + tw2 * (1.0 - ins) + 4, h * 0.60 - h * sh_], fill=land)
+        _sky_windows(c, tx + 5, h * 0.60 - h * 0.58, tx + tw2 - 5, h * 0.56,
+                     land, rf)
+        c.rect([tx + tw2 * 0.5 - 1.6, h * 0.60 - h * 1.06,
+                tx + tw2 * 0.5 + 1.6, h * 0.60 - h * 0.92], fill=land)
+        _sky_spire(c, w * 0.735, h * 0.60, h * 0.52, land)
         _sky_watertower(c, w * 0.155, h * 0.32, h * 0.22, SKY_FAR)
         _sky_watertower(c, w * 0.905, h * 0.28, h * 0.20, SKY_FAR)
         for sx, sk in ((w * 0.30, h * 0.50), (w * 0.62, h * 0.40)):
@@ -952,15 +1076,15 @@ def build_skyline():
 
     # --- mid
     def mid(c):
-        rows = _sky_run(c, w, h * 0.68, h * 0.12, h * 0.36, SKY_MID, rnd,
+        rows = _sky_run(c, w, h * 0.68, h * 0.12, h * 0.36, SKY_MID, rm,
                         ticks=True, wmin=80, wmax=220)
-        _laundry(c, rows, shade(SKY_MID, 0.80), rnd, 0.34)
+        _laundry(c, rows, shade(SKY_MID, 0.80), rm, 0.34)
 
     # --- near: the darkest mass, and it carries most of the laundry
     def near(c):
-        rows = _sky_run(c, w, h * 0.86, h * 0.10, h * 0.34, SKY_NEAR, rnd,
+        rows = _sky_run(c, w, h * 0.86, h * 0.10, h * 0.34, SKY_NEAR, rn,
                         ticks=True, wmin=95, wmax=250)
-        _laundry(c, rows, shade(SKY_NEAR, 0.68), rnd, 0.5)
+        _laundry(c, rows, shade(SKY_NEAR, 0.68), rn, 0.5)
 
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     img.alpha_composite(sky)
@@ -981,7 +1105,8 @@ def build_skyline():
 
     img = ak.grain(img, 4, 11)
     # and the whole band dissolves into the street at the bottom
-    return vgrad_alpha(img, [(0.0, 1.0), (0.68, 1.0), (0.86, 0.50), (1.0, 0.0)])
+    return vgrad_alpha(img, [(0.0, 1.0), (0.74, 1.0), (0.89, 0.46),
+                             (1.0, 0.0)])
 
 
 # ================================================================== props
@@ -996,7 +1121,7 @@ def build_watertower():
     wood = shade(mix(CLOTH["oat"], BROWNSTONE, 0.68), 0.82)
     wood_d = shade(wood, 0.70)
     iron = mix(IRON, SLATE, 0.24)
-    iron_l = shade(iron, 1.55)
+    iron_l = shade(iron, 1.34)
     tar = shade(mix(IRON, BROWNSTONE, 0.20), 1.02)
 
     tank_top = h * 0.29
@@ -1015,28 +1140,34 @@ def build_watertower():
     def legy(f):
         return tank_bot - 6 + (ground - tank_bot + 6) * f
 
+    # Four fat legs. This is a cartoon tower, not a shop drawing: better a
+    # few heavy members that read at 80px than a correct lattice that turns
+    # into grey lint.
     for i in range(4):
-        wd = 11 if i in (0, 3) else 8
+        wd = 15 if i in (0, 3) else 10
         c.capsule((legx(i, 0), legy(0)), (legx(i, 1), legy(1)),
-                  wd * 0.82, wd, iron)
-        c.capsule((legx(i, 0) - wd * 0.22, legy(0)),
-                  (legx(i, 1) - wd * 0.22, legy(1)),
-                  wd * 0.40, wd * 0.46, shade(iron, 1.42))
+                  wd * 0.80, wd, iron)
+        c.capsule((legx(i, 0) - wd * 0.24, legy(0)),
+                  (legx(i, 1) - wd * 0.24, legy(1)),
+                  wd * 0.36, wd * 0.42, shade(iron, 1.26))
 
-    # X braces between each neighbouring pair of legs
-    for f0, f1 in ((0.14, 0.54), (0.56, 0.96)):
-        for i in range(3):
-            j = i + 1
-            c.capsule((legx(i, f0), legy(f0)), (legx(j, f1), legy(f1)),
-                      4.4, 4.4, shade(iron, 1.16))
-            c.capsule((legx(j, f0), legy(f0)), (legx(i, f1), legy(f1)),
-                      4.4, 4.4, shade(iron, 1.16))
+    # ONE big X across the outer bay, and a single tie at mid-height. The
+    # inner legs stay bare so the frame keeps a hole in it to see through.
+    for a, b in ((0, 3),):
+        c.capsule((legx(a, 0.10), legy(0.10)), (legx(b, 0.97), legy(0.97)),
+                  6.4, 6.4, shade(iron, 0.94))
+        c.capsule((legx(b, 0.10), legy(0.10)), (legx(a, 0.97), legy(0.97)),
+                  6.4, 6.4, shade(iron, 0.94))
+        c.capsule((legx(a, 0.10) - 1.8, legy(0.10)),
+                  (legx(b, 0.97) - 1.8, legy(0.97)), 2.4, 2.4,
+                  shade(iron, 1.30))
     # horizontal ties
-    for f in (0.14, 0.55, 0.96):
+    for f, wd in ((0.10, 5.0), (0.54, 4.2), (0.97, 5.4)):
         y = legy(f)
         x0, x1 = legx(0, f), legx(3, f)
-        c.rect([x0 - 3, y - 3.4, x1 + 3, y + 3.4], fill=iron)
-        c.rect([x0 - 3, y - 3.4, x1 + 3, y - 1.0], fill=iron_l)
+        c.rect([x0 - 4, y - wd, x1 + 4, y + wd], fill=iron)
+        c.rect([x0 - 4, y - wd, x1 + 4, y - wd * 0.30], fill=shade(iron, 1.24))
+        c.rect([x0 - 4, y + wd * 0.55, x1 + 4, y + wd], fill=shade(iron, 0.60))
     # the platform the tank stands on
     c.rect([legx(0, 0) - 8, tank_bot - 5, legx(3, 0) + 8, tank_bot + 5],
            fill=shade(iron, 0.86))
@@ -1156,93 +1287,131 @@ def build_watertower():
         ry = (tank_top + (tank_bot - tank_top) * 0.30) \
             + (ground - 3 - (tank_top + (tank_bot - tank_top) * 0.30)) * f
         rx = lx + (lx1 - lx) * f
-        c.rect([rx - 8.5, ry - 1.3, rx + 8.5, ry + 1.3], fill=shade(iron, 1.38))
+        c.rect([rx - 8.5, ry - 1.3, rx + 8.5, ry + 1.3], fill=shade(iron, 1.18))
 
     img = ak.finish(c, ink=3, light=True, light_strength=0.66, grain_amt=5,
                     seed=44)
-    img = ak.drop_shadow(img, 3, 3, 2.0, 0.30, ss=1)
-    return img
+    # contact shadow under each foot, drawn in place (an offset shadow would
+    # wrap around the canvas and print the feet along the top edge)
+    sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sh)
+    for i in range(4):
+        fx = legx(i, 1.0)
+        sd.ellipse([fx - 12, ground - 3, fx + 12, ground + 6],
+                   fill=(22, 17, 14, 96))
+    sh = sh.filter(ImageFilter.GaussianBlur(3))
+    out = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    out.alpha_composite(sh)
+    out.alpha_composite(img)
+    return out
 
 
 def build_gutter_grate():
-    """90x36 world. Storm drain in the curb, seen flat like the sewer lids."""
+    """90x36 world. Storm drain in the curb — a black mouth, not a grey tray.
+
+    At 45 screen pixels wide this can only be one idea, so it is one idea:
+    a dark slot in the kerb with three fat iron bars across it. Everything
+    that isn't the mouth is kept close to asphalt so the thing sinks into
+    the street instead of sitting on it like a tea tray.
+    """
     w, h = W(90, 36)
     c = Canvas(w, h, ss=4)
     rnd = random.Random(5511)
-    conc = mix(ASPHALT_L, PAPER, 0.34)
-    iron = mix(IRON, ASPHALT_L, 0.40)
-    dark = (16, 14, 12)
+    kerb = shade(mix(ASPHALT_L, PAPER, 0.20), 0.94)
+    iron = shade(mix(IRON, ASPHALT, 0.34), 1.02)
+    dark = (14, 12, 11)
 
-    # concrete surround, foreshortened the way the manhole covers are
-    pad = 3
-    c.poly([(pad + 6, pad), (w - pad - 6, pad), (w - pad, h - pad),
-            (pad, h - pad)], fill=shade(conc, 0.66))
-    c.poly([(pad + 6, pad), (w - pad - 6, pad), (w - pad - 3, h - pad - 6),
-            (pad + 3, h - pad - 6)], fill=conc)
-    c.poly([(pad + 6, pad), (w - pad - 6, pad), (w - pad - 4, pad + 4),
-            (pad + 7, pad + 4)], fill=shade(conc, 1.16))
-    for _ in range(300):
+    # ---- the kerbstone the drain is cut into, seen slightly from above
+    pad = 2.5
+    c.poly([(pad + 5, pad), (w - pad - 5, pad), (w - pad, h - pad),
+            (pad, h - pad)], fill=shade(kerb, 0.62))
+    c.poly([(pad + 5, pad), (w - pad - 5, pad), (w - pad - 2, h - pad - 7),
+            (pad + 2, h - pad - 7)], fill=shade(kerb, 0.86))
+    # the top face catches the sun
+    c.poly([(pad + 5, pad), (w - pad - 5, pad), (w - pad - 3, pad + 5),
+            (pad + 6, pad + 5)], fill=shade(kerb, 1.10))
+    for _ in range(260):
         c.circle(rnd.uniform(pad, w - pad), rnd.uniform(pad, h - pad),
                  rnd.uniform(0.5, 1.7),
-                 fill=rnd.choice([shade(conc, 0.80), shade(conc, 1.10),
-                                  shade(conc, 0.66)]))
-    # chipped edge
-    for _ in range(7):
-        ex = rnd.uniform(pad + 8, w - pad - 8)
-        c.poly([(ex, pad), (ex + rnd.uniform(4, 9), pad),
-                (ex + rnd.uniform(2, 6), pad + rnd.uniform(2, 5))],
-               fill=shade(conc, 1.20))
+                 fill=rnd.choice([shade(kerb, 0.62), shade(kerb, 0.94),
+                                  shade(kerb, 0.50)]))
+    # chips knocked out of the kerb edge by twenty years of wheels
+    for _ in range(6):
+        ex = rnd.uniform(pad + 10, w - pad - 14)
+        c.poly([(ex, pad), (ex + rnd.uniform(5, 11), pad),
+                (ex + rnd.uniform(2, 7), pad + rnd.uniform(2.5, 6))],
+               fill=shade(kerb, 1.06))
 
-    # ---- the iron grate itself
-    ix0, ix1 = w * 0.13, w * 0.87
-    iy0, iy1 = h * 0.26, h * 0.82
-    # rebate the frame sits in
-    c.rect([ix0 - 5, iy0 - 5, ix1 + 5, iy1 + 5], fill=shade(conc, 0.48))
-    c.rect([ix0 - 5, iy0 - 5, ix1 + 5, iy0 - 1.5], fill=shade(conc, 0.34))
-    c.rect([ix0 - 4, iy0 - 4, ix1 + 4, iy1 + 4], fill=shade(iron, 0.86))
-    c.rect([ix0 - 4, iy0 - 4, ix1 + 4, iy0 - 1], fill=shade(iron, 1.45))
-    c.rect([ix0 - 4, iy1 + 1, ix1 + 4, iy1 + 4], fill=shade(iron, 0.56))
+    # ---- the mouth: a hole first, ironmongery second
+    ix0, ix1 = w * 0.10, w * 0.90
+    iy0, iy1 = h * 0.30, h * 0.86
+    c.rect([ix0 - 6, iy0 - 6, ix1 + 6, iy1 + 5], fill=shade(kerb, 0.34))
+    c.rect([ix0 - 5, iy0 - 5, ix1 + 5, iy1 + 4], fill=shade(iron, 0.82))
+    c.rect([ix0 - 5, iy0 - 5, ix1 + 5, iy0 - 1.0], fill=shade(iron, 1.42))
+    c.rect([ix0 - 5, iy1 + 1, ix1 + 5, iy1 + 4], fill=shade(iron, 0.44))
     c.rect([ix0, iy0, ix1, iy1], fill=dark)
+    # you can see a little way down the throat
+    c.rect([ix0, iy0, ix1, iy0 + (iy1 - iy0) * 0.30], fill=(9, 8, 7))
 
-    # five fat bars, each with a lit top edge and a black slot under it
-    n = 5
+    # ---- three fat bars. Fewer and thicker reads; five and thin blurs.
+    n = 3
     span = iy1 - iy0
-    bh = span / (n + (n - 1) * 0.72)
-    gap = bh * 0.72
-    y = iy0
+    bh = span / (n + (n + 1) * 0.62)
+    gap = bh * 0.62
+    y = iy0 + gap
     for i in range(n):
-        c.rect([ix0, y - gap * 0.9, ix1, y], fill=dark)
         c.rect([ix0, y, ix1, y + bh], fill=iron)
-        c.rect([ix0, y, ix1, y + bh * 0.36], fill=shade(iron, 1.40))
-        c.rect([ix0, y + bh * 0.78, ix1, y + bh], fill=shade(iron, 0.52))
-        for _ in range(14):
+        c.rect([ix0, y, ix1, y + bh * 0.40], fill=shade(iron, 1.34))
+        c.rect([ix0, y + bh * 0.74, ix1, y + bh], fill=shade(iron, 0.46))
+        for _ in range(22):
             c.circle(rnd.uniform(ix0, ix1), rnd.uniform(y, y + bh),
-                     rnd.uniform(0.5, 1.4),
-                     fill=rnd.choice([shade(iron, 0.70), shade(iron, 1.24),
-                                      shade(RUST, 0.70), shade(RUST, 0.55)]))
+                     rnd.uniform(0.5, 1.5),
+                     fill=rnd.choice([shade(iron, 0.72), shade(iron, 1.20),
+                                      shade(RUST, 0.62), shade(RUST, 0.48)]))
         y += bh + gap
-    c.rect([ix0, y - gap * 0.9, ix1, y - gap * 0.1], fill=dark)
 
-    # cross ribs tie the bars together
-    for f in (0.30, 0.70):
-        x = ix0 + (ix1 - ix0) * f
-        c.rect([x - 3, iy0, x + 3, iy1], fill=iron)
-        c.rect([x - 3, iy0, x - 0.4, iy1], fill=shade(iron, 1.30))
-        c.rect([x + 1.8, iy0, x + 3, iy1], fill=shade(iron, 0.60))
+    # one central rib, chunky, tying the bars
+    xr = (ix0 + ix1) * 0.5
+    c.rect([xr - 4, iy0, xr + 4, iy1], fill=iron)
+    c.rect([xr - 4, iy0, xr - 0.6, iy1], fill=shade(iron, 1.26))
+    c.rect([xr + 2.4, iy0, xr + 4, iy1], fill=shade(iron, 0.52))
 
-    # leaves and grit caught in the mouth
-    for _ in range(10):
-        lx = rnd.uniform(ix0 + 4, ix1 - 4)
-        ly = rnd.uniform(iy0 + 2, iy1 - 2)
-        rr = rnd.uniform(2.2, 5.0)
-        c.ellipse([lx - rr, ly - rr * 0.5, lx + rr, ly + rr * 0.5],
-                  fill=shade(mix(CLOTH["ochre"], ASPHALT, 0.58),
-                             rnd.uniform(0.58, 0.88)))
-    for _ in range(70):
+    # ---- what the gutter washed in: real leaves with a stem and a notch,
+    #      plus a wedged scrap of newspaper
+    for _ in range(5):
+        lx = rnd.uniform(ix0 + 7, ix1 - 7)
+        ly = rnd.uniform(iy0 + 3, iy1 - 3)
+        rr = rnd.uniform(3.4, 6.2)
+        ang = rnd.uniform(-0.9, 0.9)
+        tone = shade(mix(CLOTH["ochre"], ASPHALT, 0.54), rnd.uniform(0.52, 0.80))
+        pts = []
+        for k in range(13):
+            u = -1.0 + 2.0 * k / 12.0
+            lobe = (1.0 - u * u) ** 0.62
+            pts.append((u * rr, -lobe * rr * 0.46))
+        for k in range(13):
+            u = 1.0 - 2.0 * k / 12.0
+            lobe = (1.0 - u * u) ** 0.62 * (0.86 + 0.2 * math.cos(u * 9))
+            pts.append((u * rr, lobe * rr * 0.42))
+        ca, sa = math.cos(ang), math.sin(ang)
+        c.poly([(lx + x * ca - y2 * sa, ly + x * sa + y2 * ca)
+                for x, y2 in pts], fill=tone)
+        c.line([(lx - rr * ca, ly - rr * sa), (lx + rr * ca, ly + rr * sa)],
+               shade(tone, 0.68), 0.9)
+    px = rnd.uniform(ix0 + 10, ix1 - 22)
+    py = iy0 + span * 0.62
+    c.poly([(px, py), (px + 15, py - 3), (px + 17, py + 5), (px + 3, py + 7)],
+           fill=shade(mix(PAPER, ASPHALT, 0.62), 0.86))
+
+    # damp stain fanning out of the mouth onto the kerb
+    ov = c.overlay()
+    ov.ellipse([ix0 - 12, iy1 - 6, ix1 + 12, h + 8], fill=(20, 18, 16, 64))
+    c.merge(ov)
+    for _ in range(80):
         c.circle(rnd.uniform(0, w), rnd.uniform(0, h), rnd.uniform(0.5, 1.5),
-                 fill=shade(ASPHALT, rnd.uniform(0.78, 1.18)))
+                 fill=shade(ASPHALT, rnd.uniform(0.74, 1.14)))
 
-    return ak.finish(c, ink=3, light=True, light_strength=0.46, grain_amt=6,
+    return ak.finish(c, ink=3, light=True, light_strength=0.42, grain_amt=6,
                      seed=55)
 
 
@@ -1265,63 +1434,70 @@ def build_manhole_steam():
         reg = acc.crop((x0, y0, x1, y1))
         acc.paste(ImageChops.add(reg, tmp), (x0, y0))
 
-    # four loose columns leaning the same way, billowing as they climb
-    for col in range(4):
-        base_x = w * (0.36 + col * 0.09) + rnd.uniform(-5, 5)
-        lean = rnd.uniform(-0.10, 0.30)
-        ph = rnd.uniform(0, 6.3)
-        for i in range(170):
-            f = i / 169.0
-            y = h * (1.00 - 0.98 * f)
-            spread = 5 + 44 * (f ** 0.80)
-            cxx = (base_x + lean * f * w * 0.30
-                   + math.sin(f * 3.2 + ph) * spread * 0.55)
-            r = 6 + 26 * (f ** 0.80)
-            v = 9 * (1.0 - f * 0.55)
-            blob(cxx + rnd.uniform(-spread, spread) * 0.65,
-                 y + rnd.uniform(-8, 8),
-                 r * rnd.uniform(0.7, 1.4), r * rnd.uniform(0.55, 1.15),
-                 max(2, int(v)))
-    # wisps peeling off the top
-    for _ in range(6):
-        sx = w * rnd.uniform(0.32, 0.66)
-        sy = h * rnd.uniform(0.50, 0.72)
-        d = rnd.choice((-1, 1))
-        for k in range(28):
-            t2 = k / 27.0
-            blob(sx + d * (math.sin(t2 * 3.4) * 26 * t2 + t2 * 30),
-                 sy - t2 * h * 0.52, 5 + t2 * 14, 4 + t2 * 10,
-                 int(7 * (1 - t2)))
+    # Built from LOBES, not from a spray of dots. A plume you can read is a
+    # stack of a few big cauliflower heads getting fatter as they climb; a
+    # cloud of small dots at low opacity is just a smudge on the film.
+    spine_x = w * 0.44
+    for lv in range(9):
+        f = lv / 8.0                                  # 0 at the vent, 1 at top
+        y = h * (0.98 - 0.90 * (f ** 0.86))
+        drift = f * f * w * 0.20                      # it leans away as it rises
+        r = 7 + 30 * (f ** 0.72)
+        heads = 2 + int(f * 4)
+        for k in range(heads):
+            u = (k / max(1, heads - 1.0)) - 0.5 if heads > 1 else 0.0
+            hx = spine_x + drift + u * r * 1.9 + rnd.uniform(-3, 3)
+            hy = y + rnd.uniform(-r * 0.30, r * 0.30)
+            v = int(30 * (1.0 - f * 0.42) * (1.0 - abs(u) * 0.35))
+            blob(hx, hy, r * rnd.uniform(0.85, 1.25),
+                 r * rnd.uniform(0.62, 0.95), max(6, v))
+            # a smaller boil riding on the shoulder of each head
+            blob(hx + rnd.uniform(-r, r) * 0.6, hy - r * rnd.uniform(0.3, 0.7),
+                 r * rnd.uniform(0.40, 0.66), r * rnd.uniform(0.32, 0.52),
+                 max(5, int(v * 0.8)))
+    # the throat: a tight, denser column right at the vent
+    for k in range(26):
+        f = k / 25.0
+        blob(spine_x + math.sin(f * 2.6) * 5, h * (0.99 - 0.24 * f),
+             5 + f * 9, 4 + f * 6, 22)
+    # two wisps tearing off the crown
+    for d, sy0 in ((-1, 0.46), (1, 0.36)):
+        sx = spine_x + w * (0.10 if d > 0 else -0.02)
+        for k in range(22):
+            t2 = k / 21.0
+            blob(sx + d * (math.sin(t2 * 2.6) * 16 * t2 + t2 * 34),
+                 h * sy0 - t2 * h * 0.34, 6 + t2 * 15, 4 + t2 * 9,
+                 int(13 * (1 - t2) ** 1.2))
 
-    acc = acc.filter(ImageFilter.GaussianBlur(7 * ss / 3.0))
+    acc = acc.filter(ImageFilter.GaussianBlur(6 * ss / 3.0))
 
     # a plume envelope: pinched at the vent, opening out as it rises
     env = Image.new("L", (w * ss, h * ss), 0)
     ed = ImageDraw.Draw(env)
-    ed.polygon([(0.40 * w * ss, h * ss), (0.16 * w * ss, 0.52 * h * ss),
-                (0.02 * w * ss, 0.02 * h * ss), (0.98 * w * ss, 0.02 * h * ss),
-                (0.86 * w * ss, 0.50 * h * ss), (0.62 * w * ss, h * ss)],
+    ed.polygon([(0.36 * w * ss, h * ss), (0.14 * w * ss, 0.54 * h * ss),
+                (0.04 * w * ss, 0.04 * h * ss), (1.00 * w * ss, 0.04 * h * ss),
+                (0.92 * w * ss, 0.52 * h * ss), (0.58 * w * ss, h * ss)],
                fill=255)
-    env = env.filter(ImageFilter.GaussianBlur(11 * ss))
-    acc = ImageChops.multiply(acc, env.point(lambda v: 40 + int(v * 0.84)))
+    env = env.filter(ImageFilter.GaussianBlur(10 * ss))
+    acc = ImageChops.multiply(acc, env.point(lambda v: 44 + int(v * 0.82)))
 
-    # tear it apart so it is vapour, not a cotton ball: four scales of holes
-    for cell, blur, lo in ((7, 3, 20), (19, 7, 50), (46, 16, 80),
-                           (98, 30, 108)):
+    # tear it apart so it is vapour, not a cotton ball. The coarse scales
+    # carve the lobes apart; the fine one is just tooth.
+    for cell, blur, lo in ((15, 7, 104), (36, 14, 70), (84, 28, 84)):
         acc = ImageChops.multiply(
             acc, noise_img(w * ss, h * ss, rnd, lo, 255, cell=cell, blur=blur))
     # a stretched noise gives it the streaky, rising grain of real steam
-    streak = noise_img(w * ss, h * ss // 7, rnd, 110, 255, cell=4, blur=2)
+    streak = noise_img(w * ss, h * ss // 8, rnd, 138, 255, cell=5, blur=2)
     acc = ImageChops.multiply(acc, streak.resize((w * ss, h * ss),
                                                  Image.BICUBIC))
-    acc = acc.point(lambda v: min(104, int(v * 3.6)))
-    acc = acc.filter(ImageFilter.GaussianBlur(3 * ss / 3.0))
+    acc = acc.point(lambda v: min(188, int(v * 3.4)))
+    acc = acc.filter(ImageFilter.GaussianBlur(5.5 * ss / 3.0))
 
-    img = Image.new("RGBA", (w * ss, h * ss), (230, 226, 218, 0))
+    img = Image.new("RGBA", (w * ss, h * ss), (232, 228, 220, 0))
     img.putalpha(acc)
     img = img.resize((w, h), Image.LANCZOS)
-    return vgrad_alpha(img, [(0.0, 0.0), (0.20, 0.55), (0.52, 1.0),
-                             (0.88, 0.92), (1.0, 0.40)])
+    return vgrad_alpha(img, [(0.0, 0.0), (0.16, 0.48), (0.46, 1.0),
+                             (0.90, 0.96), (1.0, 0.44)])
 
 
 # ================================================================== chalk
@@ -1564,12 +1740,22 @@ def build_chalk_marks():
             W(285) + math.sin(i * 1.7) * W(2.6)) for i in range(13)]
     pad.stroke(_rot(und, W(150), W(280), -5.0), lw * 1.05, gaps=0.14)
 
-    # --- a stray star, drawn in one go the way kids do
-    sx, sy, sr = W(146), W(64), W(15)
+    # --- a stray star, drawn in one go the way kids do, out in the empty
+    #     middle where it isn't fighting the tally bundles
+    sx, sy, sr = W(212), W(196), W(20)
     star = [(sx + math.cos(math.radians(-90 + k * 144)) * sr,
              sy + math.sin(math.radians(-90 + k * 144)) * sr)
             for k in range(6)]
-    pad.stroke(star, lw * 0.85, gaps=0.10)
+    pad.stroke(star, lw * 0.9, gaps=0.10)
+
+    # --- the safe square, boxed and crossed out by whoever lost the argument
+    bxc, byc, bs = W(136), W(202), W(21)
+    box = [(bxc - bs, byc - bs), (bxc + bs, byc - bs * 0.9),
+           (bxc + bs * 0.94, byc + bs), (bxc - bs * 1.04, byc + bs * 0.92)]
+    for a, b in ((0, 1), (1, 2), (2, 3), (3, 0)):
+        pad.stroke([box[a], box[b]], lw, gaps=0.11)
+    pad.stroke([box[0], box[2]], lw * 0.92, gaps=0.10)
+    pad.stroke([box[1], box[3]], lw * 0.92, gaps=0.10)
 
     return pad.resolve(color=CHALK, alpha=0.9, seed=99)
 

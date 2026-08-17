@@ -129,7 +129,8 @@ func _show_select() -> void:
 	root.add_child(_spacer(6))
 	root.add_child(head)
 	var grid := GridContainer.new()
-	grid.columns = 6
+	var vp := get_viewport_rect().size
+	grid.columns = 3 if vp.y > vp.x else 6
 	grid.add_theme_constant_override("h_separation", 14)
 	grid.add_theme_constant_override("v_separation", 12)
 	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

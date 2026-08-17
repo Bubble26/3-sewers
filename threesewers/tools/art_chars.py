@@ -26,10 +26,16 @@ ANIMS = {"idle": 4, "bat_stance": 2, "swing": 6, "run": 8, "pitch": 8,
          "throw": 4, "catch": 3, "slide": 4, "celebrate": 4, "sulk": 2,
          "walk": 4}
 
+# The camera stands behind the batter, so the kid at the plate is drawn from
+# the back: no face, the hair mass filling the skull, the cap seen from
+# behind. Only the batter ever needs these.
+BACK_ANIMS = {"bat_back": 2, "swing_back": 6}
+
 # Frames are only as wide as the pose needs — the kid always stands at canvas
 # centre, so Godot's centred sprite keeps the feet in the same world spot no
 # matter which width an animation uses.
 ANIM_W = {"swing": 384, "bat_stance": 320, "slide": 320, "pitch": 288,
+          "swing_back": 384, "bat_back": 320,
           "throw": 288, "catch": 288, "celebrate": 288,
           "idle": 256, "run": 256, "walk": 256, "sulk": 256}
 
@@ -268,7 +274,26 @@ def draw_hair_front(c, cx, cy, r, cfg):
                 180, 360, fill=shade(hc, 1.12))
 
 
-def draw_hat(c, cx, cy, r, cfg, tilt=0.0):
+def draw_hair_back_of_head(c, cx, cy, r, cfg):
+    """The whole skull covered in hair, seen from behind."""
+    hc = HAIR[cfg["hair"]]
+    c.circle(cx, cy - r * 0.06, r * 0.99, fill=hc)
+    c.circle(cx - r * 0.22, cy - r * 0.30, r * 0.62, fill=shade(hc, 1.10))
+    if cfg.get("messy"):
+        for a, sz in ((-142, 0.40), (-96, 0.34), (-50, 0.38)):
+            p = rot((cx, cy), a, r * 0.78)
+            c.circle(p[0], p[1], r * sz, fill=hc)
+    if cfg.get("braids"):
+        for sx in (-1, 1):
+            p0 = (cx + sx * r * 0.72, cy + r * 0.30)
+            p1 = (cx + sx * r * 0.86, cy + r * 1.04)
+            icapsule(c, p0, p1, r * 0.26, r * 0.20, hc, ink=3.5)
+            c.circle(p1[0], p1[1] + r * 0.06, r * 0.13, fill=CLOTH["rose"])
+    if cfg.get("longhair"):
+        c.circle(cx, cy + r * 0.34, r * 0.94, fill=shade(hc, 0.94))
+
+
+def draw_hat(c, cx, cy, r, cfg, tilt=0.0, back=False):
     """Headwear sits ON the skull.
 
     Hard rule: nothing may reach below cy - 0.20r. The eyes live at cy + 0.10r
@@ -297,6 +322,12 @@ def draw_hat(c, cx, cy, r, cfg, tilt=0.0):
 
     def visor(y, wide, drop, col):
         """Seen head-on, a cap peak is a wide shallow dome, not a side bar."""
+        if back:
+            # from behind, only a sliver of the peak shows past the crown
+            c.chord([cx - r * wide * 0.55, y - r * 0.24,
+                     cx + r * wide * 0.55, y - r * 0.02], 180, 360,
+                    fill=shade(col, 0.66))
+            return
         if cfg.get("backwards"):
             # peak points away — just the strap and a sliver at the ear
             c.chord([cx - r * 0.30, y - r * 0.10, cx + r * 0.30, y + r * 0.16],
@@ -495,10 +526,14 @@ def draw_kid(c, cfg, pose):
     for sx in (-1, 1):
         icircle(c, head_cx + sx * hr * 0.96, head_cy + hr * 0.16, hr * 0.135,
                 shade(skin, 0.92), ink=3)
-    draw_hair_front(c, head_cx, head_cy, hr, cfg)
-    draw_face(c, head_cx, head_cy, hr, cfg, pose.get("face", "calm"),
-              pose.get("look", 0.0) * flip)
-    draw_hat(c, head_cx, head_cy, hr, cfg)
+    if pose.get("back", False):
+        draw_hair_back_of_head(c, head_cx, head_cy, hr, cfg)
+        draw_hat(c, head_cx, head_cy, hr, cfg, back=True)
+    else:
+        draw_hair_front(c, head_cx, head_cy, hr, cfg)
+        draw_face(c, head_cx, head_cy, hr, cfg, pose.get("face", "calm"),
+                  pose.get("look", 0.0) * flip)
+        draw_hat(c, head_cx, head_cy, hr, cfg)
 
     # ---- near arm last (in front of the torso)
     hand = arm(sh_r if flip > 0 else sh_l, near_arm, True)
@@ -537,6 +572,11 @@ def draw_bat(c, hand, ang, sc=1.0):
 
 # ---------------------------------------------------------------- poses
 def pose_for(anim, i, n, cfg):
+    if anim in ("bat_back", "swing_back"):
+        p = pose_for(anim.replace("_back", "").replace("bat", "bat_stance")
+                     if anim == "bat_back" else "swing", i, n, cfg)
+        p["back"] = True
+        return p
     """Skeleton per frame. Cycles are built from sin/cos so motion reads."""
     p = i / max(1, n)
     tau = math.pi * 2
@@ -711,6 +751,12 @@ def build(outdir):
             for i in range(n):
                 img = render(kid_id, cfg, anim, i, n)
                 img.save(f"{outdir}/chr_{kid_id}_{anim}_{i}.png")
+                n_written += 1
+    for kid_id, cfg in KIDS.items():
+        for anim, n in BACK_ANIMS.items():
+            for i in range(n):
+                render(kid_id, cfg, anim, i, n).save(
+                    f"{outdir}/chr_{kid_id}_{anim}_{i}.png")
                 n_written += 1
     for i in range(ANIMS["walk"]):
         render("cop", COP, "walk", i, ANIMS["walk"]).save(f"{outdir}/npc_cop_walk_{i}.png")
