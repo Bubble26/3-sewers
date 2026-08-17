@@ -19,13 +19,13 @@ from artkit import INK, shade
 
 SS = 2
 
-NIGHT_STONE = (74, 72, 76)      # cobbles read cool where the lamps miss them
-NIGHT_STONE_L = (96, 93, 94)
-NIGHT_STONE_D = (60, 58, 62)
+NIGHT_STONE = (102, 86, 68)     # warm earth — the lamps own this street
+NIGHT_STONE_L = (126, 106, 84)
+NIGHT_STONE_D = (72, 60, 48)
 LAMP_WARM = (255, 206, 130)
-SKY_HI = (58, 66, 92)
-SKY_LO = (28, 32, 48)
-CLOUD = (86, 92, 116)
+SKY_HI = (74, 68, 72)
+SKY_LO = (26, 23, 26)
+CLOUD = (96, 88, 90)
 
 
 def _cobble_tile(size=256, seed=5):

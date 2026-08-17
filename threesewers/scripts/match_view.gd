@@ -55,7 +55,7 @@ const FX_RISE := 64.0
 const FX_LIFE := 0.9
 const SCATTER_PX := 30.0
 const RUN_LEAN := 5.0                       # degrees a running kid leans
-const NIGHT_TINT := Color(0.29, 0.34, 0.53)  # gaslit blue the whole street sits in
+const NIGHT_TINT := Color(0.72, 0.63, 0.50)  # warm gothic dusk, amber-lit
 const SMOKE_GUARD_REAL_S := 300.0
 const SEWER_TEXTS := ["ONE SEWER…", "TWO SEWERS…", "THREE SEWERS…"]
 const PITCH_PATTER_CHANCE := 0.3
@@ -187,6 +187,10 @@ var _tb := PITCH_TB
 var _cross_t := 0.8
 var _rest_h := 0.7
 var _mitt := Vector2.ZERO
+var _v0a := 0.0                    # phase-A launch velocity (up +)
+var _v2 := 0.0                     # rebound velocity off the bounce
+var _spin_bow := 0.0               # spinner's pre-bounce Magnus drift
+var _h_hops: Array[Vector2] = []   # grounder hop chain: (start_u, peak)
 var _committed := false            # human tap landed in the window
 var _commit_err := 0.0
 var _vis_committed := false        # a swing anim has fired (human or cpu)
@@ -565,6 +569,16 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	_pC = Vector2(Tuning.PLATE.x + lane * PITCH_CROSS_LANE_X + spin, Tuning.PLATE.y)
 	var cpos: Vector2 = Tuning.FIELD_POS["C"]
 	_mitt = cpos + MITT_OFF
+	# Ballistics. Phase A: a real toss — launch velocity chosen so the ball
+	# leaves the hand at PITCH_ARC_H and meets the cobbles exactly at ta, so
+	# the swing clock (cross_t) is untouched. Phase B: the spaldeen rebounds
+	# with the pitch's liveliness expressed as a rebound apex; the fast one
+	# crosses the plate high on the hop, the drop dies low off the bounce.
+	_v0a = (0.5 * Tuning.BALL_G * _ta * _ta - PITCH_ARC_H) / _ta
+	_v2 = sqrt(2.0 * Tuning.BALL_G * _rest_h * PITCH_ARC_H)
+	# the spinner leans away before the bounce, then takes on it — the kick
+	# already lives in _pC.x, so the bow bends opposite for the deception
+	_spin_bow = -spin * 0.35
 	if not _plan.is_empty() and bool(_plan.get("swing", false)):
 		_vis_commit_t = _cross_t + clampf(float(_plan["err_ms"]) / 1000.0,
 			-Tuning.SWING_EARLY, Tuning.SWING_LATE - 0.02)
@@ -619,11 +633,13 @@ func _process_ball(delta: float) -> void:
 		if _bt < _ta:
 			var u := _bt / _ta
 			bw = _pA.lerp(_pB, u)
-			bh = PITCH_ARC_H * (1.0 - u) + PITCH_ARC_BOB * sin(PI * u)
+			bw.x += _spin_bow * 4.0 * u * (1.0 - u)
+			bh = maxf(0.0, PITCH_ARC_H + _v0a * _bt
+				- 0.5 * Tuning.BALL_G * _bt * _bt)
 		elif _bt < _cross_t:
-			var u := (_bt - _ta) / _tb
-			bw = _pB.lerp(_pC, u)
-			bh = _rest_h * PITCH_ARC_H * sin(PI * u)
+			var tau := _bt - _ta
+			bw = _pB.lerp(_pC, tau / _tb)
+			bh = maxf(0.0, _v2 * tau - 0.5 * Tuning.BALL_G * tau * tau)
 		elif not _vis_committed:
 			var u := minf((_bt - _cross_t) / MITT_TIME, 1.0)
 			bw = _pC.lerp(_mitt, u)
@@ -665,15 +681,32 @@ func _process_ball(delta: float) -> void:
 		bw = pos
 		_apply_ball()
 
+# A grounder is a chain of hops, each losing energy to the cobbles:
+# apex_k = apex · e^2k, hop time T_k = T · e^k. Returns the total duration.
+func _build_hops(first_peak: float) -> float:
+	_h_hops.clear()
+	var e := Tuning.GROUND_REST
+	var t0 := sqrt(8.0 * first_peak / Tuning.BALL_G_CHOP)
+	var total := t0 * (1.0 + e + e * e)
+	var at := 0.0
+	for k in 3:
+		var frac := t0 * pow(e, k) / total
+		_h_hops.append(Vector2(at, first_peak * pow(e, 2 * k)))
+		at += frac
+	return total
+
 func _hit_height(u: float) -> float:
 	if _h_loft == "ground":
-		# two decaying bounces on the cobbles
-		if u < 0.5:
-			return HIT_PEAK["ground"] * sin(PI * u / 0.5)
-		elif u < 0.8:
-			return HIT_PEAK["ground"] * 0.4 * sin(PI * (u - 0.5) / 0.3)
-		return HIT_PEAK["ground"] * 0.16 * sin(PI * (u - 0.8) / 0.2)
-	return _h_peak * sin(PI * u)
+		for i in range(_h_hops.size() - 1, -1, -1):
+			var start := _h_hops[i].x
+			var end := _h_hops[i + 1].x if i + 1 < _h_hops.size() else 1.0
+			if u >= start:
+				var lu := (u - start) / maxf(end - start, 0.001)
+				# each hop is its own parabola: h = 4·apex·u(1−u)
+				return 4.0 * _h_hops[i].y * lu * (1.0 - lu)
+		return 0.0
+	# a ballistic arc IS this parabola — the sin() it replaces hangs wrong
+	return 4.0 * _h_peak * u * (1.0 - u)
 
 func _resolve_pitch() -> void:
 	_ball_mode = ""
@@ -704,12 +737,14 @@ func _launch_hit(play: Dictionary) -> void:
 	_h_roll_dir = Vector2.ZERO
 	if _h_window:
 		_h_land = Tuning.WINDOW_POS
-		_h_dur = FLY_T + _h_carry * FLY_T_CARRY
+		_h_peak = HIT_PEAK["fly"] * (0.85 + 0.35 * _h_carry)
+		_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
 	elif bool(play["fire_escape"]):
 		var fe: Vector2 = Tuning.FE_L if float(play["lane"]) < 0.0 else Tuning.FE_R
 		var inward := 34.0 if float(play["lane"]) < 0.0 else -34.0
 		_h_land = fe + Vector2(inward, 40.0)
-		_h_dur = FLY_T
+		_h_peak = HIT_PEAK["fly"]
+		_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
 	else:
 		var lx := Tuning.PLATE.x + float(play["lane"]) * HIT_LANE_X \
 			+ randf_range(-HIT_JITTER, HIT_JITTER)
@@ -721,11 +756,14 @@ func _launch_hit(play: Dictionary) -> void:
 		_h_land = Vector2(lx, ly)
 		match _h_loft:
 			"fly":
-				_h_dur = FLY_T + _h_carry * FLY_T_CARRY
+				# deep flies genuinely hang longer: T = sqrt(8·peak/G)
+				_h_peak = HIT_PEAK["fly"] * (0.85 + 0.35 * _h_carry)
+				_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
 			"line":
-				_h_dur = LINE_T
+				_h_peak = HIT_PEAK["line"]
+				_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
 			_:
-				_h_dur = GROUND_T
+				_h_dur = _build_hops(HIT_PEAK["ground"])
 				if not _h_caught:
 					_h_roll_t = GROUND_ROLL_T
 					_h_roll_px = GROUND_ROLL_PX

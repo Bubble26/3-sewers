@@ -5,6 +5,11 @@ const INNINGS := 3
 const PITCH_TIMES := {"fast": 0.62, "spinner": 0.78, "drop": 0.88}
 const BOUNCE_REST := {"fast": 0.72, "spinner": 0.7, "drop": 0.5}
 const SPIN_KICK := {"fast": 0.0, "spinner": 34.0, "drop": 8.0}
+# ballistics — one gravity for the whole game, in world px/s^2 (a kid is
+# ~160 world px ≈ 1.4 m, so ~1500 reads just a touch snappier than earth)
+const BALL_G := 1500.0
+const BALL_G_CHOP := 3000.0      # grounders are chopped down hard
+const GROUND_REST := 0.55        # cobble restitution for grounder hops
 const SWING_EARLY := 0.42   # seconds before plate-cross the tap window opens
 const SWING_LATE := 0.24    # seconds after
 const CAM_ZOOM := 0.9

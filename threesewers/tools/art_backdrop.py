@@ -31,16 +31,16 @@ WALL_H = 3200.0                   # tenements tower off the top of the frame
 SEWERS_Y = [1650.0, 1250.0, 850.0]
 
 # night palette — deeper and cooler than the daytime stock
-SKY_TOP = (16, 19, 32)
-SKY_HORIZON = (54, 58, 82)
-STONE = (58, 57, 62)
+SKY_TOP = (20, 17, 20)
+SKY_HORIZON = (72, 62, 58)
+STONE = (96, 80, 62)
 STONE_D = (40, 40, 45)
-WALK_C = (86, 84, 84)
-BRICK_N = (66, 50, 44)
+WALK_C = (104, 92, 78)
+BRICK_N = (78, 56, 44)
 BRICK_ND = (44, 34, 31)
 LAMP = (255, 208, 138)
 
-COBBLE_TEXEL = 5.0                # texels per world unit
+COBBLE_TEXEL = 6.5                # texels per world unit — finer, dirtier
 WALK_TEXEL = 3.0
 BRICK_TEXEL = 4.0
 
@@ -138,7 +138,7 @@ def rasterise(view, props_dir, rs=2):
 def _night_grade(img_f, view, rs):
     """Sink the street into blue-black, then add gaslight back."""
     W, H = img_f.shape[1], img_f.shape[0]
-    tint = np.array([0.42, 0.50, 0.78], np.float32)
+    tint = np.array([0.60, 0.50, 0.38], np.float32)
     out = img_f * tint
     # warm pools, added in linear-ish space
     glow = np.zeros_like(out)
@@ -155,8 +155,8 @@ def _night_grade(img_f, view, rs):
         glow[..., 1] += f * LAMP[1] * strength
         glow[..., 2] += f * LAMP[2] * strength
 
-    pool(P.PLATE_X, 2330.0, 560.0, 0.50)      # the plate, so play stays legible
-    pool(P.PLATE_X, 1900.0, 520.0, 0.26)
+    pool(P.PLATE_X, 2330.0, 560.0, 0.62)      # the plate, so play stays legible
+    pool(P.PLATE_X, 1900.0, 520.0, 0.34)
     pool(WALL_L - WALK * 0.5, 1180.0, 300.0, 0.60)
     pool(WALL_R + WALK * 0.5, 1980.0, 300.0, 0.60)
     pool(WALL_L - WALK * 0.4, 2450.0, 240.0, 0.40)
@@ -165,13 +165,13 @@ def _night_grade(img_f, view, rs):
     return np.clip(out, 0, 255)
 
 
-def _vignette(img, strength=0.55):
+def _vignette(img, strength=0.72):
     w, h = img.size
     v = Image.new("L", (w, h), 0)
     d = ImageDraw.Draw(v)
     d.ellipse([-w * 0.30, -h * 0.22, w * 1.30, h * 1.22], fill=255)
     v = v.filter(ImageFilter.GaussianBlur(min(w, h) * 0.13))
-    dark = Image.new("RGBA", (w, h), (6, 8, 16, 255))
+    dark = Image.new("RGBA", (w, h), (12, 9, 8, 255))
     dark.putalpha(v.point(lambda p: int((255 - p) * strength)))
     out = img.convert("RGBA")
     out.alpha_composite(dark)
@@ -207,10 +207,10 @@ def _far_building(img, view, rs, rnd):
     base_y = sy_far * rs + 2
     top_y = base_y - half * 2.6
     d = ImageDraw.Draw(img)
-    body = (46, 44, 58, 255)
+    body = (56, 45, 38, 255)
     d.rectangle([cx - half, top_y, cx + half, base_y], fill=body)
     d.rectangle([cx - half, top_y, cx + half, top_y + half * 0.10],
-                fill=(38, 36, 50, 255))          # cornice
+                fill=(42, 34, 28, 255))          # cornice
     cols = 5
     rows = 7
     for r in range(rows):
@@ -220,13 +220,13 @@ def _far_building(img, view, rs, rnd):
             ww = half * 0.10
             wh = ww * 1.5
             lit = rnd.random() < 0.42
-            col = (250, 206, 138, 255) if lit else (26, 28, 40, 255)
+            col = (250, 206, 138, 255) if lit else (32, 26, 23, 255)
             d.rectangle([wx0 - ww, wy0 - wh, wx0 + ww, wy0 + wh], fill=col)
     # haze it back so it reads as distance, not a wall in your face
     haze = Image.new("RGBA", img.size, (0, 0, 0, 0))
     hd = ImageDraw.Draw(haze)
     hd.rectangle([cx - half, top_y, cx + half, base_y],
-                 fill=(58, 64, 92, 140))
+                 fill=(64, 52, 44, 130))
     img.alpha_composite(haze)
 
 
@@ -253,7 +253,7 @@ def build_backdrop(view, props_dir, chars_dir=None, rs=2, seed=3):
                              Image.LANCZOS)
         _paste(img, spr, sx * rs, sy * rs, s * view.xk * ART * mul * rs, anchor)
 
-    night = (30, 38, 66, 255)
+    night = (52, 42, 38, 255)
 
     # --- the block that closes the far end of the street. Without it the
     # vanishing point is a bright wedge of sky and the canyon has no end.
