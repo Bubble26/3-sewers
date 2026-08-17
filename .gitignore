@@ -2,3 +2,7 @@
 threesewers/.godot/
 *.tmp
 .DS_Store
+
+# Python bytecode from the art generators
+__pycache__/
+*.pyc

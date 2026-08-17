@@ -39,11 +39,11 @@ func _ready() -> void:
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var v := VBoxContainer.new()
 	lbl = Label.new()
-	lbl.add_theme_font_size_override("font_size", 92)
+	lbl.add_theme_font_size_override("font_size", 74)
 	lbl.add_theme_color_override("font_color", Tuning.INK)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub = Label.new()
-	sub.add_theme_font_size_override("font_size", 26)
+	sub.add_theme_font_size_override("font_size", 23)
 	sub.add_theme_color_override("font_color", Tuning.BRICKC)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(lbl)

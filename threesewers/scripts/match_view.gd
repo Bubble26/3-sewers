@@ -54,6 +54,7 @@ const TICK_CHAR_T := 0.018
 const FX_RISE := 64.0
 const FX_LIFE := 0.9
 const SCATTER_PX := 30.0
+const RUN_LEAN := 5.0                       # degrees a running kid leans
 const SMOKE_GUARD_REAL_S := 300.0
 const SEWER_TEXTS := ["ONE SEWER…", "TWO SEWERS…", "THREE SEWERS…"]
 const PITCH_PATTER_CHANCE := 0.3
@@ -87,6 +88,9 @@ class Kid extends Node2D:
 		spr = Sprite2D.new()
 		add_child(spr)
 
+	var _facing := 1.0
+	var _lean := 0.0
+
 	# Art is authored at 2x for retina, and animations use different canvas
 	# widths, so the offset is derived per texture: bottom edge on the node
 	# origin keeps the kid's feet planted and the y-sort honest.
@@ -94,8 +98,17 @@ class Kid extends Node2D:
 		if t == null or spr.texture == t:
 			return
 		spr.texture = t
-		spr.scale = Vector2(Tuning.ART, Tuning.ART)
+		spr.scale = Vector2(Tuning.ART * _facing, Tuning.ART)
 		spr.offset = Vector2(0, -t.get_height() * 0.5)
+
+	# The kids are drawn front-on, so travel direction is sold by mirroring
+	# them and leaning them into the run.
+	func face(dx: float, lean_deg := 0.0) -> void:
+		if absf(dx) > 0.5:
+			_facing = signf(dx)
+			spr.scale.x = Tuning.ART * _facing
+		_lean = lean_deg * (_facing if lean_deg != 0.0 else 1.0)
+		spr.rotation_degrees = _lean
 
 	func play(a: String, fps := 8.0, loop := true) -> void:
 		if anim == a and _loop and loop:
@@ -289,16 +302,18 @@ func _build_world() -> void:
 	# far rooftops closing the top of the street
 	_flat_prop("skyline", Vector2(Tuning.PLATE.x, STREET_TOP + 40.0), bg, 1.0,
 		Color(1, 1, 1, 0.85))
-	# tenement windows down both walls
+	# tenement windows down both walls — skipped when the facade art already
+	# carries its own window rhythm, so they never double up
 	var win_tex: Texture2D = Game.prop("window")
-	for wy in [760.0, 1080.0, 1420.0, 1760.0, 2100.0, 2440.0]:
-		for wx in [Tuning.WALL_L - WALK_W - 120.0, Tuning.WALL_R + WALK_W + 120.0]:
-			if absf(wy - Tuning.WINDOW_POS.y) < 90.0 \
-					and absf(wx - Tuning.WINDOW_POS.x) < 160.0:
-				continue                     # leave room for THE window
-			var w := _spr(win_tex, Vector2(wx, wy), 1.0)
-			w.modulate = Color(1, 1, 1, 0.9)
-			bg.add_child(w)
+	if Game.prop("facade_l") == null:
+		for wy in [760.0, 1080.0, 1420.0, 1760.0, 2100.0, 2440.0]:
+			for wx in [Tuning.WALL_L - WALK_W - 120.0, Tuning.WALL_R + WALK_W + 120.0]:
+				if absf(wy - Tuning.WINDOW_POS.y) < 90.0 \
+						and absf(wx - Tuning.WINDOW_POS.x) < 160.0:
+					continue                 # leave room for THE window
+				var w := _spr(win_tex, Vector2(wx, wy), 1.0)
+				w.modulate = Color(1, 1, 1, 0.9)
+				bg.add_child(w)
 	# THE window — swapped to broken glass on the window HR
 	window_spr = _spr(win_tex, Tuning.WINDOW_POS, 1.25)
 	bg.add_child(window_spr)
@@ -975,8 +990,15 @@ func _move_runner(m: Dictionary) -> float:
 	node.play("run", 11.0)
 	var tw := create_tween()
 	var legs := 0
+	var prev: Vector2 = node.position
 	for step in range(from_i + 1, to_i + 1):
-		tw.tween_property(node, "position", _base_pos[mini(step, 3)], RUN_LEG_T)
+		var dest: Vector2 = _base_pos[mini(step, 3)]
+		var dx := dest.x - prev.x
+		tw.tween_callback(func() -> void:
+			if is_instance_valid(node):
+				node.face(dx, RUN_LEAN))
+		tw.tween_property(node, "position", dest, RUN_LEG_T)
+		prev = dest
 		legs += 1
 	var total := legs * RUN_LEG_T
 	if was_out:
@@ -996,6 +1018,7 @@ func _move_runner(m: Dictionary) -> float:
 	else:
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(node):
+				node.face(0.0, 0.0)
 				node.play("idle", 6.0))
 	return total
 
@@ -1034,6 +1057,7 @@ func _batter_jog(frac: float) -> void:
 		return
 	batter_node.rest_anim = "idle"
 	batter_node.play("run", 11.0)
+	batter_node.face(Tuning.BASE_1.x - BATTER_POS.x, RUN_LEAN)
 	var tw := create_tween()
 	tw.tween_property(batter_node, "position",
 		BATTER_POS.lerp(Tuning.BASE_1, frac), 0.32)
@@ -1072,10 +1096,12 @@ func _fielder_chase(fpos: String) -> void:
 	var to := _h_land + (k.position - _h_land).normalized() * 26.0
 	var dur := clampf(k.position.distance_to(to) / 650.0, 0.2, 0.6)
 	k.play("run", 11.0)
+	k.face(to.x - k.position.x, RUN_LEAN)
 	var tw := create_tween()
 	tw.tween_property(k, "position", to, dur)
 	tw.tween_callback(func() -> void:
 		if is_instance_valid(k):
+			k.face(0.0, 0.0)
 			k.play("idle", 6.0))
 
 func _fielder_catch(fpos: String) -> void:
@@ -1102,10 +1128,12 @@ func _return_fielders() -> void:
 		if k.position.distance_to(home) < 6.0:
 			continue
 		k.play("run", 10.0)
+		k.face(home.x - k.position.x, RUN_LEAN)
 		var tw := create_tween()
 		tw.tween_property(k, "position", home, 0.4)
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(k):
+				k.face(0.0, 0.0)
 				k.play("idle", 6.0))
 
 func _catcher_take() -> void:
@@ -1152,6 +1180,7 @@ func _cheese_beat(cheese_len: float) -> void:
 	cop.position = Vector2(Tuning.WALL_L - 120.0, 1800.0)
 	stage.add_child(cop)
 	cop.play("walk", 7.0)
+	cop.face(1.0, 0.0)
 	var cop_tw := create_tween()
 	cop_tw.tween_property(cop, "position",
 		Vector2(Tuning.WALL_R + 120.0, 1800.0), cheese_len + 0.8)
@@ -1163,12 +1192,17 @@ func _cheese_beat(cheese_len: float) -> void:
 		var here := k.position
 		var wall_x := Tuning.WALL_L + 70.0 if here.x < Tuning.PLATE.x else Tuning.WALL_R - 70.0
 		k.play("run", 12.0)
+		k.face(wall_x - here.x, RUN_LEAN)
 		var tw := create_tween()
 		tw.tween_property(k, "position", Vector2(wall_x, here.y), cheese_len * 0.45)
 		tw.tween_interval(cheese_len * 0.1)
+		tw.tween_callback(func() -> void:
+			if is_instance_valid(k):
+				k.face(here.x - wall_x, RUN_LEAN))
 		tw.tween_property(k, "position", here, cheese_len * 0.45)
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(k):
+				k.face(0.0, 0.0)
 				k.play("idle", 6.0))
 	await _beat(cheese_len + 0.9)
 	ticker(Announcer.line("cheese_end"))
@@ -1279,7 +1313,11 @@ func _build_hud() -> void:
 	var face := TextureRect.new()
 	var face_frames: Array = Game.frames("announcer", "idle", 2)
 	if not face_frames.is_empty():
-		face.texture = face_frames[0]
+		# the strip wants a bust, not a whole tiny body
+		var at := AtlasTexture.new()
+		at.atlas = face_frames[0]
+		at.region = Rect2(52, 24, 152, 182)
+		face.texture = at
 	face.custom_minimum_size = Vector2(60, 68)
 	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

@@ -256,12 +256,13 @@ def draw_hair_front(c, cx, cy, r, cfg):
     c.chord([cx - r * 1.0, cy - r * 1.02, cx + r * 1.0, cy + r * 0.10],
             180, 360, fill=hc)
     if cfg.get("messy"):
-        for i, (a, sz) in enumerate(((-148, 0.30), (-112, 0.24), (-68, 0.28),
-                                     (-34, 0.22))):
-            p = rot((cx, cy), a, r * 0.88)
+        for a, sz in ((-142, 0.40), (-96, 0.34), (-50, 0.38)):
+            p = rot((cx, cy), a, r * 0.78)
             c.circle(p[0], p[1], r * sz, fill=hc)
-            c.circle(p[0] - r * sz * 0.25, p[1] - r * sz * 0.25, r * sz * 0.62,
-                     fill=shade(hc, 1.12))
+        for a, sz in ((-142, 0.40), (-96, 0.34), (-50, 0.38)):
+            p = rot((cx, cy), a, r * 0.78)
+            c.circle(p[0] - r * sz * 0.22, p[1] - r * sz * 0.22, r * sz * 0.66,
+                     fill=shade(hc, 1.10))
     else:
         c.chord([cx - r * 0.5, cy - r * 1.05, cx + r * 0.8, cy - r * 0.32],
                 180, 360, fill=shade(hc, 1.12))

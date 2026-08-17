@@ -188,6 +188,7 @@ CONCRETE = mix(ASPHALT_L, PAPER, 0.34)
 IRON_L = mix(IRON, SLATE, 0.45)
 GLASS = (34, 32, 36)
 WOOD = mix(CLOTH["oat"], BROWNSTONE, 0.42)
+SPOKE = mix(WOOD, LACQUER, 0.40)   # artillery wheel, dulled so the car stays dark
 
 
 # ================================================================== the ball
@@ -196,22 +197,25 @@ def build_spaldeen():
     w, h = W(24, 24)
     c = Canvas(w, h)
     cx, cy, r = w * 0.5, h * 0.5, w * 0.38
-    deep = mix(PINK, (92, 40, 58), 0.42)
+    # A spaldeen is PINK, not crimson: keep the lit two-thirds high and rosy and
+    # let the terminator stay chromatic instead of sliding to maroon.
+    deep = mix(PINK, (128, 54, 72), 0.30)
     c.circle(cx, cy, r, fill=deep)
-    c.circle(cx - r * 0.10, cy - r * 0.11, r * 0.94, fill=shade(PINK, 0.88))
-    c.circle(cx - r * 0.20, cy - r * 0.22, r * 0.80, fill=PINK)
-    c.circle(cx - r * 0.30, cy - r * 0.32, r * 0.56,
-             fill=mix(PINK, PINK_L, 0.55))
+    c.circle(cx - r * 0.08, cy - r * 0.09, r * 0.95, fill=PINK)
+    c.circle(cx - r * 0.17, cy - r * 0.18, r * 0.84,
+             fill=mix(PINK, PINK_L, 0.34))
+    c.circle(cx - r * 0.27, cy - r * 0.29, r * 0.62,
+             fill=mix(PINK, PINK_L, 0.72))
     # kick highlight
-    c.ellipse([cx - r * 0.72, cy - r * 0.76, cx - r * 0.12, cy - r * 0.26],
-              fill=mix(PINK_L, (255, 252, 250), 0.62))
-    c.ellipse([cx - r * 0.62, cy - r * 0.66, cx - r * 0.30, cy - r * 0.42],
-              fill=(255, 253, 251))
+    c.ellipse([cx - r * 0.70, cy - r * 0.74, cx - r * 0.14, cy - r * 0.26],
+              fill=mix(PINK_L, (255, 250, 248), 0.55))
+    c.ellipse([cx - r * 0.60, cy - r * 0.64, cx - r * 0.30, cy - r * 0.42],
+              fill=(255, 252, 250))
     # bounce light on the shadow rim keeps the ball round, not flat
     for a in range(20, 110, 6):
         p = epoint(cx, cy, r * 0.90, r * 0.90, a)
-        c.circle(p[0], p[1], r * 0.075, fill=mix(deep, PINK_L, 0.34))
-    img = ak.finish(c, ink=3, light=True, light_strength=0.55, grain_amt=3, seed=7)
+        c.circle(p[0], p[1], r * 0.075, fill=mix(deep, PINK_L, 0.40))
+    img = ak.finish(c, ink=3, light=True, light_strength=0.42, grain_amt=3, seed=7)
     return img
 
 
@@ -224,57 +228,60 @@ def build_manhole():
     cx, cy = w * 0.5, h * 0.50
     rx, ry = w * 0.452, h * 0.40
 
-    iron_d = shade(IRON, 0.82)
-    iron_m = mix(IRON, ASPHALT_L, 0.42)
-    iron_l = mix(IRON, ASPHALT_L, 0.72)
+    # Cast iron has to sit ABOVE the asphalt in value or the whole base reads
+    # as a hole in the street. Groove = near-black, raised cell = mid grey.
+    groove = shade(IRON, 0.55)
+    iron_m = mix(IRON, ASPHALT_L, 0.70)
+    iron_l = mix(IRON, ASPHALT_L, 1.02)
+    iron_ll = mix(iron_l, CHALK, 0.22)
 
     # the recess it sits in
     c.ellipse([cx - rx - 4, cy - ry - 3, cx + rx + 4, cy + ry + 4],
               fill=shade(ASPHALT_D, 0.80))
     # worn outer rim
-    c.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=iron_m)
+    c.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=shade(iron_m, 0.72))
     c.ellipse([cx - rx, cy - ry - 2, cx + rx, cy + ry - 2], fill=iron_l)
     # cover face
     frx, fry = rx * 0.90, ry * 0.86
-    c.ellipse([cx - frx, cy - fry, cx + frx, cy + fry], fill=iron_d)
-    c.ellipse([cx - frx, cy - fry, cx + frx, cy + fry - 3], fill=iron_m)
+    c.ellipse([cx - frx, cy - fry, cx + frx, cy + fry], fill=groove)
 
     # foundry waffle: raised cells in concentric rings, cut by dark grooves
-    c.ellipse([cx - frx, cy - fry, cx + frx, cy + fry], fill=shade(IRON, 0.52))
-    rings = [(0.30, 0.55, 12), (0.58, 0.80, 18), (0.83, 0.99, 24)]
+    rings = [(0.40, 0.64, 14), (0.67, 0.86, 20), (0.89, 1.0, 26)]
     for r0, r1, n in rings:
         for k in range(n):
-            a0 = 360.0 * k / n + 2.6
-            a1 = 360.0 * (k + 1) / n - 2.6
-            i0, i1 = r0 + 0.025, r1 - 0.025
+            a0 = 360.0 * k / n + 3.0
+            a1 = 360.0 * (k + 1) / n - 3.0
+            i0, i1 = r0 + 0.03, r1 - 0.03
             outer = earc(cx, cy, frx * i1, fry * i1, a0, a1, 5)
             inner = earc(cx, cy, frx * i0, fry * i0, a1, a0, 5)
             cell = outer + inner
-            base = mix(iron_m, iron_l, rnd.uniform(0.35, 1.0))
-            c.poly(cell, fill=shade(base, 0.66))
-            up = [(x - 1.6, y - 1.6) for x, y in cell]
+            base = mix(iron_m, iron_l, rnd.uniform(0.4, 1.0))
+            c.poly(cell, fill=shade(base, 0.70))
+            up = [(x - 1.4, y - 1.6) for x, y in cell]
             c.poly(up, fill=base)
-    # hub
-    c.ellipse([cx - frx * 0.30, cy - fry * 0.30, cx + frx * 0.30, cy + fry * 0.30],
-              fill=shade(iron_m, 0.74))
-    c.ellipse([cx - frx * 0.27, cy - fry * 0.30, cx + frx * 0.27, cy + fry * 0.24],
+            top = [(x - 2.2, y - 2.6) for x, y in cell]
+            c.poly(top[:6], fill=shade(base, 1.16))
+    # centre band carries the foundry name
+    c.ellipse([cx - frx * 0.40, cy - fry * 0.40, cx + frx * 0.40, cy + fry * 0.40],
+              fill=shade(iron_m, 0.60))
+    c.ellipse([cx - frx * 0.37, cy - fry * 0.40, cx + frx * 0.37, cy + fry * 0.30],
               fill=iron_l)
-    f = ak.font("serif_bold", int(9 * S * c.ss))
-    c.text((cx, cy - 1), "SEWER", f, shade(iron_m, 0.62))
-    # pick holes
+    f = ak.font("serif_bold", int(7.5 * S * c.ss))
+    c.text((cx, cy - 2), "SEWER", f, shade(iron_m, 0.55))
+    c.text((cx, cy - 3), "SEWER", f, iron_ll)
+    # pick holes, out on the mid ring where they can't collide with the text
     for sx in (-1, 1):
-        c.ellipse([cx + sx * frx * 0.44 - 6, cy - 4, cx + sx * frx * 0.44 + 6, cy + 4],
-                  fill=shade(IRON, 0.45))
-        c.ellipse([cx + sx * frx * 0.44 - 6, cy - 5, cx + sx * frx * 0.44 + 6, cy + 2],
-                  fill=shade(IRON, 0.62))
+        px = cx + sx * frx * 0.76
+        c.ellipse([px - 7, cy - 4.5, px + 7, cy + 4.5], fill=shade(IRON, 0.40))
+        c.ellipse([px - 7, cy - 5.5, px + 7, cy + 2.0], fill=shade(IRON, 0.70))
     # polished wear where the kids stand
-    for _ in range(9):
+    for _ in range(11):
         a = rnd.uniform(150, 300)
         rr = rnd.uniform(0.15, 0.8)
         p = epoint(cx, cy, frx * rr, fry * rr, a)
         c.ellipse([p[0] - rnd.uniform(5, 13), p[1] - 2,
-                   p[0] + rnd.uniform(5, 13), p[1] + 2], fill=iron_l)
-    img = ak.finish(c, ink=3, light=True, light_strength=0.9, grain_amt=6, seed=3)
+                   p[0] + rnd.uniform(5, 13), p[1] + 2], fill=iron_ll)
+    img = ak.finish(c, ink=3, light=True, light_strength=0.8, grain_amt=6, seed=3)
     return img
 
 
@@ -285,18 +292,28 @@ def build_sewer():
     rnd = random.Random(23)
     cx, cy = w * 0.5, h * 0.50
     rx, ry = w * 0.445, h * 0.39
-    iron_m = mix(IRON, ASPHALT_L, 0.38)
-    iron_l = mix(IRON, ASPHALT_L, 0.66)
+    iron_m = mix(IRON, ASPHALT_L, 0.68)
+    iron_l = mix(IRON, ASPHALT_L, 1.00)
 
     c.ellipse([cx - rx - 5, cy - ry - 4, cx + rx + 5, cy + ry + 5],
               fill=shade(ASPHALT_D, 0.74))
-    c.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=shade(iron_m, 0.78))
+    c.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=shade(iron_m, 0.70))
     c.ellipse([cx - rx, cy - ry - 2, cx + rx, cy + ry - 3], fill=iron_l)
     frx, fry = rx * 0.88, ry * 0.82
-    c.ellipse([cx - frx, cy - fry, cx + frx, cy + fry], fill=shade(iron_m, 0.66))
+    c.ellipse([cx - frx, cy - fry, cx + frx, cy + fry], fill=shade(iron_m, 0.62))
     c.ellipse([cx - frx, cy - fry + 2, cx + frx, cy + fry], fill=iron_m)
+    # the grate frame reads as bar-and-slot only if the BARS are the light part
+    for i in range(8):
+        t = (i + 0.5) / 8
+        by = cy - fry * 0.88 + fry * 1.76 * t
+        k = 1.0 - ((by - cy) / (fry * 1.04)) ** 2
+        if k <= 0.02:
+            continue
+        hw = frx * 0.90 * math.sqrt(k)
+        c.rrect([cx - hw, by - 3.4, cx + hw, by + 2.6], 2.6,
+                fill=mix(iron_l, CHALK, 0.10))
 
-    # slots — the far wall of each slot catches a sliver of light
+    # slots — near-black voids between the lit bars
     n = 7
     for i in range(n):
         t = (i + 0.5) / n
@@ -306,26 +323,27 @@ def build_sewer():
             continue
         hw = frx * 0.86 * math.sqrt(k)
         c.rrect([cx - hw, sy - 3.6, cx + hw, sy + 3.6], 3.4,
-                fill=shade(IRON, 0.30))
-        c.rrect([cx - hw + 2, sy + 1.2, cx + hw - 2, sy + 3.4], 1.6,
-                fill=mix(iron_m, ASPHALT_L, 0.4))
+                fill=shade(IRON, 0.26))
+        c.rrect([cx - hw + 2, sy + 1.6, cx + hw - 2, sy + 3.4], 1.6,
+                fill=shade(iron_m, 0.80))
     # rim bolts
     for k in range(10):
         a = 360.0 * k / 10 + 18
         p = epoint(cx, cy, rx * 0.94, ry * 0.94, a)
-        c.circle(p[0], p[1], 2.6, fill=shade(iron_m, 0.7))
-        c.circle(p[0] - 0.6, p[1] - 0.7, 1.9, fill=iron_l)
+        c.circle(p[0], p[1], 2.6, fill=shade(iron_m, 0.66))
+        c.circle(p[0] - 0.6, p[1] - 0.7, 1.9, fill=mix(iron_l, CHALK, 0.20))
     # the near lip casts into the pit
     c.poly(earc(cx, cy, frx, fry, 190, 350, 22)
            + earc(cx, cy, frx * 0.96, fry * 0.80, 350, 190, 22),
-           fill=shade(iron_m, 0.52))
-    for _ in range(46):
+           fill=shade(iron_m, 0.56))
+    # grime in the recess, not water droplets scattered over the cover
+    for _ in range(30):
         a = rnd.uniform(0, 360)
-        rr = math.sqrt(rnd.random()) * 0.96
+        rr = 0.90 + math.sqrt(rnd.random()) * 0.12
         p = epoint(cx, cy, rx * rr, ry * rr, a)
-        c.circle(p[0], p[1], rnd.uniform(0.8, 2.0),
-                 fill=rnd.choice([shade(iron_m, 0.6), iron_l]))
-    img = ak.finish(c, ink=3, light=True, light_strength=0.9, grain_amt=6, seed=4)
+        c.circle(p[0], p[1], rnd.uniform(0.7, 1.6),
+                 fill=rnd.choice([shade(iron_m, 0.72), iron_l]))
+    img = ak.finish(c, ink=3, light=True, light_strength=0.8, grain_amt=6, seed=4)
     return img
 
 
@@ -337,11 +355,15 @@ def build_hydrant():
     cx = w * 0.5
     ground = h - 7
 
-    body = PATINA
-    body_d = shade(PATINA, 0.66)
-    body_dd = shade(PATINA, 0.50)
-    body_l = mix(PATINA, CHALK, 0.30)
-    chip = shade(RUST, 0.84)
+    # Weathered municipal verdigris, pulled well down in chroma: at 64x96 world
+    # this is a big object, and full PATINA made it the loudest thing on the
+    # street after the ball.
+    base = mix(PATINA, ASPHALT, 0.34)
+    body = base
+    body_d = shade(base, 0.68)
+    body_dd = shade(base, 0.50)
+    body_l = mix(base, CHALK, 0.26)
+    chip = mix(shade(RUST, 0.80), ASPHALT, 0.30)
 
     # foot flange
     c.ellipse([cx - 40, ground - 20, cx + 40, ground + 2], fill=body_dd)
@@ -382,148 +404,167 @@ def build_hydrant():
     c.ellipse([cx - 18, 101, cx + 6, 127], fill=body)
     c.ellipse([cx - 14, 105, cx - 3, 116], fill=body_l)
 
-    # chain: a sagging strap with link ticks (survives the ink pass)
+    # chain: dark links drooping from the bonnet collar to the nozzle cap.
+    # It has to be DARKER than the hydrant — a pale strap across the body read
+    # like a thermometer taped to it.
+    link_d = shade(IRON, 0.72)
+    link_l = mix(IRON, SLATE, 0.55)
+    ca, cb = (cx + 26, 68), (cx + 47, 98)
     pts = []
-    for i in range(13):
-        t = i / 12.0
-        x = cx + 28 + 20 * t
-        y = 78 + 34 * t * t + 12 * math.sin(math.pi * t)
+    for i in range(11):
+        t = i / 10.0
+        x = ca[0] + (cb[0] - ca[0]) * t
+        y = ca[1] + (cb[1] - ca[1]) * t + 15 * math.sin(math.pi * t)
         pts.append((x, y))
-    c.line(pts, shade(IRON, 1.55), 5)
-    for i in range(1, 12, 2):
-        c.circle(pts[i][0], pts[i][1], 1.7, fill=shade(IRON, 0.85))
+    c.line(pts, link_d, 4.2)
+    for i in range(0, 11, 2):
+        c.circle(pts[i][0], pts[i][1], 2.6, fill=link_d)
+        c.circle(pts[i][0] - 0.7, pts[i][1] - 0.8, 1.3, fill=link_l)
+    c.circle(ca[0], ca[1], 3.4, fill=link_d)
 
-    # chipped paint, only on the metal, mostly down low where boots hit it
-    for _ in range(11):
-        x = rnd.uniform(cx - 30, cx + 30)
-        y = rnd.uniform(60, ground - 14) if rnd.random() < 0.75 else \
-            rnd.uniform(30, 60)
-        if abs(x - cx) > 30 * (1.0 if y > 70 else 0.8):
-            continue
-        r = rnd.uniform(1.8, 3.6)
-        pts = [epoint(x, y, r * rnd.uniform(0.6, 1.3), r * rnd.uniform(0.6, 1.3), a)
-               for a in range(0, 360, 60)]
-        c.poly(pts, fill=chip if rnd.random() < 0.65 else body_dd)
+    # chipped paint: bare metal shows where the casting turns an edge and down
+    # low where boots and fenders hit it — never as spots in the middle
+    edges = [(cx - 28, 88), (cx - 30, ground - 30), (cx + 27, 96),
+             (cx - 24, ground - 22), (cx + 20, ground - 20), (cx - 31, 70),
+             (cx + 30, 78), (cx - 12, ground - 12), (cx + 8, ground - 16),
+             (cx - 30, 46), (cx + 26, 40)]
+    for (ex, ey) in edges:
+        r = rnd.uniform(2.0, 4.2)
+        pts = [epoint(ex + rnd.uniform(-3, 3), ey + rnd.uniform(-5, 5),
+                      r * rnd.uniform(0.5, 1.2), r * rnd.uniform(0.8, 1.8), a)
+               for a in range(0, 360, 72)]
+        c.poly(pts, fill=body_dd)
+        c.poly([(x + 0.8, y + 0.8) for x, y in pts],
+               fill=chip if rnd.random() < 0.7 else shade(GALV, 0.86))
 
-    img = ak.finish(c, ink=3, light=True, grain_amt=6, seed=5)
+    img = ak.finish(c, ink=3, light=True, light_strength=0.9, grain_amt=6, seed=5)
     return sit(img, cx, ground + 2, 36, 9, 0.34, 5)
 
 
 def build_stoop():
-    """150x110 world. First base: brownstone steps."""
+    """150x110 world. First base: a brownstone stoop seen from the street side.
+
+    Drawn as a side-on flight climbing left-to-right, because a head-on stoop
+    at this size collapses into stacked pale planks. The near cheek wall is one
+    solid coursed mass of brown stone; the treads are only glimpsed as lit
+    nosings above each riser, which is what a stoop actually looks like from
+    the middle of the street.
+    """
     w, h = W(150, 110)
     c = Canvas(w, h)
     rnd = random.Random(41)
-    ground = h - 8
+    ground = h - 10
 
-    # one stone mass with step lines cut into it — big tread/riser contrast
-    # is what made this read as a lumber ramp
-    st = mix(BROWNSTONE, SLATE, 0.30)
-    tread_c = mix(st, PAPER, 0.18)             # sunlit top
-    tread_e = mix(st, PAPER, 0.44)             # nosing edge catching sun
-    riser_c = shade(st, 0.80)
-    dark = shade(st, 0.44)
+    # BROWN stone. Greying it toward slate is what made this read as lumber.
+    st = mix(BROWNSTONE, RUST, 0.14)
+    st_l = mix(st, PAPER, 0.30)      # sunlit tread / top of a course
+    st_ll = mix(st, PAPER, 0.52)     # nosing catching full sun
+    st_d = shade(st, 0.74)           # cheek-wall face, turned away
+    st_dd = shade(st, 0.52)          # riser in shade
+    void = shade(st, 0.30)           # under the nosings / doorway
 
-    n = 4
-    rise = 26
-    depth = 15
-    lx, rx = 44, w - 26
-    inset = 11
-    top_y = ground - n * (rise + depth)
+    n = 5
+    rise = 17
+    run = 20
+    x0 = 26                       # bottom step, near edge
+    top_y = ground - n * rise
 
-    # the house face the stoop climbs to
-    c.rect([lx + n * inset - 14, 6, rx - n * inset + 16, top_y + 26],
-           fill=shade(st, 0.36))
-    c.rect([lx + n * inset - 14, 6, rx - n * inset + 16, 16],
-           fill=shade(st, 0.52))
+    # ---- the house wall the stoop climbs to, kept dark and simple
+    c.rect([x0 + n * run - 6, 2, w - 4, top_y + 6], fill=shade(st, 0.46))
+    c.rect([x0 + n * run - 6, 2, w - 4, 12], fill=shade(st, 0.62))
+    for k in range(5):
+        c.line([(x0 + n * run - 6, 14 + k * 22), (w - 4, 14 + k * 22)],
+               shade(st, 0.38), 2)
+    # doorway
+    c.rect([x0 + n * run + 22, 16, w - 26, top_y + 4], fill=void)
+    c.rect([x0 + n * run + 18, 12, w - 22, 22], fill=st_l)
 
+    # ---- the stair mass itself: risers dark, nosings bright
     for i in range(n):
-        y_b = ground - i * (rise + depth)
-        y_t = y_b - rise
-        y_k = y_t - depth
-        l = lx + i * inset
-        r = rx - i * inset
-        c.rect([l, y_t, r, y_b], fill=riser_c)                 # riser face
-        c.poly([(l, y_t), (r, y_t), (r - inset, y_k),
-                (l + inset, y_k)], fill=tread_c)               # tread top
-        # the cheek wall throws a wedge of shade across the near end
-        c.poly([(l, y_t), (l + 30, y_t), (l + inset + 22, y_k),
-                (l + inset, y_k)], fill=shade(tread_c, 0.86))
-        c.poly([(l, y_t), (r, y_t), (r - 3, y_t - 4),
-                (l + 3, y_t - 4)], fill=tread_e)               # lit nosing
-        c.rect([l, y_t + 1, r, y_t + 4], fill=dark)            # nosing shadow
-        # mottled stone on the tread — patches, not plank grain
-        for _ in range(6):
-            mx = rnd.uniform(l + 8, r - 8)
-            my = rnd.uniform(y_k + 3, y_t - 4)
-            mr = rnd.uniform(4, 11)
-            c.ellipse([mx - mr, my - mr * 0.34, mx + mr, my + mr * 0.34],
-                      fill=shade(tread_c, rnd.choice([0.93, 1.05])))
-        for _ in range(9):
-            c.circle(rnd.uniform(l + 6, r - 6), rnd.uniform(y_k + 2, y_t - 5),
-                     rnd.uniform(0.7, 1.9),
-                     fill=rnd.choice([st, shade(tread_c, 0.86),
-                                      mix(tread_c, PAPER, 0.22)]))
-        for _ in range(3):
-            c.circle(rnd.uniform(l + 14, r - 14), rnd.uniform(y_t + 8, y_b - 4),
-                     rnd.uniform(1.2, 2.8), fill=shade(riser_c, 0.84))
-        # chipped corners — stone breaks, planks don't
-        if i < n - 1:
-            cxp = rnd.uniform(l + 20, r - 20)
-            c.poly([(cxp, y_t + 1), (cxp + 9, y_t + 1), (cxp + 4, y_t + 7)],
-                   fill=shade(riser_c, 0.74))
-        c.poly([(r - 1, y_t - 4), (r - 1, y_t + 5), (r - 11, y_t - 1)],
-               fill=shade(riser_c, 0.80))
+        bx = x0 + i * run
+        by = ground - i * rise
+        # tread top, receding away from the viewer
+        c.poly([(bx, by - rise), (bx + run + 8, by - rise),
+                (bx + run + 8, by - rise - 7), (bx + 8, by - rise - 7)],
+               fill=st_l)
+        # riser
+        c.rect([bx, by - rise, bx + run + 8, by], fill=st_dd)
+        c.rect([bx, by - rise, bx + run + 8, by - rise + 4], fill=void)
+        # the nosing: the one bright line per step that makes it read as stone
+        c.rect([bx, by - rise - 7, bx + run + 8, by - rise - 3], fill=st_ll)
+        c.rect([bx, by - rise - 3, bx + run + 8, by - rise - 1],
+               fill=shade(st_l, 0.86))
+        # worn dish in the middle of the tread
+        c.ellipse([bx + 10, by - rise - 7, bx + run + 2, by - rise - 2],
+                  fill=shade(st_l, 0.93))
+        for _ in range(7):
+            c.circle(rnd.uniform(bx + 2, bx + run + 6),
+                     rnd.uniform(by - rise + 4, by - 2),
+                     rnd.uniform(0.8, 2.2),
+                     fill=rnd.choice([shade(st_dd, 0.86), shade(st_dd, 1.12)]))
+        # chipped nosing corner
+        if rnd.random() < 0.7:
+            cxp = rnd.uniform(bx + 6, bx + run)
+            c.poly([(cxp, by - rise - 3), (cxp + 8, by - rise - 3),
+                    (cxp + 4, by - rise + 3)], fill=shade(st_dd, 0.84))
 
-    # top landing slab
-    c.rect([lx + n * inset, top_y - 12, rx - n * inset, top_y + 2],
-           fill=tread_c)
-    c.rect([lx + n * inset, top_y - 12, rx - n * inset, top_y - 7], fill=tread_e)
-
-    # raked stone cheek wall on the left
-    cheek = [(8, ground + 2), (8, ground - 34),
-             (lx + n * inset - 4, top_y - 18),
-             (lx + n * inset + 20, top_y - 18),
-             (lx + n * inset + 20, top_y + 4), (52, ground + 2)]
-    c.poly(cheek, fill=shade(st, 0.80))
-    c.poly([(8, ground - 34), (lx + n * inset - 4, top_y - 18),
-            (lx + n * inset + 20, top_y - 18),
-            (lx + n * inset + 20, top_y - 9),
-            (lx + n * inset - 2, top_y - 9), (14, ground - 27)],
-           fill=mix(st, PAPER, 0.40))
-    c.line([(11, ground - 30), (lx + n * inset - 1, top_y - 14)],
-           shade(st, 0.62), 2)
-    # wear, kept inside the raked wall
-    for _ in range(26):
+    # ---- near cheek wall: one raked stone mass with visible coursing
+    cheek = [(4, ground + 4), (4, ground - 26),
+             (x0 + n * run - 4, top_y - 30),
+             (x0 + n * run - 4, top_y + 6), (4, ground + 4)]
+    c.poly(cheek, fill=st_d)
+    # its raked coping, lit
+    c.poly([(4, ground - 26), (x0 + n * run - 4, top_y - 30),
+            (x0 + n * run - 4, top_y - 20), (4, ground - 16)], fill=st_ll)
+    c.poly([(4, ground - 18), (x0 + n * run - 4, top_y - 22),
+            (x0 + n * run - 4, top_y - 18), (4, ground - 14)],
+           fill=shade(st, 0.86))
+    # coursing joints, following the rake
+    for k in range(1, 4):
+        yy = k * 15
+        c.line([(4, ground - 14 + yy), (x0 + n * run - 4, top_y - 18 + yy)],
+               shade(st, 0.56), 2)
+    for k in range(1, 5):
+        xx = 4 + k * (x0 + n * run - 8) / 5.0
+        t = (xx - 4) / float(x0 + n * run - 8)
+        ytop = (ground - 14) + (top_y - 18 - (ground - 14)) * t
+        c.line([(xx, ytop + 4), (xx, ground + 4)], shade(st, 0.60), 2)
+    for _ in range(40):
         t = rnd.random()
-        wx = 8 + (lx + n * inset + 16 - 8) * t
-        wy0 = (ground - 32) + (top_y - 14 - (ground - 32)) * t
-        c.circle(wx + rnd.uniform(0, 22), rnd.uniform(wy0 + 4, ground - 2),
-                 rnd.uniform(0.8, 2.0),
-                 fill=rnd.choice([st, dark, mix(st, PAPER, 0.30)]))
+        wx = 4 + (x0 + n * run - 10) * t
+        ytop = (ground - 14) + (top_y - 18 - (ground - 14)) * t
+        c.circle(wx, rnd.uniform(ytop + 3, ground + 2), rnd.uniform(0.9, 2.4),
+                 fill=rnd.choice([shade(st_d, 0.84), shade(st_d, 1.12), st]))
 
-    # iron railing on the right — pale metal so it reads against the house
-    rail = mix(IRON, SLATE, 0.62)
-    rail_d = shade(IRON, 0.80)
-    lo = (rx - 12, ground - 66)
-    hi = (rx - n * inset + 12, top_y - 34)
-    for k in range(3):
-        t = k / 2.0
-        x = lo[0] + (hi[0] - lo[0]) * t
-        y = lo[1] + (hi[1] - lo[1]) * t
-        step = min(n - 1, int(t * n))
-        base_y = ground - step * (rise + depth) - rise - 2
-        c.rect([x - 2.2, y, x + 2.2, base_y], fill=rail_d)
-        c.rect([x - 2.2, y, x - 0.2, base_y], fill=rail)
-    c.capsule(lo, hi, 9, 9, rail_d)
-    c.capsule((lo[0], lo[1] - 2.6), (hi[0], hi[1] - 2.6), 4.0, 4.0, rail)
-    c.rect([lo[0] - 6, lo[1] - 10, lo[0] + 6, ground - 14], fill=rail_d)
-    c.rect([lo[0] - 6, lo[1] - 10, lo[0] - 1.4, ground - 14], fill=rail)
-    c.circle(lo[0], lo[1] - 13, 6.5, fill=rail_d)
-    c.circle(lo[0] - 1.8, lo[1] - 14.4, 3.6, fill=rail)
+    # ---- iron railing above the cheek wall: newel, rake, real balusters
+    rail = mix(IRON, SLATE, 0.50)
+    rail_d = shade(IRON, 0.78)
+    lo = (16, ground - 66)
+    hi = (x0 + n * run - 8, top_y - 66)
 
-    img = ak.finish(c, ink=3, light=True, grain_amt=6, seed=6)
-    return sit(img, w * 0.5, ground + 4, w * 0.40, 8, 0.30, 6)
+    def rake_y(x):
+        t = (x - lo[0]) / float(hi[0] - lo[0])
+        return lo[1] + (hi[1] - lo[1]) * t
+
+    def cope_y(x):
+        t = (x - 4) / float(x0 + n * run - 8)
+        return (ground - 22) + (top_y - 26 - (ground - 22)) * t
+
+    for k in range(6):
+        bx = lo[0] + (hi[0] - lo[0]) * k / 5.0
+        c.rect([bx - 2.4, rake_y(bx), bx + 2.4, cope_y(bx)], fill=rail_d)
+        c.rect([bx - 2.4, rake_y(bx), bx - 0.4, cope_y(bx)], fill=rail)
+    c.capsule(lo, hi, 8, 8, rail_d)
+    c.capsule((lo[0], lo[1] - 2.4), (hi[0], hi[1] - 2.4), 3.6, 3.6, rail)
+    # newel post at the bottom
+    c.rect([lo[0] - 5, lo[1] - 6, lo[0] + 5, cope_y(lo[0]) + 2], fill=rail_d)
+    c.rect([lo[0] - 5, lo[1] - 6, lo[0] - 1, cope_y(lo[0]) + 2], fill=rail)
+    c.circle(lo[0], lo[1] - 10, 6.0, fill=rail_d)
+    c.circle(lo[0] - 1.6, lo[1] - 11.4, 3.2, fill=rail)
+    c.rect([hi[0] - 4, hi[1] - 4, hi[0] + 4, cope_y(hi[0])], fill=rail_d)
+
+    img = ak.finish(c, ink=3, light=True, light_strength=0.85, grain_amt=6, seed=6)
+    return sit(img, w * 0.42, ground + 6, w * 0.42, 8, 0.32, 6)
 
 
 # ================================================================== furniture
@@ -541,16 +582,16 @@ def build_model_t():
         c.circle(cx, cy, wr, fill=shade(LACQUER, 0.62))
         c.circle(cx, cy, wr - 3, fill=(38, 36, 36))
         c.circle(cx - 3, cy - 4, wr - 6, fill=(56, 54, 54))
-        c.circle(cx, cy, wr - 12, fill=shade(WOOD, 0.72))
+        c.circle(cx, cy, wr - 12, fill=shade(SPOKE, 0.66))
         c.circle(cx, cy, wr - 15, fill=(40, 38, 38))
         for k in range(12):
             a = 30 * k + 8
             p0 = epoint(cx, cy, 9, 9, a)
             p1 = epoint(cx, cy, wr - 15, wr - 15, a)
-            c.line([p0, p1], WOOD if k % 2 else shade(WOOD, 0.86), 4)
-        c.circle(cx, cy, 11, fill=shade(WOOD, 0.66))
-        c.circle(cx, cy, 8, fill=BRASS)
-        c.circle(cx - 2, cy - 2, 4, fill=mix(BRASS, CHALK, 0.35))
+            c.line([p0, p1], SPOKE if k % 2 else shade(SPOKE, 0.84), 4)
+        c.circle(cx, cy, 11, fill=shade(SPOKE, 0.60))
+        c.circle(cx, cy, 8, fill=shade(BRASS, 0.86))
+        c.circle(cx - 2, cy - 2, 4, fill=BRASS)
 
     # chassis + running board first so wheels/fenders sit over it
     c.rect([84, ground - 74, 466, ground - 58], fill=shade(LACQUER, 0.7))
@@ -593,10 +634,12 @@ def build_model_t():
     c.ellipse([71, 90, 75, 99], fill=CHALK)
 
     # windshield
-    c.poly([(206, 92), (218, 92), (228, 34), (216, 34)], fill=shade(LACQUER, 0.6))
-    c.poly([(209, 90), (216, 90), (225, 38), (218, 38)],
-           fill=mix(SLATE, PAPER, 0.42))
-    c.line([(210, 66), (222, 66)], mix(SLATE, CHALK, 0.5), 2)
+    c.poly([(202, 94), (222, 94), (232, 30), (212, 30)], fill=shade(LACQUER, 0.52))
+    c.poly([(206, 90), (219, 90), (228, 36), (215, 36)],
+           fill=mix(SLATE, PAPER, 0.24))
+    c.poly([(206, 90), (211, 90), (220, 36), (215, 36)],
+           fill=mix(SLATE, PAPER, 0.44))
+    c.line([(208, 64), (224, 64)], shade(LACQUER, 0.7), 3)
 
     # dark interior under the top
     c.poly([(222, 106), (440, 110), (440, 60), (226, 46)], fill=(30, 28, 30))
@@ -606,16 +649,16 @@ def build_model_t():
     c.poly([(322, 108), (348, 108), (346, 64), (326, 64)],
            fill=CLOTH["chocolate"])
     # steering wheel + column
-    c.line([(238, 116), (262, 82)], shade(LACQUER, 0.6), 5)
-    c.ellipse([(252), (66), (274), (100)], fill=None, outline=(58, 54, 50),
-              width=4)
+    c.line([(240, 118), (258, 78)], shade(LACQUER, 0.62), 5)
+    c.ellipse([250, 56, 266, 98], fill=None, outline=(64, 60, 56), width=4)
+    c.ellipse([250, 56, 258, 98], fill=None, outline=(88, 84, 80), width=3)
 
     # cloth top
     top = CLOTH["charcoal"]
     c.poly([(214, 40), (300, 32), (400, 34), (452, 44), (456, 60),
             (398, 48), (300, 46), (216, 54)], fill=shade(top, 0.82))
     c.poly([(214, 40), (300, 32), (400, 34), (452, 44), (450, 52),
-            (398, 42), (300, 40), (216, 48)], fill=mix(top, PAPER, 0.22))
+            (398, 42), (300, 40), (216, 48)], fill=mix(top, PAPER, 0.12))
     # rear quarter of the top
     c.poly([(440, 40), (462, 52), (468, 96), (452, 126), (432, 122),
             (446, 92), (440, 56)], fill=shade(top, 0.82))
@@ -642,10 +685,10 @@ def build_model_t():
     # running board
     c.poly([(168, 154), (376, 158), (378, 172), (166, 168)],
            fill=shade(LACQUER, 0.55))
-    c.poly([(168, 154), (376, 158), (376, 164), (168, 160)], fill=(96, 94, 92))
+    c.poly([(168, 154), (376, 158), (376, 163), (168, 159)], fill=(74, 72, 70))
     for k in range(11):
         x = 176 + k * 18
-        c.line([(x, 155), (x, 163)], shade(LACQUER, 0.5), 2)
+        c.line([(x, 155), (x, 162)], shade(LACQUER, 0.5), 2)
 
     # door line + handle
     c.line([(316, 112), (318, 172)], shade(LACQUER, 0.45), 2.5)
@@ -1098,107 +1141,134 @@ def build_awning():
     w, h = W(180, 70)
     c = Canvas(w, h)
     rnd = random.Random(97)
-    bx0, bx1, by = 34, w - 34, 12      # back edge (at the wall)
-    fx0, fx1, fy = 10, w - 10, h - 44  # front edge
-    a = mix(CLOTH["cream"], ASPHALT, 0.26)
-    b = mix(RUST, ASPHALT, 0.32)
+    bx0, bx1, by = 34, w - 34, 14      # back edge (at the wall)
+    fx0, fx1, fy = 8, w - 8, h - 46    # front edge
+    # Faded 1926 duck canvas, not a circus tent. The light stripe has to sit
+    # near the sidewalk in value or the awning becomes the loudest thing on the
+    # street and steals the eye from the kids and the ball.
+    a = mix(CLOTH["oat"], ASPHALT, 0.42)
+    b = mix(shade(RUST, 0.82), ASPHALT, 0.40)
 
-    # iron arms + wall brackets
-    for sx0, sx1 in ((bx0 + 4, fx0 + 6), (bx1 - 4, fx1 - 6)):
-        c.line([(sx0, by - 2), (sx1, fy + 24)], shade(IRON, 1.2), 5)
-    c.rect([bx0 - 6, by - 8, bx0 + 6, by + 6], fill=shade(IRON, 1.1))
-    c.rect([bx1 - 6, by - 8, bx1 + 6, by + 6], fill=shade(IRON, 1.1))
+    # iron arms + wall brackets, behind the cloth
+    for sx0, sx1 in ((bx0 + 4, fx0 + 8), (bx1 - 4, fx1 - 8)):
+        c.line([(sx0, by - 2), (sx1, fy + 26)], shade(IRON, 1.15), 5)
+        c.line([(sx0, by - 3), (sx1, fy + 25)], shade(IRON, 1.7), 2)
+    for bx in (bx0, bx1):
+        c.rect([bx - 6, by - 10, bx + 6, by + 6], fill=shade(IRON, 1.0))
+        c.rect([bx - 6, by - 10, bx - 2, by + 6], fill=shade(IRON, 1.5))
 
-    n = 11
+    # ---- canopy. The front edge bows DOWN in the middle (the cloth sags
+    # between the two arms); that curve is what stops it reading as a flat lid.
+    sag = 9.0
+
+    def front_y(t):
+        return fy + sag * math.sin(math.pi * t)
+
+    n = 13
     for k in range(n):
-        t0 = k / n
-        t1 = (k + 1) / n
+        t0 = k / float(n)
+        t1 = (k + 1) / float(n)
         col = a if k % 2 == 0 else b
-        p = [(bx0 + (bx1 - bx0) * t0, by), (bx0 + (bx1 - bx0) * t1, by),
-             (fx0 + (fx1 - fx0) * t1, fy), (fx0 + (fx1 - fx0) * t0, fy)]
-        c.poly(p, fill=col)
-    # the canopy sags between the arms — a shaded belly across the middle
-    for k in range(n):
-        t0 = k / n
-        t1 = (k + 1) / n
-        col = a if k % 2 == 0 else b
-        p = [(bx0 + (bx1 - bx0) * t0, by + 4), (bx0 + (bx1 - bx0) * t1, by + 4),
-             (fx0 + (fx1 - fx0) * t1, fy - 16), (fx0 + (fx1 - fx0) * t0, fy - 16)]
-        c.poly(p, fill=shade(col, 0.90))
+        c.poly([(bx0 + (bx1 - bx0) * t0, by), (bx0 + (bx1 - bx0) * t1, by),
+                (fx0 + (fx1 - fx0) * t1, front_y(t1)),
+                (fx0 + (fx1 - fx0) * t0, front_y(t0))], fill=col)
+        # each panel is a shallow vault: dark where it turns away at the seam
+        c.poly([(bx0 + (bx1 - bx0) * t0, by), (bx0 + (bx1 - bx0) * (t0 + 0.28 / n), by),
+                (fx0 + (fx1 - fx0) * (t0 + 0.28 / n), front_y(t0)),
+                (fx0 + (fx1 - fx0) * t0, front_y(t0))], fill=shade(col, 0.84))
+        c.poly([(bx0 + (bx1 - bx0) * (t0 + 0.30 / n), by),
+                (bx0 + (bx1 - bx0) * (t0 + 0.62 / n), by),
+                (fx0 + (fx1 - fx0) * (t0 + 0.62 / n), front_y(t0)),
+                (fx0 + (fx1 - fx0) * (t0 + 0.30 / n), front_y(t0))],
+               fill=shade(col, 1.06))
+    # the top third is nearest the wall and in the building's own shade
+    sh = c.overlay()
+    sh.poly([(bx0, by), (bx1, by),
+             (fx0 + (fx1 - fx0) * 1.0, fy - 22), (fx0, fy - 22)],
+            fill=(30, 24, 20, 46))
+    c.merge(sh)
 
-    # front roll bar
-    c.poly([(fx0, fy - 5), (fx1, fy - 5), (fx1, fy + 5), (fx0, fy + 5)],
-           fill=shade(IRON, 1.25))
-    c.poly([(fx0, fy - 5), (fx1, fy - 5), (fx1, fy - 1), (fx0, fy - 1)],
-           fill=shade(IRON, 1.9))
+    # front roll bar, following the sag
+    bar = [(fx0 + (fx1 - fx0) * (i / 16.0), front_y(i / 16.0)) for i in range(17)]
+    c.line(bar, shade(IRON, 1.15), 9)
+    c.line([(x, y - 2.4) for x, y in bar], shade(IRON, 1.7), 3)
 
-    # valance with scallops
-    vh = 26
-    ns = 9
-    sw = (fx1 - fx0) / ns
+    # ---- valance: a straight band with shallow half-round scallops cut into
+    # its lower edge (full circles read as a row of beach balls)
+    vh = 22
+    ns = 11
+    sw = (fx1 - fx0) / float(ns)
     for k in range(ns):
+        t0 = (k + 0.5) / ns
         vx0 = fx0 + k * sw
+        vy = front_y(t0) + 3
         col = a if k % 2 == 0 else b
-        c.rect([vx0, fy + 3, vx0 + sw + 0.6, fy + vh - sw * 0.42], fill=col)
-        c.ellipse([vx0, fy + vh - sw * 0.9, vx0 + sw, fy + vh + sw * 0.06],
+        c.rect([vx0, vy, vx0 + sw + 0.8, vy + vh - sw * 0.30], fill=col)
+        c.ellipse([vx0, vy + vh - sw * 0.62, vx0 + sw, vy + vh],
                   fill=col)
-        c.rect([vx0, fy + 3, vx0 + sw + 0.6, fy + 9], fill=shade(col, 0.86))
-    for k in range(ns):
-        vx0 = fx0 + k * sw
-        col = a if k % 2 == 0 else b
-        c.ellipse([vx0 + 2, fy + vh - sw * 0.86, vx0 + sw - 2, fy + vh - 2],
-                  fill=shade(col, 0.92))
+        # the valance hangs in the canopy's shadow at the top
+        c.rect([vx0, vy, vx0 + sw + 0.8, vy + 7], fill=shade(col, 0.80))
+        c.ellipse([vx0 + 2.5, vy + vh - sw * 0.58, vx0 + sw - 2.5, vy + vh - 2],
+                  fill=shade(col, 0.90))
     for _ in range(40):
         c.circle(rnd.uniform(fx0, fx1), rnd.uniform(by, fy + vh),
                  rnd.uniform(0.6, 1.6),
                  fill=rnd.choice([shade(a, 0.92), shade(b, 0.92)]))
-    return ak.finish(c, ink=3, light=True, grain_amt=6, seed=15)
+    return ak.finish(c, ink=3, light=True, light_strength=0.8, grain_amt=6, seed=15)
 
 
 def build_pigeon():
     """34x28 world."""
     w, h = W(34, 28)
     c = Canvas(w, h)
-    body = SLATE
-    body_d = shade(SLATE, 0.72)
-    body_l = mix(SLATE, CHALK, 0.30)
+    # A slate bird on slate asphalt vanishes. Real city pigeons are a pale
+    # dove grey with a DARK wing and tail — that internal contrast is the whole
+    # silhouette at 34x28.
+    body = mix(SLATE, CHALK, 0.34)
+    body_d = SLATE
+    body_l = mix(SLATE, CHALK, 0.62)
+    wing = shade(SLATE, 0.62)
+    wing_l = shade(SLATE, 0.82)
     ground = h - 4
 
     # feet
     for fx in (30, 40):
-        c.line([(fx, ground - 10), (fx, ground - 4)], shade(RUST, 0.9), 3)
-        c.line([(fx - 4, ground - 3), (fx + 4, ground - 3)], shade(RUST, 0.9), 2.4)
-    # tail
-    c.poly([(46, 26), (62, 32), (60, 42), (44, 36)], fill=body_d)
-    c.poly([(46, 26), (58, 31), (57, 36), (45, 32)], fill=body)
-    c.line([(49, 29), (60, 35)], body_d, 1.4)
-    # body
-    c.ellipse([16, 20, 54, 47], fill=body_d)
-    c.ellipse([16, 18, 49, 43], fill=body)
-    # chest
-    c.ellipse([14, 23, 34, 45], fill=body_l)
-    c.ellipse([16, 25, 30, 41], fill=mix(body_l, CHALK, 0.25))
-    # wing
-    c.poly([(27, 25), (50, 27), (53, 38), (36, 40), (27, 32)], fill=body_d)
-    c.poly([(27, 25), (47, 27), (49, 35), (35, 37), (28, 31)],
-           fill=mix(SLATE, ASPHALT, 0.35))
+        c.line([(fx, ground - 11), (fx, ground - 4)], shade(RUST, 0.86), 3.4)
+        c.line([(fx - 5, ground - 3), (fx + 5, ground - 3)], shade(RUST, 0.86), 2.8)
+    # tail — a clean dark wedge sticking out past the body
+    c.poly([(44, 24), (66, 32), (64, 43), (43, 37)], fill=shade(SLATE, 0.50))
+    c.poly([(44, 25), (62, 32), (61, 38), (43, 33)], fill=wing)
     for k in range(3):
-        c.line([(31 + k * 2, 32 + k * 2), (48 + k, 32 + k * 2)], body_d, 1.4)
+        c.line([(48, 28 + k * 3), (63, 34 + k * 2.6)], shade(SLATE, 0.44), 1.4)
+    # body
+    c.ellipse([14, 19, 55, 48], fill=body_d)
+    c.ellipse([14, 17, 50, 43], fill=body)
+    # breast, catching the light
+    c.ellipse([12, 22, 34, 46], fill=body_l)
+    c.ellipse([14, 24, 29, 41], fill=mix(body_l, CHALK, 0.35))
+    # wing — the dark mass that makes the bird read
+    c.poly([(25, 24), (52, 27), (56, 39), (36, 42), (25, 33)], fill=shade(SLATE, 0.48))
+    c.poly([(26, 25), (49, 28), (52, 37), (35, 39), (27, 32)], fill=wing)
+    c.poly([(26, 25), (44, 27), (45, 32), (28, 31)], fill=wing_l)
+    for k in range(3):
+        c.line([(30 + k * 3, 33 + k * 2.4), (50 + k, 34 + k * 2.2)],
+               shade(SLATE, 0.42), 1.6)
     # head + neck
-    c.circle(22, 18, 11, fill=body_d)
-    c.circle(21, 16, 10, fill=body)
-    c.circle(19, 14, 7, fill=body_l)
+    c.circle(21, 17, 12, fill=body_d)
+    c.circle(20, 15, 11, fill=body)
+    c.circle(18, 13, 7.5, fill=body_l)
     # iridescent throat
-    c.ellipse([16, 22, 30, 32], fill=mix(PATINA, SLATE, 0.55))
+    c.ellipse([15, 22, 30, 33], fill=mix(PATINA, SLATE, 0.45))
+    c.ellipse([16, 23, 26, 30], fill=mix(PATINA, CHALK, 0.30))
     # beak
-    c.poly([(13, 16), (5, 19), (13, 22)], fill=mix(RUST, CLOTH["oat"], 0.45))
-    c.poly([(13, 16), (7, 18.4), (13, 19)], fill=mix(CLOTH["oat"], PAPER, 0.3))
-    c.circle(13, 16, 2.0, fill=body_l)
-    # eye
-    c.circle(17, 14, 3.2, fill=CHALK)
-    c.circle(17, 14, 2.2, fill=INK)
-    c.circle(16.2, 13.2, 0.9, fill=CHALK)
-    return ak.finish(c, ink=3, light=True, grain_amt=5, seed=16)
+    c.poly([(12, 15), (2, 19), (12, 23)], fill=shade(GALV, 0.72))
+    c.poly([(12, 15), (5, 18.2), (12, 19.5)], fill=mix(CLOTH["oat"], PAPER, 0.3))
+    c.circle(12, 15, 2.4, fill=body_l)
+    # eye — big and cartoon, it is what tells you which end is the head
+    c.circle(16, 13, 4.0, fill=CHALK)
+    c.circle(16, 13, 2.6, fill=INK)
+    c.circle(15.0, 12.0, 1.1, fill=CHALK)
+    return ak.finish(c, ink=3, light=True, light_strength=0.8, grain_amt=5, seed=16)
 
 
 # ================================================================== laundry
@@ -1357,52 +1427,53 @@ def build_brick_tile():
     bw = w / 4.0
     rows = 12
     bh = h / rows
-    # a tight family: soot-darkened reds, nothing bright, nothing orange
-    fam = [mix(BRICK, ASPHALT, 0.28), mix(BRICK_D, ASPHALT, 0.20),
-           mix(BRICK, ASPHALT, 0.40), mix(BRICK_D, ASPHALT, 0.34),
-           mix(BRICK, CLOTH["chocolate"], 0.45), mix(BRICK_L, ASPHALT, 0.42)]
+    # ONE brick colour, varied in value only. A wide hue spread (pink / mauve /
+    # ochre bricks side by side) reads as confetti from across the street and
+    # fights the kids; 1926 soot-caked tenement brick is nearly monochrome.
+    base_brick = mix(BRICK, ASPHALT, 0.34)
+    fam = [shade(base_brick, f) for f in (0.80, 0.88, 0.94, 1.0, 1.07, 1.14)]
     for r in range(rows):
         y0 = r * bh
         off = 0 if r % 2 == 0 else bw * 0.5
         for k in range(-1, 5):
             x0 = k * bw + off
             col = rnd.choice(fam)
-            col = tuple(max(0, min(255, v + rnd.randint(-5, 5))) for v in col)
+            col = tuple(max(0, min(255, v + rnd.randint(-3, 3))) for v in col)
             bx0, by0 = x0 + 2.4, y0 + 2.4
             bx1, by1 = x0 + bw - 2.4, y0 + bh - 2.4
             t.rect([bx0, by0, bx1, by1], fill=shade(col, 0.84))
             t.rect([bx0, by0, bx1 - 1.6, by1 - 1.6], fill=col)
-            t.rect([bx0, by0, bx1 - 1.6, by0 + 2.0], fill=shade(col, 1.12))
-            t.rect([bx0, by0, bx0 + 1.8, by1 - 1.6], fill=shade(col, 1.08))
+            t.rect([bx0, by0, bx1 - 1.6, by0 + 2.0], fill=shade(col, 1.14))
+            t.rect([bx0, by0, bx0 + 1.8, by1 - 1.6], fill=shade(col, 1.09))
             # joint shadow under the brick
             t.rect([bx0 - 2.4, by1, bx1 + 2.4, by1 + 2.4],
-                   fill=shade(mortar, 0.76))
-            for _ in range(8):
+                   fill=shade(mortar, 0.72))
+            for _ in range(6):
                 t.circle(rnd.uniform(bx0, bx1), rnd.uniform(by0, by1),
-                         rnd.uniform(0.6, 1.6),
-                         fill=rnd.choice([shade(col, 0.84), shade(col, 1.12)]))
-            if rnd.random() < 0.12:
+                         rnd.uniform(0.6, 1.4),
+                         fill=rnd.choice([shade(col, 0.90), shade(col, 1.08)]))
+            if rnd.random() < 0.14:
                 px = rnd.uniform(bx0 + 3, bx1 - 8)
                 py = rnd.uniform(by0 + 2, by1 - 3)
                 t.poly([(px, py), (px + rnd.uniform(4, 9), py - 1),
-                        (px + 5, py + rnd.uniform(2, 4))], fill=shade(col, 0.72))
+                        (px + 5, py + rnd.uniform(2, 4))], fill=shade(col, 0.76))
     img = ak.finish(t.c, ink=0, light=False, grain_amt=6, seed=20)
 
     # soot drift + grime running down the wall, blurred on the torus
     soot = Tile(w, h)
-    for _ in range(18):
+    for _ in range(40):
         x = rnd.uniform(0, w)
         y = rnd.uniform(0, h)
-        rx = rnd.uniform(20, 58)
+        rx = rnd.uniform(14, 36)
         soot.ellipse([x - rx, y - rx * 0.62, x + rx, y + rx * 0.62],
-                     fill=(24, 20, 18, rnd.randint(20, 42)))
-    for _ in range(7):
+                     fill=(24, 20, 18, rnd.randint(10, 24)))
+    for _ in range(16):
         x = rnd.uniform(0, w)
         y = rnd.uniform(0, h)
-        soot.poly([(x, y), (x + rnd.uniform(6, 16), y),
-                   (x + rnd.uniform(4, 14), y + rnd.uniform(40, 110)),
-                   (x - 2, y + rnd.uniform(40, 110))],
-                  fill=(22, 18, 16, rnd.randint(18, 30)))
+        soot.poly([(x, y), (x + rnd.uniform(5, 13), y),
+                   (x + rnd.uniform(3, 11), y + rnd.uniform(30, 90)),
+                   (x - 2, y + rnd.uniform(30, 90))],
+                  fill=(22, 18, 16, rnd.randint(10, 20)))
     img.alpha_composite(wrap_blur(soot.c.resolve(), 13))
     return img
 
@@ -1414,17 +1485,20 @@ def build_asphalt_tile():
     rnd = random.Random(223)
     t.rect([0, 0, w, h], fill=ASPHALT_D)
 
-    # worn patches (soft, low contrast)
+    # Worn patches. The eye finds a tile repeat through the LARGEST features,
+    # so the low-frequency layer has to be many small overlapping stains at
+    # near-nothing alpha rather than a few big blobs — three fat tar wedges is
+    # what turned a street of this into a visible chevron pattern.
     patch = Tile(w, h)
-    for _ in range(9):
+    for _ in range(34):
         x = rnd.uniform(0, w)
         y = rnd.uniform(0, h)
-        rx = rnd.uniform(26, 66)
-        ry = rx * rnd.uniform(0.55, 1.0)
-        col = ASPHALT if rnd.random() < 0.7 else shade(ASPHALT_D, 0.86)
+        rx = rnd.uniform(14, 34)
+        ry = rx * rnd.uniform(0.6, 1.1)
+        col = ASPHALT if rnd.random() < 0.62 else shade(ASPHALT_D, 0.88)
         patch.ellipse([x - rx, y - ry, x + rx, y + ry],
-                      fill=col + (rnd.randint(40, 90),))
-    pim = wrap_blur(patch.c.resolve(), 16)
+                      fill=col + (rnd.randint(12, 26),))
+    pim = wrap_blur(patch.c.resolve(), 18)
 
     base = ak.finish(t.c, ink=0, light=False, grain_amt=0, seed=21)
     base.alpha_composite(pim)
@@ -1432,24 +1506,27 @@ def build_asphalt_tile():
     # detail pass on top of the soft patches
     t2 = Tile(w, h)
     # tar patches — irregular blobs, never straight lines (a repeated straight
-    # seam turns the whole street into visible graph paper)
-    for _ in range(3):
+    # seam turns the whole street into visible graph paper). Small and barely
+    # separated in value so no single one becomes the "logo" of the repeat.
+    for _ in range(9):
         x = rnd.uniform(0, w)
         y = rnd.uniform(0, h)
-        pts = []
         n = 9
+        rot = rnd.uniform(0, 360)
+        sx = rnd.uniform(0.9, 1.6)
+        pts = []
         for k in range(n):
-            a = 360.0 * k / n
-            rr = rnd.uniform(16, 34)
-            pts.append(epoint(x, y, rr * 1.5, rr * 0.75, a))
-        t2.poly(pts, fill=shade(ASPHALT_D, 0.90))
-        t2.poly([(px, py - 2) for px, py in pts], fill=shade(ASPHALT_D, 0.96))
+            a = 360.0 * k / n + rot
+            rr = rnd.uniform(9, 17)
+            pts.append(epoint(x, y, rr * sx, rr / sx, a))
+        t2.poly(pts, fill=shade(ASPHALT_D, 0.945))
+        t2.poly([(px, py - 1.5) for px, py in pts], fill=shade(ASPHALT_D, 0.985))
     # cracks
-    for _ in range(4):
+    for _ in range(7):
         x0 = rnd.uniform(0, w)
         y0 = rnd.uniform(0, h)
         ang = rnd.uniform(0, 360)
-        ln = rnd.uniform(24, 60)
+        ln = rnd.uniform(20, 48)
         p1 = (x0 + math.cos(math.radians(ang)) * ln,
               y0 + math.sin(math.radians(ang)) * ln)
         path = jitter_path((x0, y0), p1, rnd, 6, 3.4)
@@ -1461,15 +1538,15 @@ def build_asphalt_tile():
     # aggregate grit: even coverage on a jittered grid, barely-there contrast
     grit = [shade(ASPHALT_D, 0.90), shade(ASPHALT_D, 1.08),
             mix(ASPHALT_D, ASPHALT, 0.55), shade(ASPHALT_D, 0.84)]
-    step = 8.0
+    step = 5.0
     for iy in range(int(h / step)):
         for ix in range(int(w / step)):
-            if rnd.random() < 0.55:
+            if rnd.random() < 0.42:
                 continue
             t2.circle(ix * step + rnd.uniform(0, step),
                       iy * step + rnd.uniform(0, step),
                       rnd.uniform(0.6, 1.5), fill=rnd.choice(grit))
-    for _ in range(18):
+    for _ in range(40):
         t2.circle(rnd.uniform(0, w), rnd.uniform(0, h), rnd.uniform(0.7, 1.3),
                   fill=mix(ASPHALT, ASPHALT_L, 0.6))
     base.alpha_composite(t2.c.resolve())
@@ -1540,34 +1617,54 @@ def build_curb():
 
     t.rect([0, 0, w, h], fill=gutter)
     t.rect([0, 0, w, 18], fill=top)                      # sunlit top surface
-    t.rect([0, 15, w, 20], fill=shade(top, 0.86))        # nose
+    t.rect([0, 13, w, 20], fill=shade(top, 0.90))        # nose
     t.rect([0, 20, w, 56], fill=face)                    # face
-    t.rect([0, 46, w, 56], fill=face_d)                  # face, in shadow
-    t.rect([0, 56, w, 62], fill=shade(ASPHALT_D, 0.58))  # base shadow line
+    t.rect([0, 40, w, 56], fill=shade(face, 0.92))
+    t.rect([0, 49, w, 57], fill=face_d)                  # face, in shadow
+    t.rect([0, 56, w, 61], fill=shade(ASPHALT_D, 0.60))  # base shadow line
     # section joints, quiet
     for jx in (0.0, w * 0.5):
-        t.rect([jx - 1.6, 0, jx + 1.6, 56], fill=shade(CONCRETE, 0.66))
-        t.rect([jx + 1.6, 0, jx + 3.0, 56], fill=shade(top, 1.04))
-    # chips along the nose
-    for _ in range(13):
+        t.rect([jx - 1.6, 0, jx + 1.6, 57], fill=shade(CONCRETE, 0.66))
+        t.rect([jx + 1.6, 0, jx + 3.0, 57], fill=shade(top, 1.04))
+
+    def band(y):
+        if y < 13:
+            return top
+        if y < 20:
+            return shade(top, 0.90)
+        if y < 40:
+            return face
+        if y < 49:
+            return shade(face, 0.92)
+        if y < 57:
+            return face_d
+        if y < 61:
+            return shade(ASPHALT_D, 0.60)
+        return gutter
+
+    # the nose is chipped, so the top/face break is never a ruled line
+    for _ in range(16):
         x = rnd.uniform(0, w)
         t.poly([(x, 18), (x + rnd.uniform(4, 11), 18),
-                (x + rnd.uniform(1, 7), 18 + rnd.uniform(3, 8))],
-               fill=shade(top, 0.80))
-    for _ in range(7):
+                (x + rnd.uniform(1, 7), 18 + rnd.uniform(3, 7))],
+               fill=shade(top, 0.84))
+    for _ in range(9):
         x = rnd.uniform(0, w)
         t.poly([(x, 18), (x + rnd.uniform(3, 9), 18),
                 (x + rnd.uniform(1, 6), 18 - rnd.uniform(2, 5))],
-               fill=shade(face, 1.08))
-    # aggregate
-    for _ in range(420):
-        y = rnd.uniform(0, 56)
-        c0 = top if y < 18 else (face if y < 46 else face_d)
-        t.circle(rnd.uniform(0, w), y, rnd.uniform(0.5, 1.4),
-                 fill=rnd.choice([shade(c0, 0.90), shade(c0, 1.07)]))
-    for _ in range(150):
-        t.circle(rnd.uniform(0, w), rnd.uniform(58, h), rnd.uniform(0.6, 1.6),
-                 fill=rnd.choice([ASPHALT, shade(ASPHALT_D, 0.86)]))
+               fill=shade(face, 1.06))
+    # aggregate — tinted off whatever band it lands on, so light flecks never
+    # get scattered across a dark band like confetti
+    for _ in range(560):
+        y = rnd.uniform(0, 57)
+        c0 = band(y)
+        t.circle(rnd.uniform(0, w), y, rnd.uniform(0.4, 1.1),
+                 fill=rnd.choice([shade(c0, 0.93), shade(c0, 1.05)]))
+    for _ in range(200):
+        y = rnd.uniform(58, h)
+        c0 = band(y)
+        t.circle(rnd.uniform(0, w), y, rnd.uniform(0.5, 1.3),
+                 fill=rnd.choice([shade(c0, 1.12), shade(c0, 0.88)]))
     return ak.finish(t.c, ink=0, light=False, grain_amt=6, seed=24)
 
 
@@ -1576,41 +1673,70 @@ def build_cornice():
     w, h = W(128, 48)
     t = Tile(w, h, wrap_x=True, wrap_y=False)
     rnd = random.Random(233)
-    lt = mix(STONE, PAPER, 0.42)
-    md = STONE
-    dk = shade(STONE, 0.66)
-    vd = shade(STONE, 0.36)
+    stone = mix(BROWNSTONE, PAPER, 0.20)   # warmer than the generic STONE
+    lt = mix(stone, PAPER, 0.40)
+    md = stone
+    dk = shade(stone, 0.66)
+    vd = shade(stone, 0.32)
 
     t.rect([0, 0, w, h], fill=md)
     # crown slab, catching the sun
     t.rect([0, 0, w, 20], fill=lt)
-    t.rect([0, 17, w, 22], fill=shade(lt, 0.84))
+    t.rect([0, 16, w, 23], fill=shade(lt, 0.80))
     # the deep shadow under the projection — the line that sells the overhang
-    t.rect([0, 22, w, 32], fill=vd)
+    t.rect([0, 23, w, 33], fill=vd)
     # dentil course
     per = 32.0
-    for k in range(int(w / per)):
+    nd = int(w / per)
+    for k in range(nd):
         x0 = k * per + 5
-        t.rect([x0, 32, x0 + 20, 58], fill=md)
-        t.rect([x0, 32, x0 + 20, 38], fill=lt)
-        t.rect([x0 + 16, 32, x0 + 20, 58], fill=dk)
-        t.rect([x0 + 20, 32, x0 + per + 5, 58], fill=vd)
+        t.rect([x0 + 20, 33, x0 + per + 5, 59], fill=vd)   # the gap behind
+    for k in range(nd):
+        x0 = k * per + 5
+        t.rect([x0, 33, x0 + 20, 59], fill=md)
+        t.rect([x0, 33, x0 + 20, 39], fill=lt)             # lit top of the block
+        t.rect([x0 + 15, 33, x0 + 20, 59], fill=dk)        # its own side shade
+        t.rect([x0, 55, x0 + 20, 59], fill=shade(md, 0.80))
     # bed mould
-    t.rect([0, 58, w, 66], fill=lt)
-    t.rect([0, 64, w, 70], fill=dk)
+    t.rect([0, 59, w, 67], fill=lt)
+    t.rect([0, 65, w, 72], fill=dk)
     # frieze fading into the wall
-    t.rect([0, 70, w, h], fill=shade(STONE, 0.58))
-    t.rect([0, 88, w, h], fill=shade(STONE, 0.48))
-    # weathering, restrained
-    for _ in range(420):
-        y = rnd.uniform(0, h)
-        c0 = lt if y < 20 else (md if y < 70 else shade(STONE, 0.58))
-        t.circle(rnd.uniform(0, w), y, rnd.uniform(0.5, 1.4),
-                 fill=rnd.choice([shade(c0, 0.88), shade(c0, 1.08)]))
-    for _ in range(6):
+    t.rect([0, 72, w, h], fill=shade(stone, 0.56))
+    t.rect([0, 88, w, h], fill=shade(stone, 0.44))
+
+    def band(x, y):
+        if y < 16:
+            return lt
+        if y < 23:
+            return shade(lt, 0.80)
+        if y < 33:
+            return vd
+        if y < 59:
+            xm = x % per
+            if 5 <= xm < 20:
+                return lt if y < 39 else md
+            if 20 <= xm < 25:
+                return dk
+            return vd
+        if y < 65:
+            return lt
+        if y < 72:
+            return dk
+        if y < 88:
+            return shade(stone, 0.56)
+        return shade(stone, 0.44)
+
+    # weathering, restrained, tinted off the band it lands on
+    for _ in range(620):
         x = rnd.uniform(0, w)
-        t.line(jitter_path((x, 70), (x + rnd.uniform(-4, 4), h), rnd, 3, 1.4),
-               (46, 40, 34, 30), 2.6)
+        y = rnd.uniform(0, h)
+        c0 = band(x, y)
+        t.circle(x, y, rnd.uniform(0.4, 1.1),
+                 fill=rnd.choice([shade(c0, 0.92), shade(c0, 1.06)]))
+    for _ in range(9):
+        x = rnd.uniform(0, w)
+        t.line(jitter_path((x, 72), (x + rnd.uniform(-4, 4), h), rnd, 3, 1.4),
+               (46, 40, 34, 26), 2.6)
     return ak.finish(t.c, ink=0, light=False, grain_amt=6, seed=25)
 
 
