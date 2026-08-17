@@ -90,8 +90,8 @@ class View:
 # landscape sits the horizon lower and widens the gain so the same street
 # reads on a short, wide screen.
 PORTRAIT = View("portrait", 720, 1200,
-                horizon_f=0.255, near_f=1.52, z_far=74.0, xk=8.56, near_y=2400.0)
+                horizon_f=0.250, near_f=1.88, z_far=74.0, xk=9.40, near_y=2400.0)
 LANDSCAPE = View("landscape", 1280, 720,
-                 horizon_f=0.230, near_f=1.58, z_far=10.3, xk=1.71, near_y=2400.0)
+                 horizon_f=0.225, near_f=1.74, z_far=10.3, xk=1.86, near_y=2400.0)
 
 VIEWS = {"portrait": PORTRAIT, "landscape": LANDSCAPE}

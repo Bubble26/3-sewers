@@ -14,6 +14,8 @@ func _ready() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/iris.gdshader")
 	mat.set_shader_parameter("radius", 1.6)
+	var vp := get_viewport().get_visible_rect().size
+	mat.set_shader_parameter("aspect", vp.x / maxf(vp.y, 1.0))
 	iris.material = mat
 	iris.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(iris)

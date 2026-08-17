@@ -240,13 +240,17 @@ def build_backdrop(view, props_dir, chars_dir=None, rs=2, seed=3):
     ART = 0.5
 
     def put(name, world_x, world_y, height=0.0, mul=1.0, anchor="bottom",
-            tint=None):
+            tint=None, flat=False):
         spr = _load_prop(props_dir, name)
         if spr is None:
             return
         sx, sy, s = view.project(world_x, world_y, height)
         if tint is not None:
             spr = Image.blend(spr, Image.new("RGBA", spr.size, tint), 0.55)
+        if flat:
+            # lying on the cobbles, so it is squashed by the grazing angle
+            spr = spr.resize((spr.width, max(2, int(spr.height * 0.52))),
+                             Image.LANCZOS)
         _paste(img, spr, sx * rs, sy * rs, s * view.xk * ART * mul * rs, anchor)
 
     night = (30, 38, 66, 255)
@@ -274,6 +278,15 @@ def build_backdrop(view, props_dir, chars_dir=None, rs=2, seed=3):
                                Image.new("RGBA", spr.size, night), 0.7)
             _paste(img, spr2, sx * rs, sy * rs, s * view.xk * ART * rs, "center")
 
+    # home, and the sewer covers the whole game is counted in
+    put("manhole", P.PLATE_X, 2350.0, 0.0, 1.15, "center", flat=True)
+    for i, sy_w in enumerate(SEWERS_Y):
+        put("sewer", P.PLATE_X, sy_w, 0.0, 1.0, "center", flat=True)
+        _, syy, ss = view.project(P.PLATE_X + 150.0, sy_w, 0.0)
+        sxx, _, _ = view.project(P.PLATE_X + 150.0, sy_w, 0.0)
+        fnt = A.font("serif_bold", max(8, int(120 * ss * view.xk * rs)))
+        ImageDraw.Draw(img).text((sxx * rs, syy * rs), str(i + 1), font=fnt,
+                                 fill=(228, 222, 200, 150), anchor="mm")
     put("fire_escape", WALL_L - WALK, 1430.0, 620.0, tint=night)
     put("fire_escape", WALL_R + WALK, 1430.0, 620.0, tint=night)
     put("awning", WALL_R + WALK, 2300.0, 300.0, tint=(40, 44, 70, 255))

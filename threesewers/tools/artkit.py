@@ -332,7 +332,7 @@ def cel_light(img, strength=1.0, ss=SS, rim=True):
     a = img.getchannel("A")
     # diagonal ramp: 0 at upper-left, 255 at lower-right
     ramp = Image.linear_gradient("L").resize((w, h))
-    ramp = Image.blend(ramp, ramp.rotate(-90, expand=False), 0.5)
+    ramp = Image.blend(ramp, ramp.rotate(90, expand=False), 0.5)
     ramp = ramp.filter(ImageFilter.GaussianBlur(ss * 1.2))
 
     shadow_mask = ramp.point(lambda v: 255 if v > 150 else 0)

@@ -11,7 +11,7 @@ signal ui_pitch(p: Dictionary)
 # ---------------------------------------------------------------- view constants
 # (world layout + feel constants come from Tuning; these are presentation-only)
 const FIELDER_SCALE := 0.8
-const BATTER_POS := Vector2(688, 2352)
+const BATTER_POS := Vector2(662, 2352)
 const PITCH_HAND_OFF := Vector2(0, -40)     # release point above pitcher origin
 const PITCH_BOUNCE_Y := 2278.0              # one-bounce point short of the plate
 const PITCH_BOUNCE_LANE_X := 46.0
