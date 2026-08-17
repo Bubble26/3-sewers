@@ -26,11 +26,23 @@ func _ready() -> void:
 	_show_title()
 
 func _paper_bg(parent: Control) -> void:
-	var bg := ColorRect.new()
-	bg.color = Tuning.PAPER
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	parent.add_child(bg)
-	parent.move_child(bg, 0)
+	var tex: Texture2D = load("res://assets/ui/ui_paper.png") if \
+		ResourceLoader.exists("res://assets/ui/ui_paper.png") else null
+	if tex == null:
+		var bg := ColorRect.new()
+		bg.color = Tuning.PAPER
+		bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+		parent.add_child(bg)
+		parent.move_child(bg, 0)
+		return
+	var tr := TextureRect.new()
+	tr.texture = tex
+	tr.stretch_mode = TextureRect.STRETCH_TILE
+	tr.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(tr)
+	parent.move_child(tr, 0)
 
 func _add_flicker() -> void:
 	var cl := CanvasLayer.new()
@@ -53,28 +65,25 @@ func _show_title() -> void:
 	_clear()
 	_paper_bg(self)
 	var v := VBoxContainer.new()
-	v.set_anchors_preset(Control.PRESET_CENTER)
+	v.set_anchors_and_offsets_preset(Control.PRESET_CENTER,
+		Control.PRESET_MODE_MINSIZE)
+	v.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	v.grow_vertical = Control.GROW_DIRECTION_BOTH
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_theme_constant_override("separation", 14)
-	var eyebrow := Label.new()
-	eyebrow.text = "A  STICKBALL  PICTURE  ·  NEW YORK CITY  ·  1926"
-	eyebrow.add_theme_font_size_override("font_size", 20)
-	eyebrow.add_theme_color_override("font_color", Tuning.BRICKC)
-	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var title := Label.new()
-	title.text = "THREE SEWERS"
-	title.add_theme_font_size_override("font_size", 120)
-	title.add_theme_color_override("font_color", Tuning.INK)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var logo := TextureRect.new()
+	logo.texture = load("res://assets/ui/ui_title.png")
+	logo.custom_minimum_size = Vector2(900, 310)
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	var sub := Label.new()
 	sub.text = "manhole for home · stoop for first · hydrant for third"
 	sub.add_theme_font_size_override("font_size", 24)
 	sub.add_theme_color_override("font_color", Tuning.ASPHALT)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(eyebrow)
-	v.add_child(title)
+	v.add_child(logo)
 	v.add_child(sub)
-	v.add_child(_spacer(26))
+	v.add_child(_spacer(20))
 	v.add_child(_ticket_button("PLAY BALL", _show_select))
 	add_child(v)
 
@@ -112,12 +121,12 @@ func _show_select() -> void:
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 8)
-	var head := Label.new()
-	head.text = "THE CANDY-STORE RACK — PICK YOUR SIX"
-	head.add_theme_font_size_override("font_size", 34)
-	head.add_theme_color_override("font_color", Tuning.INK)
-	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	root.add_child(_spacer(8))
+	var head := TextureRect.new()
+	head.texture = load("res://assets/ui/ui_rack_header.png")
+	head.custom_minimum_size = Vector2(0, 62)
+	head.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	head.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	root.add_child(_spacer(6))
 	root.add_child(head)
 	var grid := GridContainer.new()
 	grid.columns = 6

@@ -8,6 +8,8 @@ const SPIN_KICK := {"fast": 0.0, "spinner": 34.0, "drop": 8.0}
 const SWING_EARLY := 0.42   # seconds before plate-cross the tap window opens
 const SWING_LATE := 0.24    # seconds after
 const CAM_ZOOM := 0.9
+# Sprites are authored at 2x world size so they stay crisp on a retina phone.
+const ART := 0.5
 # world layout (street runs up-screen)
 const PLATE := Vector2(640, 2350)
 const BASE_1 := Vector2(930, 2140)

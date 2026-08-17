@@ -19,13 +19,22 @@ func _ready() -> void:
 	add_child(iris)
 
 	card = PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Tuning.PAPER
-	sb.border_color = Tuning.CHALK
-	sb.set_border_width_all(6)
-	sb.set_corner_radius_all(10)
-	sb.set_content_margin_all(34)
-	card.add_theme_stylebox_override("panel", sb)
+	# printed intertitle stock, stretched as a 9-patch
+	var plate := "res://assets/ui/ui_card_plate.png"
+	if ResourceLoader.exists(plate):
+		var st := StyleBoxTexture.new()
+		st.texture = load(plate)
+		st.set_texture_margin_all(60)
+		st.set_content_margin_all(40)
+		card.add_theme_stylebox_override("panel", st)
+	else:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Tuning.PAPER
+		sb.border_color = Tuning.CHALK
+		sb.set_border_width_all(6)
+		sb.set_corner_radius_all(10)
+		sb.set_content_margin_all(34)
+		card.add_theme_stylebox_override("panel", sb)
 	card.set_anchors_preset(Control.PRESET_CENTER)
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var v := VBoxContainer.new()

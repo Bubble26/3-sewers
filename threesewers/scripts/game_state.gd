@@ -30,7 +30,13 @@ func card(id: String) -> Texture2D:
 	return load("res://assets/characters/chr_%s_card.png" % id)
 
 func prop(name_s: String) -> Texture2D:
-	return load("res://assets/props/prp_%s.png" % name_s)
+	var p := "res://assets/props/prp_%s.png" % name_s
+	if not ResourceLoader.exists(p):
+		return null
+	if _tex_cache.has(p): return _tex_cache[p]
+	var t: Texture2D = load(p)
+	_tex_cache[p] = t
+	return t
 
 func team_rating(ids: Array) -> float:
 	var t := 0.0

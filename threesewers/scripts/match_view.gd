@@ -69,6 +69,7 @@ class Kid extends Node2D:
 	var anim := ""
 	var rest_anim := "idle"   # one-shots fall back to this
 	var spr: Sprite2D
+	var shadow: Sprite2D
 	var _frames: Array = []
 	var _fps := 8.0
 	var _loop := true
@@ -76,9 +77,25 @@ class Kid extends Node2D:
 
 	func _init(id: String) -> void:
 		kid_id = id
+		var shadow_tex: Texture2D = Game.prop("shadow")
+		if shadow_tex != null:
+			shadow = Sprite2D.new()
+			shadow.texture = shadow_tex
+			shadow.scale = Vector2(Tuning.ART, Tuning.ART) * 0.78
+			shadow.modulate = Color(1, 1, 1, 0.8)
+			add_child(shadow)
 		spr = Sprite2D.new()
-		spr.offset = Vector2(0, -80)   # feet sit at node origin -> y-sort correct
 		add_child(spr)
+
+	# Art is authored at 2x for retina, and animations use different canvas
+	# widths, so the offset is derived per texture: bottom edge on the node
+	# origin keeps the kid's feet planted and the y-sort honest.
+	func _set_tex(t: Texture2D) -> void:
+		if t == null or spr.texture == t:
+			return
+		spr.texture = t
+		spr.scale = Vector2(Tuning.ART, Tuning.ART)
+		spr.offset = Vector2(0, -t.get_height() * 0.5)
 
 	func play(a: String, fps := 8.0, loop := true) -> void:
 		if anim == a and _loop and loop:
@@ -89,7 +106,7 @@ class Kid extends Node2D:
 		_t = 0.0
 		_frames = Game.frames(kid_id, a, int(ANIM_N.get(a, 1)))
 		if not _frames.is_empty():
-			spr.texture = _frames[0]
+			_set_tex(_frames[0])
 
 	func _process(delta: float) -> void:
 		if _frames.is_empty():
@@ -103,7 +120,7 @@ class Kid extends Node2D:
 				play(rest_anim)
 				return
 			idx = _frames.size() - 1
-		spr.texture = _frames[idx]
+		_set_tex(_frames[idx])
 
 # ---------------------------------------------------------------- members
 var autopilot := false
@@ -241,59 +258,69 @@ func _cam_default() -> Vector2:
 	return Vector2(Tuning.PLATE.x, CAM_CHASE_MAX_Y)
 
 # ---------------------------------------------------------------- world
+const STREET_TOP := 600.0
+const STREET_BOT := 2600.0
+const STREET_L := -200.0
+const STREET_R := 1480.0
+const WALK_W := 62.0                        # sidewalk between curb and building
+
 func _build_world() -> void:
-	# asphalt
-	var street := Polygon2D.new()
-	street.polygon = PackedVector2Array([Vector2(-200, 600), Vector2(1480, 600),
-		Vector2(1480, 2600), Vector2(-200, 2600)])
-	street.color = Tuning.ASPHALT
-	bg.add_child(street)
-	# brick walls beyond the foul walls
-	for side in 2:
-		var wall := Polygon2D.new()
-		var x0 := -200.0 if side == 0 else Tuning.WALL_R
-		var x1 := Tuning.WALL_L if side == 0 else 1480.0
-		wall.polygon = PackedVector2Array([Vector2(x0, 600), Vector2(x1, 600),
-			Vector2(x1, 2600), Vector2(x0, 2600)])
-		wall.color = Tuning.BRICKC
-		bg.add_child(wall)
-	# tenement windows (skip slots near THE window)
+	# asphalt, tiled — a flat fill reads as a grey rectangle, tar and grit
+	# read as a street
+	_tiled("asphalt_tile", Rect2(STREET_L, STREET_TOP,
+		STREET_R - STREET_L, STREET_BOT - STREET_TOP), Tuning.ASPHALT)
+	# sidewalks hugging each building line
+	_tiled("sidewalk_tile", Rect2(Tuning.WALL_L - WALK_W, STREET_TOP,
+		WALK_W, STREET_BOT - STREET_TOP), Tuning.ASPHALT.lightened(0.12))
+	_tiled("sidewalk_tile", Rect2(Tuning.WALL_R, STREET_TOP,
+		WALK_W, STREET_BOT - STREET_TOP), Tuning.ASPHALT.lightened(0.12))
+	# the buildings that make the canyon
+	_facade("facade_l", Rect2(STREET_L, STREET_TOP,
+		Tuning.WALL_L - WALK_W - STREET_L, STREET_BOT - STREET_TOP))
+	_facade("facade_r", Rect2(Tuning.WALL_R + WALK_W, STREET_TOP,
+		STREET_R - Tuning.WALL_R - WALK_W, STREET_BOT - STREET_TOP))
+	# curb line where sidewalk meets asphalt
+	for cx in [Tuning.WALL_L - WALK_W * 0.5, Tuning.WALL_R + WALK_W * 0.5]:
+		var curb := Line2D.new()
+		curb.points = PackedVector2Array([Vector2(cx, STREET_TOP), Vector2(cx, STREET_BOT)])
+		curb.width = 6.0
+		curb.default_color = Color(Tuning.INK, 0.45)
+		bg.add_child(curb)
+	# far rooftops closing the top of the street
+	_flat_prop("skyline", Vector2(Tuning.PLATE.x, STREET_TOP + 40.0), bg, 1.0,
+		Color(1, 1, 1, 0.85))
+	# tenement windows down both walls
 	var win_tex: Texture2D = Game.prop("window")
-	for wy in [720.0, 1250.0, 1580.0, 1910.0, 2240.0]:
-		for wx in [175.0, 1105.0]:
-			var w := Sprite2D.new()
-			w.texture = win_tex
-			w.position = Vector2(wx, wy)
+	for wy in [760.0, 1080.0, 1420.0, 1760.0, 2100.0, 2440.0]:
+		for wx in [Tuning.WALL_L - WALK_W - 120.0, Tuning.WALL_R + WALK_W + 120.0]:
+			if absf(wy - Tuning.WINDOW_POS.y) < 90.0 \
+					and absf(wx - Tuning.WINDOW_POS.x) < 160.0:
+				continue                     # leave room for THE window
+			var w := _spr(win_tex, Vector2(wx, wy), 1.0)
+			w.modulate = Color(1, 1, 1, 0.9)
 			bg.add_child(w)
 	# THE window — swapped to broken glass on the window HR
-	window_spr = Sprite2D.new()
-	window_spr.texture = win_tex
-	window_spr.position = Tuning.WINDOW_POS
+	window_spr = _spr(win_tex, Tuning.WINDOW_POS, 1.25)
 	bg.add_child(window_spr)
 	# fire escapes
 	for fe_pos in [Tuning.FE_L, Tuning.FE_R]:
-		var fe := Sprite2D.new()
-		fe.texture = Game.prop("fire_escape")
-		fe.position = fe_pos
-		bg.add_child(fe)
-	# flat street furniture
-	var manhole := Sprite2D.new()
-	manhole.texture = Game.prop("manhole")
-	manhole.position = Tuning.PLATE
-	manhole.scale = Vector2(1.2, 1.2)
-	bg.add_child(manhole)
+		bg.add_child(_spr(Game.prop("fire_escape"), fe_pos, 1.0))
+	# flat street furniture painted onto the asphalt
+	bg.add_child(_spr(Game.prop("manhole"), Tuning.PLATE, 1.2))
 	for i in Tuning.SEWERS_Y.size():
-		var sw := Sprite2D.new()
-		sw.texture = Game.prop("sewer")
-		sw.position = Vector2(Tuning.PLATE.x, Tuning.SEWERS_Y[i])
-		bg.add_child(sw)
+		bg.add_child(_spr(Game.prop("sewer"),
+			Vector2(Tuning.PLATE.x, Tuning.SEWERS_Y[i]), 1.0))
 		var num := Label.new()
 		num.text = str(i + 1)
 		num.add_theme_font_size_override("font_size", 44)
 		num.add_theme_color_override("font_color", Tuning.CHALK)
 		num.position = Vector2(Tuning.PLATE.x + 78, Tuning.SEWERS_Y[i] - 34)
 		num.rotation_degrees = -4.0
+		num.modulate = Color(1, 1, 1, 0.8)
 		bg.add_child(num)
+	_flat_prop("chalk_marks", Vector2(Tuning.WALL_L + 190.0, 1760.0), bg, 1.0,
+		Color(1, 1, 1, 0.55))
+	_flat_prop("gutter_grate", Vector2(Tuning.WALL_R + WALK_W * 0.5, 2300.0), bg, 1.0)
 	# chalk second base + foul lines
 	_chalk_square(Tuning.BASE_2, 66.0)
 	_dashed_chalk(Tuning.PLATE, Vector2(Tuning.WALL_L, 2110))
@@ -302,16 +329,73 @@ func _build_world() -> void:
 	_standing_prop("stoop", Tuning.BASE_1)
 	_standing_prop("hydrant", Tuning.BASE_3)
 	_standing_prop("model_t", Tuning.CAR_POS)
-	_standing_prop("lamp", Vector2(Tuning.WALL_L + 30, 1180))
-	_standing_prop("lamp", Vector2(Tuning.WALL_R - 30, 1980))
+	_standing_prop("lamp", Vector2(Tuning.WALL_L - WALK_W * 0.5, 1180))
+	_standing_prop("lamp", Vector2(Tuning.WALL_R + WALK_W * 0.5, 1980))
+	_standing_prop("trash", Vector2(Tuning.WALL_L - WALK_W * 0.6, 2020))
+	_standing_prop("crate", Vector2(Tuning.WALL_R + WALK_W * 0.7, 1620))
+	_standing_prop("awning", Vector2(Tuning.WALL_R + WALK_W + 150.0, 2260))
+	_standing_prop("pigeon", Vector2(Tuning.WALL_L + 120.0, 1320))
+	_standing_prop("pigeon", Vector2(Tuning.WALL_L + 166.0, 1352))
 	_build_laundry()
 
+# -- prop helpers: art is authored at 2x, Tuning.ART puts it back in world scale
+func _spr(tex: Texture2D, pos: Vector2, mul := 1.0) -> Sprite2D:
+	var s := Sprite2D.new()
+	s.texture = tex
+	s.position = pos
+	s.scale = Vector2(Tuning.ART, Tuning.ART) * mul
+	return s
+
+func _flat_prop(prop_name: String, pos: Vector2, parent: Node2D, mul := 1.0,
+		mod := Color(1, 1, 1, 1)) -> void:
+	var tex: Texture2D = Game.prop(prop_name)
+	if tex == null:
+		return
+	var s := _spr(tex, pos, mul)
+	s.modulate = mod
+	parent.add_child(s)
+
+func _tiled(prop_name: String, area: Rect2, fallback: Color) -> void:
+	var tex: Texture2D = Game.prop(prop_name)
+	if tex == null:
+		var poly := Polygon2D.new()
+		poly.polygon = PackedVector2Array([area.position,
+			area.position + Vector2(area.size.x, 0), area.end,
+			area.position + Vector2(0, area.size.y)])
+		poly.color = fallback
+		bg.add_child(poly)
+		return
+	var s := Sprite2D.new()
+	s.texture = tex
+	s.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	s.region_enabled = true
+	s.region_rect = Rect2(Vector2.ZERO, area.size / Tuning.ART)
+	s.scale = Vector2(Tuning.ART, Tuning.ART)
+	s.position = area.position + area.size * 0.5
+	bg.add_child(s)
+
+func _facade(prop_name: String, area: Rect2) -> void:
+	var tex: Texture2D = Game.prop(prop_name)
+	if tex == null:
+		_tiled("brick_tile", area, Tuning.BRICKC)
+		return
+	# facades repeat vertically up the street canyon
+	var s := Sprite2D.new()
+	s.texture = tex
+	s.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	s.region_enabled = true
+	s.region_rect = Rect2(Vector2.ZERO, area.size / Tuning.ART)
+	s.scale = Vector2(Tuning.ART, Tuning.ART)
+	s.position = area.position + area.size * 0.5
+	bg.add_child(s)
+
 func _standing_prop(prop_name: String, pos: Vector2) -> void:
+	var tex: Texture2D = Game.prop(prop_name)
+	if tex == null:
+		return
 	var holder := Node2D.new()
 	holder.position = pos
-	var spr := Sprite2D.new()
-	var tex: Texture2D = Game.prop(prop_name)
-	spr.texture = tex
+	var spr := _spr(tex, Vector2.ZERO, 1.0)
 	spr.offset = Vector2(0, -tex.get_size().y * 0.5)
 	holder.add_child(spr)
 	stage.add_child(holder)
@@ -361,10 +445,9 @@ func _build_laundry() -> void:
 	for i in garments.size():
 		var u := 0.14 + 0.18 * i
 		var x := -span + span * 2.0 * u
-		var g := Sprite2D.new()
 		var tex: Texture2D = Game.prop(garments[i])
-		g.texture = tex
-		g.position = Vector2(x, sag * sin(PI * u) - sag + tex.get_size().y * 0.5 - 4.0)
+		var g := _spr(tex, Vector2(x, sag * sin(PI * u) - sag
+			+ tex.get_size().y * Tuning.ART * 0.5 - 4.0), 1.0)
 		g.rotation_degrees = randf_range(-4.0, 4.0)
 		holder.add_child(g)
 	stage.add_child(holder)
@@ -374,11 +457,11 @@ func _build_ball() -> void:
 	ball_shadow = Sprite2D.new()
 	ball_shadow.texture = Game.prop("spaldeen")
 	ball_shadow.modulate = Color(0, 0, 0, 0.3)
-	ball_shadow.scale = Vector2(1.3, 0.55)
+	ball_shadow.scale = Vector2(1.3, 0.55) * Tuning.ART
 	ball.add_child(ball_shadow)
 	ball_spr = Sprite2D.new()
 	ball_spr.texture = Game.prop("spaldeen")
-	ball_spr.scale = Vector2(BALL_SCALE, BALL_SCALE)
+	ball_spr.scale = Vector2(BALL_SCALE, BALL_SCALE) * Tuning.ART
 	ball.add_child(ball_spr)
 	ball.visible = false
 	stage.add_child(ball)
@@ -1170,19 +1253,13 @@ func _fx_label(text: String, world_pos: Vector2) -> void:
 func _build_hud() -> void:
 	# brick scoreboard
 	score_panel = PanelContainer.new()
-	var brick := StyleBoxFlat.new()
-	brick.bg_color = Tuning.BRICKC
-	brick.border_color = Tuning.CHALK
-	brick.set_border_width_all(4)
-	brick.set_corner_radius_all(8)
-	brick.set_content_margin_all(12)
-	score_panel.add_theme_stylebox_override("panel", brick)
+	score_panel.add_theme_stylebox_override("panel", _plate_style("ui_board", 60, 22))
 	score_panel.position = Vector2(20, 16)
 	score_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sv := VBoxContainer.new()
 	sv.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	score_lbl = _chalk_label("VIS 0 — GANG 0", 34)
-	count_lbl = _chalk_label("INN 1▲ · OUT – · B0 S0", 26)
+	score_lbl = _chalk_label("VIS 0 — GANG 0", 26)
+	count_lbl = _chalk_label("INN 1▲ · OUT – · B0 S0", 19)
 	sv.add_child(score_lbl)
 	sv.add_child(count_lbl)
 	score_panel.add_child(sv)
@@ -1193,7 +1270,7 @@ func _build_hud() -> void:
 	strip.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	strip.offset_left = 14
 	strip.offset_right = -14
-	strip.offset_top = -92
+	strip.offset_top = -86
 	strip.offset_bottom = -10
 	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sh := HBoxContainer.new()
@@ -1203,13 +1280,13 @@ func _build_hud() -> void:
 	var face_frames: Array = Game.frames("announcer", "idle", 2)
 	if not face_frames.is_empty():
 		face.texture = face_frames[0]
-	face.custom_minimum_size = Vector2(56, 64)
+	face.custom_minimum_size = Vector2(60, 68)
 	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sh.add_child(face)
 	tick_lbl = Label.new()
-	tick_lbl.add_theme_font_size_override("font_size", 24)
+	tick_lbl.add_theme_font_size_override("font_size", 21)
 	tick_lbl.add_theme_color_override("font_color", Tuning.INK)
 	tick_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tick_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1229,7 +1306,7 @@ func _build_hud() -> void:
 	hud.add_child(prompt_root)
 	_build_pitch_ui(prompt_root)
 	_build_throw_ui(prompt_root)
-	hint_lbl = _chalk_label("TAP ANYWHERE TO SWING", 30)
+	hint_lbl = _chalk_label("TAP ANYWHERE TO SWING", 26)
 	hint_lbl.add_theme_color_override("font_shadow_color", Color(Tuning.INK, 0.9))
 	hint_lbl.add_theme_constant_override("shadow_offset_x", 2)
 	hint_lbl.add_theme_constant_override("shadow_offset_y", 2)
@@ -1248,13 +1325,25 @@ func _chalk_label(text: String, size: int) -> Label:
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
-func _paper_style() -> StyleBoxFlat:
+func _paper_style() -> StyleBox:
+	return _plate_style("ui_card_plate", 60, 14)
+
+# A 9-patch cut from printed stock, falling back to flat colour if the art
+# has not been generated yet.
+func _plate_style(art_name: String, tex_margin: int, content: int) -> StyleBox:
+	var path := "res://assets/ui/%s.png" % art_name
+	if ResourceLoader.exists(path):
+		var st := StyleBoxTexture.new()
+		st.texture = load(path)
+		st.set_texture_margin_all(tex_margin)
+		st.set_content_margin_all(content)
+		return st
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Tuning.PAPER
+	sb.bg_color = Tuning.PAPER if art_name == "ui_card_plate" else Tuning.BRICKC
 	sb.border_color = Tuning.INK
 	sb.set_border_width_all(3)
 	sb.set_corner_radius_all(8)
-	sb.set_content_margin_all(10)
+	sb.set_content_margin_all(content)
 	return sb
 
 func _ticket_button(txt: String, font_size := 26) -> Button:
