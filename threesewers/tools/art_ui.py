@@ -152,6 +152,9 @@ def build(outdir):
     c4.resolve().save(f"{outdir}/ui_board.png")
     n += 1
 
+    # ---- in-game HUD: pill plates, pips, corner touch buttons --------
+    n += build_hud(outdir)
+
     # ---- rack header plate -------------------------------------------
     c2 = A.Canvas(1200, 190, SS)
     c2.rrect([8, 8, 1192, 182], 18, fill=PAPER, outline=INK, width=7)
@@ -161,6 +164,98 @@ def build(outdir):
     A.finish(c2, ink=0, light=False, grain_amt=5, seed=5).save(
         f"{outdir}/ui_rack_header.png")
     n += 1
+    return n
+
+
+def build_hud(outdir):
+    """The in-game HUD, in the reference's language: parchment pill plates
+    with icon pips at the top corners, and round parchment touch buttons with
+    ink silhouettes at the bottom corners. No text strips."""
+    n = 0
+
+    # -- pill plate, 9-patch (36px margins at this size)
+    PW, PH = 260, 104
+    c = A.Canvas(PW, PH, SS)
+    c.rrect([8, 10, PW - 8, PH - 4], 34, fill=(14, 12, 14, 170))     # seat shadow
+    c.rrect([6, 6, PW - 6, PH - 8], 34, fill=INK)                    # ink ring
+    c.rrect([17, 17, PW - 17, PH - 19], 24, fill=PAPER)
+    c.rrect([17, 17, PW - 17, PH - 19], 24, outline=shade(PAPER, 0.82), width=2)
+    # slight top sheen on the paper, kept inside the ink ring
+    c.chord([28, 21, PW - 28, PH * 0.58], 180, 360, fill=shade(PAPER, 1.05))
+    img = A.finish(c, ink=0, light=False, grain_amt=5, seed=41)
+    img.save(f"{outdir}/ui_pill.png")
+    n += 1
+
+    # -- pips ----------------------------------------------------------
+    def pip_ball():
+        p = A.Canvas(72, 72, SS)
+        p.circle(36, 36, 27, fill=INK)
+        p.sphere(36, 36, 23, (246, 242, 230))
+        # stitching — two seams hugging the edges, muted rust
+        p.arc([-8, 12, 34, 60], 305, 55, (150, 84, 54), 3.2)
+        p.arc([38, 12, 80, 60], 125, 235, (150, 84, 54), 3.2)
+        return A.finish(p, ink=0, light=False)
+
+    def pip_star():
+        p = A.Canvas(72, 72, SS)
+        pts = []
+        for k in range(10):
+            ang = -math.pi / 2 + k * math.pi / 5
+            r = 30 if k % 2 == 0 else 13
+            pts.append((36 + math.cos(ang) * r, 36 + math.sin(ang) * r))
+        grown = [(36 + (x - 36) * 1.18, 36 + (y - 36) * 1.18) for x, y in pts]
+        p.poly(grown, fill=INK)
+        p.poly(pts, fill=A.GOLD)
+        inner = [(36 + (x - 36) * 0.55, 36 + (y - 36) * 0.55 - 2) for x, y in pts]
+        p.poly(inner, fill=shade(A.GOLD, 1.14))
+        return A.finish(p, ink=0, light=False)
+
+    def pip_out():
+        p = A.Canvas(64, 64, SS)
+        p.circle(32, 32, 24, fill=INK)
+        p.circle(32, 32, 19, fill=(84, 74, 66))
+        p.circle(28, 28, 12, fill=(104, 92, 82))
+        return A.finish(p, ink=0, light=False)
+
+    pip_ball().save(f"{outdir}/ui_pip_ball.png")
+    pip_star().save(f"{outdir}/ui_pip_star.png")
+    pip_out().save(f"{outdir}/ui_pip_out.png")
+    n += 3
+
+    # -- round touch buttons -------------------------------------------
+    def button(glyph_fn):
+        B = 220
+        b = A.Canvas(B, B, SS)
+        b.circle(B / 2, B / 2 + 4, 92, fill=(10, 10, 12, 150))       # soft seat
+        b.circle(B / 2, B / 2, 92, fill=(228, 222, 208, 228))
+        b.circle(B / 2, B / 2, 92, outline=(60, 52, 44, 255), width=4)
+        b.circle(B / 2, B / 2, 82, outline=(60, 52, 44, 90), width=2)
+        glyph_fn(b, B / 2, B / 2)
+        return A.finish(b, ink=0, light=False, grain_amt=4, seed=17)
+
+    def glyph_run(b, cx, cy):
+        """A kid at full sprint, solid ink silhouette."""
+        g = INK
+        b.capsule((cx + 10, cy - 26), (cx - 8, cy + 8), 26, 20, g)    # torso, leaning
+        b.circle(cx + 20, cy - 40, 16, fill=g)                        # head on the lean
+        b.capsule((cx + 8, cy - 20), (cx + 38, cy - 2), 11, 8, g)     # front arm
+        b.capsule((cx + 2, cy - 18), (cx - 26, cy - 30), 11, 8, g)    # back arm
+        b.capsule((cx - 6, cy + 4), (cx + 24, cy + 24), 12, 10, g)    # front leg
+        b.capsule((cx + 24, cy + 24), (cx + 42, cy + 20), 10, 9, g)   # shin + boot
+        b.capsule((cx - 6, cy + 4), (cx - 24, cy + 32), 12, 10, g)    # back leg
+        b.capsule((cx - 24, cy + 32), (cx - 40, cy + 44), 10, 9, g)
+
+    def glyph_hand(b, cx, cy):
+        """An open palm, solid ink silhouette."""
+        g = INK
+        b.rrect([cx - 26, cy - 12, cx + 26, cy + 44], 20, fill=g)     # palm
+        fingers = [(-19, -44, 9), (-6, -52, 10), (7, -50, 10), (19, -40, 9)]
+        for fx, fy, w in fingers:
+            b.capsule((cx + fx, cy - 6), (cx + fx, cy + fy + 14), w * 2, w * 1.7, g)
+        b.capsule((cx - 24, cy + 12), (cx - 44, cy - 6), 18, 14, g)   # thumb
+    button(glyph_run).save(f"{outdir}/ui_btn_run.png")
+    button(glyph_hand).save(f"{outdir}/ui_btn_hand.png")
+    n += 2
     return n
 
 

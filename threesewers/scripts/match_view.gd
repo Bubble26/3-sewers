@@ -61,6 +61,7 @@ const SEWER_TEXTS := ["ONE SEWER…", "TWO SEWERS…", "THREE SEWERS…"]
 const PITCH_PATTER_CHANCE := 0.3
 const CHEESE_CARD_T := 1.2
 const SETTLE_PAD := 0.35
+const PIP_DIM := Color(0.28, 0.26, 0.27, 0.4)
 
 # ---------------------------------------------------------------- kid sprite node
 class Kid extends Node2D:
@@ -209,9 +210,17 @@ var bw := Vector2.ZERO             # ball world position
 var bh := 0.0                      # ball height off the cobbles
 
 # hud refs
-var score_panel: PanelContainer
-var score_lbl: Label
-var count_lbl: Label
+var score_plate: PanelContainer
+var count_plate: PanelContainer
+var vis_lbl: Label
+var gang_lbl: Label
+var inn_lbl: Label
+var ball_pips: Array[TextureRect] = []
+var strike_pips: Array[TextureRect] = []
+var out_pips: Array[TextureRect] = []
+var swing_btn: TextureButton
+var action_btn: TextureButton
+var hud_root: Control
 var tick_lbl: Label
 var hint_lbl: Label
 var pitch_panel: PanelContainer
@@ -304,6 +313,7 @@ func _on_resized() -> void:
 		c.queue_free()
 	window_spr = null
 	_build_world()
+	_fit_hud_root()
 
 func _view_punch(amount: float, t := 0.5) -> void:
 	if _cam_tw != null:
@@ -565,14 +575,16 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	_ball_mode = "pitch"
 
 func _unhandled_input(event: InputEvent) -> void:
-	if autopilot or _ball_mode != "pitch" or not _human_bat or _committed:
-		return
 	var pressed := false
 	if event is InputEventScreenTouch and event.pressed:
 		pressed = true
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		pressed = true
-	if not pressed:
+	if pressed:
+		_try_swing()
+
+func _try_swing() -> void:
+	if autopilot or _ball_mode != "pitch" or not _human_bat or _committed:
 		return
 	if _bt < _cross_t - Tuning.SWING_EARLY or _bt > _cross_t + Tuning.SWING_LATE:
 		return
@@ -582,6 +594,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if batter_node != null and is_instance_valid(batter_node):
 		batter_node.play("swing_back", 14.0, false)
 	hint_lbl.visible = false
+	swing_btn.visible = false
 
 func _process(delta: float) -> void:
 	_process_ball(delta)
@@ -597,8 +610,11 @@ func _process_ball(delta: float) -> void:
 				batter_node.play("swing_back", 14.0, false)
 		# batting hint while the window is open
 		if _human_bat:
-			hint_lbl.visible = not _committed \
+			var window_open := not _committed \
 				and _bt >= _cross_t - Tuning.SWING_EARLY and _bt <= _cross_t + Tuning.SWING_LATE
+			hint_lbl.visible = window_open
+			swing_btn.visible = not autopilot and not _committed
+			swing_btn.modulate = Color(1, 1, 1, 1.0) if window_open else Color(1, 1, 1, 0.55)
 		# ball along its timeline
 		if _bt < _ta:
 			var u := _bt / _ta
@@ -662,6 +678,7 @@ func _hit_height(u: float) -> float:
 func _resolve_pitch() -> void:
 	_ball_mode = ""
 	hint_lbl.visible = false
+	swing_btn.visible = false
 	var swung := false
 	var err := 0.0
 	if _plan.is_empty():
@@ -1223,55 +1240,73 @@ func _fx_label(text: String, world_pos: Vector2) -> void:
 
 # ---------------------------------------------------------------- HUD
 func _build_hud() -> void:
-	# brick scoreboard
-	score_panel = PanelContainer.new()
-	score_panel.add_theme_stylebox_override("panel", _plate_style("ui_board", 60, 22))
-	score_panel.position = Vector2(20, 16)
-	score_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sv := VBoxContainer.new()
-	sv.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	score_lbl = _chalk_label("VIS 0 — GANG 0", 26)
-	count_lbl = _chalk_label("INN 1▲ · OUT – · B0 S0", 19)
-	sv.add_child(score_lbl)
-	sv.add_child(count_lbl)
-	score_panel.add_child(sv)
-	hud.add_child(score_panel)
-	# announcer strip
-	var strip := PanelContainer.new()
-	strip.add_theme_stylebox_override("panel", _paper_style())
-	strip.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	strip.offset_left = 14
-	strip.offset_right = -14
-	strip.offset_top = -86
-	strip.offset_bottom = -10
-	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The reference HUD: parchment pill plates with icon pips at the top
+	# corners, round parchment touch buttons at the bottom corners, and the
+	# announcer floating over the cobbles instead of riding a paper strip.
+	# Everything is authored at landscape sizes on one root control; scaling
+	# that root fits any screen, so a tall phone gets big thumbable chrome.
+	hud_root = Control.new()
+	hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(hud_root)
+	_fit_hud_root()
+	count_plate = _pill()
+	count_plate.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	count_plate.position = Vector2(18, 14)
+	var ch := HBoxContainer.new()
+	ch.add_theme_constant_override("separation", 7)
+	ch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ball_pips = _pip_row(ch, "ui_pip_ball", 3, 40)
+	ch.add_child(_pip_divider())
+	strike_pips = _pip_row(ch, "ui_pip_star", 2, 40)
+	ch.add_child(_pip_divider())
+	out_pips = _pip_row(ch, "ui_pip_out", 2, 34)
+	count_plate.add_child(ch)
+	hud_root.add_child(count_plate)
+	# score plate top-right: VIS | INN | GANG
+	score_plate = _pill()
+	# right-anchored: the plate's right edge rides the screen edge and the
+	# panel grows leftward as the score gets wider
+	score_plate.anchor_left = 1.0
+	score_plate.anchor_right = 1.0
+	score_plate.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	score_plate.offset_right = -18.0
+	score_plate.offset_top = 14.0
 	var sh := HBoxContainer.new()
 	sh.add_theme_constant_override("separation", 14)
 	sh.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var face := TextureRect.new()
-	var face_frames: Array = Game.frames("announcer", "idle", 2)
-	if not face_frames.is_empty():
-		# the strip wants a bust, not a whole tiny body
-		var at := AtlasTexture.new()
-		at.atlas = face_frames[0]
-		at.region = Rect2(52, 24, 152, 182)
-		face.texture = at
-	face.custom_minimum_size = Vector2(60, 68)
-	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	sh.add_child(face)
+	vis_lbl = _plate_num("0")
+	inn_lbl = _plate_num("1▲", 22, Color(Tuning.INK, 0.66))
+	gang_lbl = _plate_num("0")
+	sh.add_child(_plate_col("VIS", vis_lbl))
+	sh.add_child(_plate_col("INN", inn_lbl))
+	sh.add_child(_plate_col("GANG", gang_lbl))
+	score_plate.add_child(sh)
+	hud_root.add_child(score_plate)
+	# floating announcer line, bottom-centre between the buttons
 	tick_lbl = Label.new()
-	tick_lbl.add_theme_font_size_override("font_size", 21)
-	tick_lbl.add_theme_color_override("font_color", Tuning.INK)
-	tick_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tick_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tick_lbl.add_theme_font_size_override("font_size", 22)
+	tick_lbl.add_theme_color_override("font_color", Tuning.PAPER)
+	tick_lbl.add_theme_color_override("font_outline_color", Color(0.06, 0.05, 0.06, 0.9))
+	tick_lbl.add_theme_constant_override("outline_size", 10)
+	tick_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tick_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	tick_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	sh.add_child(tick_lbl)
-	strip.add_child(sh)
-	hud.add_child(strip)
-	# prompt area (pitch call / bat hint / throw call) — one visible at a time
+	tick_lbl.anchor_left = 0.14
+	tick_lbl.anchor_right = 0.86
+	tick_lbl.anchor_top = 1.0
+	tick_lbl.anchor_bottom = 1.0
+	tick_lbl.offset_top = -74.0
+	tick_lbl.offset_bottom = -14.0
+	tick_lbl.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	hud_root.add_child(tick_lbl)
+	# corner touch buttons
+	action_btn = _round_btn("ui_btn_run", Control.PRESET_BOTTOM_LEFT, Vector2(20, -20))
+	action_btn.pressed.connect(_on_pitch_thrown)
+	hud_root.add_child(action_btn)
+	swing_btn = _round_btn("ui_btn_hand", Control.PRESET_BOTTOM_RIGHT, Vector2(-20, -20))
+	swing_btn.pressed.connect(_try_swing)
+	hud_root.add_child(swing_btn)
+	# prompt area (pitch call / throw call) — one visible at a time
 	var prompt_root := VBoxContainer.new()
 	prompt_root.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM,
 		Control.PRESET_MODE_MINSIZE, 130)
@@ -1279,19 +1314,104 @@ func _build_hud() -> void:
 	prompt_root.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	prompt_root.alignment = BoxContainer.ALIGNMENT_END
 	prompt_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(prompt_root)
+	hud_root.add_child(prompt_root)
 	_build_pitch_ui(prompt_root)
 	_build_throw_ui(prompt_root)
-	hint_lbl = _chalk_label("TAP ANYWHERE TO SWING", 26)
-	hint_lbl.add_theme_color_override("font_shadow_color", Color(Tuning.INK, 0.9))
-	hint_lbl.add_theme_constant_override("shadow_offset_x", 2)
-	hint_lbl.add_theme_constant_override("shadow_offset_y", 2)
+	hint_lbl = _chalk_label("TAP TO SWING", 26)
+	hint_lbl.add_theme_color_override("font_outline_color", Color(0.06, 0.05, 0.06, 0.9))
+	hint_lbl.add_theme_constant_override("outline_size", 9)
 	hint_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_lbl.visible = false
 	prompt_root.add_child(hint_lbl)
 	var pulse := create_tween().set_loops()
 	pulse.tween_property(hint_lbl, "modulate", Color(1, 1, 1, 0.45), 0.4)
 	pulse.tween_property(hint_lbl, "modulate", Color(1, 1, 1, 1.0), 0.4)
+
+func _fit_hud_root() -> void:
+	# In portrait the expand-stretch design space grows very tall, which would
+	# shrink everything; boost the root so the chrome stays thumb-sized.
+	var vp := get_viewport_rect().size
+	var k := maxf(1.0, vp.y / 1300.0)
+	hud_root.scale = Vector2(k, k)
+	hud_root.size = vp / k
+	hud_root.position = Vector2.ZERO
+
+func _pill() -> PanelContainer:
+	var pl := PanelContainer.new()
+	# horizontal margin clears the pill's ink ring so captions never sit
+	# under it; the ring is ~20px of the stretched 9-patch
+	var st := _plate_style("ui_pill", 36, 14)
+	if st is StyleBoxTexture:
+		st.content_margin_left = 27.0
+		st.content_margin_right = 27.0
+	pl.add_theme_stylebox_override("panel", st)
+	pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return pl
+
+func _pip_row(parent: Control, art: String, n: int, size: int) -> Array[TextureRect]:
+	var out: Array[TextureRect] = []
+	var tex: Texture2D = load("res://assets/ui/%s.png" % art) \
+		if ResourceLoader.exists("res://assets/ui/%s.png" % art) else null
+	for i in n:
+		var tr := TextureRect.new()
+		tr.texture = tex
+		tr.custom_minimum_size = Vector2(size, size)
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr.modulate = PIP_DIM
+		parent.add_child(tr)
+		out.append(tr)
+	return out
+
+func _pip_divider() -> Control:
+	var d := ColorRect.new()
+	d.color = Color(Tuning.INK, 0.28)
+	d.custom_minimum_size = Vector2(3, 36)
+	d.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return d
+
+func _plate_num(txt: String, size := 32, col := Tuning.INK) -> Label:
+	var l := Label.new()
+	l.text = txt
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+func _plate_col(caption: String, num: Label) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", -4)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cap := Label.new()
+	cap.text = caption
+	cap.add_theme_font_size_override("font_size", 12)
+	cap.add_theme_color_override("font_color", Color(Tuning.INK, 0.62))
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(cap)
+	v.add_child(num)
+	return v
+
+func _round_btn(art: String, preset: int, off: Vector2) -> TextureButton:
+	var b := TextureButton.new()
+	var path := "res://assets/ui/%s.png" % art
+	if ResourceLoader.exists(path):
+		b.texture_normal = load(path)
+	b.ignore_texture_size = true
+	b.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	b.custom_minimum_size = Vector2(118, 118)
+	b.set_anchors_preset(preset)
+	b.grow_horizontal = Control.GROW_DIRECTION_BEGIN if off.x < 0.0 \
+		else Control.GROW_DIRECTION_END
+	b.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	b.position = off + Vector2(0.0 if off.x > 0.0 else -118.0, -118.0)
+	b.visible = false
+	b.pivot_offset = Vector2(59, 59)
+	return b
 
 func _chalk_label(text: String, size: int) -> Label:
 	var l := Label.new()
@@ -1384,7 +1504,8 @@ func _build_pitch_ui(parent: Control) -> void:
 			pitch_select.visible = false
 			pitch_timing.visible = true
 			_bar_clock = 0.0
-			_bar_running = true)
+			_bar_running = true
+			action_btn.visible = true)
 		types.add_child(tb)
 	pitch_select.add_child(types)
 	v.add_child(pitch_select)
@@ -1427,6 +1548,7 @@ func _on_pitch_thrown() -> void:
 	if not _bar_running:
 		return
 	_bar_running = false
+	action_btn.visible = false
 	var phase := pingpong(_bar_clock * BAR_SPEED, 1.0)
 	var quality := clampf(1.0 - absf(phase - 0.5) * 2.0, 0.2, 0.95)
 	var need := AIM_Q_MID if _pitch_lane == 0 else AIM_Q_EDGE
@@ -1501,19 +1623,34 @@ func _process_hud(delta: float) -> void:
 
 func _update_hud(snap: Dictionary) -> void:
 	var sc: Array = snap["score"]
-	score_lbl.text = "VIS %d — GANG %d" % [sc[0], sc[1]]
+	vis_lbl.text = str(sc[0])
+	gang_lbl.text = str(sc[1])
 	var arrow := "▲" if int(snap["half"]) == MatchCore.Half.TOP else "▼"
-	var outs_n := int(snap["outs"])
-	var outs_s := "–" if outs_n == 0 else "|".repeat(outs_n)
-	count_lbl.text = "INN %d%s · OUT %s · B%d S%d" % [int(snap["inning"]), arrow,
-		outs_s, int(snap["balls"]), int(snap["strikes"])]
+	inn_lbl.text = "%d%s" % [int(snap["inning"]), arrow]
+	_set_pips(ball_pips, int(snap["balls"]))
+	_set_pips(strike_pips, int(snap["strikes"]))
+	_set_pips(out_pips, int(snap["outs"]))
 	var runs_total: int = sc[0] + sc[1]
 	if _last_runs >= 0 and runs_total != _last_runs:
-		score_panel.pivot_offset = score_panel.size / 2.0
+		score_plate.pivot_offset = score_plate.size / 2.0
 		var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		score_panel.scale = Vector2(1.22, 1.22)
-		tw.tween_property(score_panel, "scale", Vector2.ONE, 0.3)
+		score_plate.scale = Vector2(1.22, 1.22)
+		tw.tween_property(score_plate, "scale", Vector2.ONE, 0.3)
 	_last_runs = runs_total
+
+func _set_pips(pips: Array[TextureRect], lit: int) -> void:
+	for i in pips.size():
+		var on := i < lit
+		var pip := pips[i]
+		if on and pip.modulate != Color.WHITE:
+			pip.modulate = Color.WHITE
+			pip.pivot_offset = pip.size / 2.0
+			pip.scale = Vector2(1.5, 1.5)
+			var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			tw.tween_property(pip, "scale", Vector2.ONE, 0.22)
+		elif not on:
+			pip.modulate = PIP_DIM
+			pip.scale = Vector2.ONE
 
 func ticker(s: String) -> void:
 	if s == "":

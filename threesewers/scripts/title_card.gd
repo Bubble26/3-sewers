@@ -56,6 +56,10 @@ func _ready() -> void:
 	add_child(card)
 
 func flash(text: String, subtext := "", hold := 0.9, slam := false) -> void:
+	# the cards were tuned for landscape; a tall screen gets a smaller cut
+	var vps := get_viewport().get_visible_rect().size
+	lbl.add_theme_font_size_override("font_size", 74 if vps.x >= vps.y else 52)
+	sub.add_theme_font_size_override("font_size", 23 if vps.x >= vps.y else 19)
 	lbl.text = text
 	sub.text = subtext
 	sub.visible = subtext != ""
