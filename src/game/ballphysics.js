@@ -652,7 +652,7 @@ function step(dt, ball, sim) {
 
   if (S.fate) {
     S.fateHold -= dt;
-    if (S.fate.kind === 'sewer') { S.sink = Math.min(1, S.sink + dt * 3.2); ball.pos.y -= dt * 0.7; }
+    if (S.fate.kind === 'sewer') { S.sink = Math.min(1, S.sink + dt * 2.2); ball.pos.y -= dt * 2.1; }
     else if (S.fate.kind === 'roof' || S.fate.kind === 'lost') {
       ball.pos.addScaledVector(ball.vel, dt);
       ball.vel.y -= SP.gravity * dt;
@@ -932,7 +932,7 @@ export default registerSystem({
     const dist = Math.max(1, cam.position.distanceTo(ball.pos));
     const worldPerPx = (2 * dist * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)) / Math.max(1, _size.y);
     const need = SP.minPx * 0.5 * worldPerPx;
-    const r = clamp(Math.max(SP.drawR, need), SP.drawR, SP.drawR * SP.maxBump) * (1 - sink * 0.85);
+    const r = clamp(Math.max(SP.drawR, need), SP.drawR, SP.drawR * SP.maxBump);
 
     this.root.position.copy(ball.pos);
     this.bill.quaternion.copy(cam.quaternion);
@@ -1086,10 +1086,11 @@ registerScenario('down_the_sewer', {
   seed: 1929,
   setup: () => {
     stage(1929);
-    // a grounder into the gutter, and the catch basin at the corner takes it
-    launch(V(0.3, 2.4, 1.2), V(30.0, 4.0, 7.0), V(0, 0, -30));
-    app.camera.position.set(9.0, 6.4, -6.5);
-    app.camera.lookAt(20.4, 0.5, 8.0);
+    // a grounder pulled into the west gutter, where the crown of the road runs it
+    // straight into the catch basin at the corner.  Everything stops.
+    launch(V(-0.3, 2.4, 1.2), V(-30.0, 4.0, 7.0), V(0, 0, 30));
+    app.camera.position.set(-7.5, 4.6, -3.0);
+    app.camera.lookAt(-19.8, 0.9, 7.6);
   },
-  settle: 1.05,
+  settle: 1.02,
 });

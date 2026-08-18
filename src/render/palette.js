@@ -437,6 +437,34 @@ export function ballRead(backdropHex) {
 }
 
 /**
+ * §2.6.2 / §2.9 — "no two adjacent fielders share a hue", as a function, so it is enforced at
+ * team-assembly time instead of eyeballed. Hands back `n` accents from the twelve dyed wools
+ * with no two neighbours within 25° of each other, deterministic for a given seed. Any piece
+ * that puts more than two coloured garments on screen at once should build its list here.
+ */
+export function accentRun(n, seed = 7) {
+  const pool = Object.values(ACCENTS);
+  const out = [];
+  let s = seed >>> 0;
+  const next = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  for (let i = 0; i < n; i++) {
+    let best = pool[0], bestGap = -1;
+    for (let t = 0; t < 24; t++) {
+      const c = pool[Math.floor(next() * pool.length) % pool.length];
+      if (out.includes(c)) continue;
+      const prev = out[out.length - 1];
+      if (prev === undefined) { best = c; break; }
+      let d = Math.abs(hueOf(c) - hueOf(prev));
+      if (d > 180) d = 360 - d;
+      if (d >= 25) { best = c; bestGap = d; break; }
+      if (d > bestGap) { bestGap = d; best = c; }
+    }
+    out.push(best);
+  }
+  return out;
+}
+
+/**
  * Audit every published colour against its own laws. Returns [] when the palette is clean.
  * Used by the style_sheet scenario and cheap enough to call from a test.
  */
@@ -449,8 +477,12 @@ export function audit() {
   for (const [k, v] of Object.entries(FACADE)) {
     const role = k === 'iron' || k === 'sash' ? 'linear' : 'backdrop';
     if (Array.isArray(v)) v.forEach((c, i) => push(`FACADE.${k}[${i}]`, c, role));
+    else if (typeof v === 'object') for (const [k2, c] of Object.entries(v)) push(`FACADE.${k}.${k2}`, c, 'world');
     else push(`FACADE.${k}`, v, role);
   }
+  AWNINGS.forEach(([a, b], i) => { push(`AWNINGS[${i}][0]`, a, 'world'); push(`AWNINGS[${i}][1]`, b, 'world'); });
+  for (const [k, v] of Object.entries(WOOD)) push(`WOOD.${k}`, v, 'world');
+  PRODUCE.forEach((c, i) => push(`PRODUCE[${i}]`, c, 'world'));
   for (const [k, v] of Object.entries(AIR)) {
     if (k === 'sunTint' || k === 'shadowTint' || k === 'brickBounce' || k === 'skyFill') continue;
     push(`AIR.${k}`, v, 'backdrop');
@@ -461,6 +493,14 @@ export function audit() {
   push('BLUSH', BLUSH, 'world');
   const worst = Math.min(...Object.values(PAVEMENT).map((c) => ballRead(c).best),
     ...Object.values(FACADE).filter((c) => typeof c === 'number').map((c) => ballRead(c).best));
+  // Every ramp band a material can actually render must obey the same laws its base does,
+  // or the laws only hold on the palette page and not on the screen.
+  for (const [k, v] of Object.entries(FACADE)) {
+    if (typeof v !== 'number') continue;
+    const r = ramp(v);
+    if (lstar(r.shade) < LAWS.fieldFloor - 0.51) bad.push(`FACADE.${k} shade band falls to L* ${lstar(r.shade).toFixed(1)}`);
+    if (lstar(r.bounce) > LAWS.backdropCeiling + 0.51) bad.push(`FACADE.${k} bounce band rises to L* ${lstar(r.bounce).toFixed(1)}`);
+  }
   if (worst < LAWS.ballContrast) bad.push(`ball best-of-two falls to ${worst.toFixed(2)}:1`);
   return bad;
 }
@@ -469,6 +509,7 @@ export const css = hexCSS;
 
 export default {
   CHALK, INK, PAVEMENT, FACADE, SPECULAR, AIR, BALL, SKIN, BLUSH, SMUDGE, CLOTH, ACCENTS, TEAMS,
+  AWNINGS, WOOD, PRODUCE,
   LAWS, soot, sunlit, shade, bounce, inkOf, ramp, sootAtHeight, hazeAt, mix, lstar, contrast,
-  ballRead, audit, css,
+  ballRead, accentRun, audit, css,
 };
