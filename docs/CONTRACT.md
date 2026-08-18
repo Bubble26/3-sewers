@@ -17,6 +17,8 @@ the game looks that is not backed by a screenshot you personally captured is wor
 Exit code 1 means the page threw. `shots/report.json` carries console errors — a build with
 console errors is a failed build, no exceptions.
 
+    node tools/film.mjs contact --frames 12 --step 0.05   # numbered frame strip, for motion
+    node tools/playthrough.mjs --seeds 3    # play whole games headlessly: softlocks, pacing, scores
     node tools/bundle.mjs                   # dist/stickball.html, one self-contained file
     node tools/serve.mjs 8123               # dev server if you want to poke by hand
 
@@ -39,6 +41,11 @@ console errors is a failed build, no exceptions.
   it breaks determinism and therefore breaks the whole critique loop.
 * All gameplay constants go in `src/core/tuning.js`.
 * Gameplay emits on `src/core/bus.js`; audio / fx / ui listen. Rendering never drives rules.
+* Gameplay logic fills a **slot** in `src/game/plugins.js` (`pitching`, `batting`,
+  `ballphysics`, `fielding`, `baserunning`, `rules`). `src/game/sim.js` owns only the at-bat
+  state machine and delegates every decision to a slot, so those six systems are built and
+  judged separately without sharing a file. Unfilled slots fall back to `src/game/defaults.js`,
+  which is placeholder behaviour and never the finished answer.
 
 ## Hard technical rules
 
