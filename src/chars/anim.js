@@ -275,6 +275,12 @@ export class Rig {
     this.jiggles = [];
     this.height = 4.9;
     this.posScale = 1;
+    /**
+     * +1 when the rig's face is on -Z (the convention every clip in clips.js is authored for),
+     * -1 when it is on +Z. Detected from the geometry at bind time and applied to the rx / ry /
+     * pz channels, so the character piece can flip its kids round without breaking a clip.
+     */
+    this.mirror = 1;
     this.acc = {};
   }
   bind(name, obj) {
@@ -291,13 +297,13 @@ export class Rig {
     return this.acc;
   }
   apply(acc) {
-    const ps = this.posScale;
+    const ps = this.posScale, mz = this.mirror;
     for (const [name, j] of this.joints) {
       const a = acc[name];
       const o = j.obj;
       if (a) {
-        o.position.set(j.rp.x + a[3] * ps, j.rp.y + a[4] * ps, j.rp.z + a[5] * ps);
-        o.rotation.set(j.rr.x + a[0], j.rr.y + a[1], j.rr.z + a[2], j.rr.order);
+        o.position.set(j.rp.x + a[3] * ps, j.rp.y + a[4] * ps, j.rp.z + a[5] * ps * mz);
+        o.rotation.set(j.rr.x + a[0] * mz, j.rr.y + a[1] * mz, j.rr.z + a[2], j.rr.order);
         o.scale.set(j.rs.x * (1 + a[6]), j.rs.y * (1 + a[7]), j.rs.z * (1 + a[8]));
       } else {
         o.position.copy(j.rp); o.rotation.copy(j.rr); o.scale.copy(j.rs);
@@ -318,7 +324,7 @@ export class Rig {
       const up = side === 'L' ? ik.lo : ik.hi;
       _t2.set(0, up, 0).applyMatrix4(stick.matrixWorld);
       const S = side === 'L' ? -1 : 1;
-      _t3.set(S * ik.pole, -ik.pole * 0.8, -ik.pole * 0.55);
+      _t3.set(S * ik.pole, -ik.pole * 0.8, -ik.pole * 0.55 * this.mirror);
       sh.parent.updateWorldMatrix(true, false);
       _t3.applyMatrix4(sh.parent.matrixWorld);
       solveTwoBone(sh, elb, hand, _t2, _t3);
@@ -342,6 +348,38 @@ const NEUTRAL = {
   kneeL: [0, 0, 0], kneeR: [0, 0, 0], footL: [0, 0, 0], footR: [0, 0, 0],
   chest: [-0.03, 0, 0], neck: [0, 0, 0],
 };
+
+const _bb = new THREE.Vector3();
+let FACE_SIGN = 1;
+/**
+ * Which way is the kid's face? Read it off the geometry rather than trusting a convention: the
+ * face decal is the one piece of a kid that is unambiguously on the front. Falls back to the
+ * boots, which point the same way, and then to the house default.
+ */
+function detectFacing(rig) {
+  const head = rig.get('head');
+  const probe = (o) => {
+    if (!o || !o.geometry) return 0;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    o.geometry.boundingBox.getCenter(_bb);
+    return Math.abs(_bb.z) > 1e-3 ? Math.sign(_bb.z) : 0;
+  };
+  let z = 0;
+  if (head) head.traverse((o) => { if (!z && o.isMesh && o.name === 'face') z = probe(o); });
+  if (!z) {
+    const f = rig.get('footL');
+    if (f) f.traverse((o) => { if (!z && o.isMesh) z = probe(o); });
+  }
+  FACE_SIGN = z > 0 ? -1 : 1;
+  return FACE_SIGN;
+}
+
+/** +1 when kids face -Z (clip-space forward), -1 when they face +Z. */
+export function faceMirror() { return FACE_SIGN; }
+/** The yaw that turns a kid at (x,z) to look along (dx,dz), whichever way the rig faces. */
+export function headingTo(dx, dz) {
+  return FACE_SIGN > 0 ? Math.atan2(-dx, -dz) : Math.atan2(dx, dz);
+}
 
 /** Older/other rigs that publish a flat part map instead of `userData.joints`. */
 const FALLBACK = {
@@ -380,12 +418,13 @@ export function bindRig(kid, opts = {}) {
     kid.add(b);
     rig.bind('base', b);
   }
+  rig.mirror = detectFacing(rig);
   // neutralise the rest pose, then re-capture rest so clips read as authored
   for (const n in NEUTRAL) {
     const j = rig.joints.get(n);
     if (!j) continue;
     const v = NEUTRAL[n];
-    j.obj.rotation.set(v[0], v[1], v[2]);
+    j.obj.rotation.set(v[0] * rig.mirror, v[1] * rig.mirror, v[2]);
     j.rr.copy(j.obj.rotation);
   }
   const hd = rig.joints.get('head');
@@ -485,7 +524,7 @@ export function attachStick(rig, o = {}) {
   grip.name = 'grip';
   // Kids face -Z, so the hands go in front; keep them at chest height or the mitts and the
   // handle end up parked across the face, which at this head size hides the whole performance.
-  grip.position.set(-shX * 0.9, shY * 0.06, -shX * 1.15);
+  grip.position.set(-shX * 0.9, shY * 0.06, -shX * 1.15 * rig.mirror);
   girdle.add(grip);
   const stick = new THREE.Group(); stick.name = 'stick'; grip.add(stick);
   const half = length * 0.5;

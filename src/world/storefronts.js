@@ -150,16 +150,6 @@ export const SHOPS = {
 };
 
 // ─── atlas art ────────────────────────────────────────────────────────────────
-function woodGrain(g, w, h, hex, seed) {
-  const r = new RNG(seed);
-  const base = tc(hex);
-  g.fillStyle = tcCss(hex); g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 60; i++) {
-    g.fillStyle = linToCss(scaleLin(base, 1 + r.range(-0.10, 0.08)));
-    g.fillRect(0, r.range(0, h), w, r.range(0.8, 2.4));
-  }
-}
-
 /** A shop's sign band: the most important word 3:1 bigger, shaded, filling the panel. */
 function drawBand(g, w, h, spec, seed) {
   const r = new RNG(seed);
@@ -530,8 +520,7 @@ export function buildStorefront(ctx, lot) {
   }
 
   // transom band of prism glass, throwing daylight to the back of the shop
-  panel(S, lot, 0.2, iz0, iz1, GLASS_TOP, TRANSOM_TOP, texTint(0, 0.06),
-    tileUV(A.get('transom'), (iz1 - iz0) / 8, 1));
+  panel(S, lot, 0.2, iz0, iz1, GLASS_TOP, TRANSOM_TOP, texTint(0, 0.06), rectUV(A.get('transom')));
 
   // sign band — the loudest thing at eye level on the whole block
   {
@@ -608,17 +597,6 @@ export function buildStorefront(ctx, lot) {
     T.cyl(cx, pz, 0.3, y0 + 6.5, y0 + 6.9, 8, (n, c) => shadeLin(0x8a6a54, litOf(n, c[0], c[1], c[2])));
     T.box(Math.min(cx, xf), y0 + 6.2, pz - 0.08, Math.max(cx, xf), y0 + 6.35, pz + 0.08, () => shadeLin(0x4a4a44, 0.2), 'px nx py ny pz nz');
   }
-}
-
-/** Repeat an atlas slot n times across a quad without leaving the slot. */
-export function tileUV(slot, nu, nv) {
-  const eps = 0.0004;
-  const out = [];
-  for (const [u, v] of [[0, 0], [nu, 0], [nu, nv], [0, nv]]) {
-    out.push([slot.u0 + (slot.u1 - slot.u0) * (u % 1 === 0 && u > 0 ? 1 : u) - eps * 0, slot.v0 + (slot.v1 - slot.v0) * v]);
-  }
-  // a plain stretch is fine for a band of small panes; keep the slot's own bounds
-  return rectUV(slot);
 }
 
 export function normal3(a, b, c) {

@@ -297,7 +297,6 @@ export class Builder {
 }
 
 export const rectUV = (r) => [[r.u0, r.v0], [r.u1, r.v0], [r.u1, r.v1], [r.u0, r.v1]];
-export const flipU = (r) => [[r.u1, r.v0], [r.u0, r.v0], [r.u0, r.v1], [r.u1, r.v1]];
 
 // ─── the sign / sprite atlas ──────────────────────────────────────────────────
 // Every painted thing on the block — sign bands, awnings, ghost signs, gold leaf, railings,

@@ -7,7 +7,7 @@ import { bus } from '../core/bus.js';
 import { RNG } from '../core/rng.js';
 import { registerScenario } from '../core/scenarios.js';
 import { CHALK } from '../render/palette.js';
-import { bindRig, attachStick, Animator, Trail } from './anim.js';
+import { bindRig, attachStick, Animator, Trail, headingTo } from './anim.js';
 import { CLIPS, FIDGETS, IDLES } from './clips.js';
 
 /**
@@ -32,17 +32,17 @@ const HOME = { x: 0, z: T.street.plateZ };
 const PLATE_BOX = { x: -2.7, z: T.street.plateZ - 0.5 };
 
 /**
- * The rig's kids face -Z at yaw 0, so a heading is atan2 of the NEGATED delta. Every place in
- * this file that turns a kid goes through here rather than re-deriving it and getting it wrong.
+ * Every heading in this file goes through the rig's own detected facing (anim.js `headingTo`)
+ * rather than re-deriving which way a kid points and getting it wrong.
  */
-const YAW = (dx, dz) => Math.atan2(-dx, -dz);
-/** Batting box: yaw -PI/2 faces the kid across the plate with the pitcher off his left. */
-const BAT_YAW = -Math.PI / 2;
+const YAW = (dx, dz) => headingTo(dx, dz);
+/** Batting box: face the kid across the plate with the pitcher off to his open side. */
+const BAT_YAW = () => YAW(-1, 0);
 
 // Nine on defence, spread up a street rather than around a diamond.
 const POSTS = [
-  { id: 'catcher', x: 0, z: T.street.plateZ - 5.6, clip: 'crouch', face: Math.PI },
-  { id: 'pitcher', x: 0, z: T.street.moundZ, clip: 'pitch_set', face: 0 },
+  { id: 'catcher', x: 0, z: T.street.plateZ - 5.6, clip: 'crouch' },
+  { id: 'pitcher', x: 0, z: T.street.moundZ, clip: 'pitch_set' },
   { id: 'first', x: 17, z: 33 },
   { id: 'short', x: 8, z: 64 },
   { id: 'third', x: -17, z: 33 },
@@ -284,7 +284,7 @@ export default registerSystem({
       const k = mk(i + 2);
       k.post = p;
       k.restClip = p.clip || 'ready';
-      k.at(p.x, p.z, p.face === undefined ? 0 : p.face);
+      k.at(p.x, p.z, p.face === undefined ? YAW(0, -1) : p.face);
       if (p.clip) k.anim.play(p.clip, { at: arng.range(0, 2) });
       return k;
     });
@@ -293,7 +293,7 @@ export default registerSystem({
 
     // offence
     this.batter = mk(0, { stick: true });
-    this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW);
+    this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW());
     this.batter.restClip = 'bat_wait';
     this.batter.anim.play('stance');
 
@@ -305,7 +305,7 @@ export default registerSystem({
     for (const r of this.runners) { r.group.visible = false; r.at(HOME.x, HOME.z, 0); }
 
     this.stoopKid = mk(13);
-    this.stoopKid.at(-23.5, 26, -1.5);
+    this.stoopKid.at(-23.5, 26, YAW(1, 0));
     this.stoopKid.restClip = 'sit_flip';
     this.stoopKid.anim.play('sit_flip', { at: 1.1 });
 
@@ -437,7 +437,7 @@ export default registerSystem({
   mobAtPlate() {
     const star = this.runners.find((r) => r.group.visible) || this.batter;
     star.target = null;
-    star.at(HOME.x, HOME.z + 1.6, 0);
+    star.at(HOME.x, HOME.z + 1.6, YAW(0, -1));
     star.act('mobbed', { state: 'mob', lock: 3.2 });
     const crew = this.fielders.slice(2, 6);
     let i = 0;
@@ -452,16 +452,16 @@ export default registerSystem({
   },
 
   homePose() {
-    for (const f of this.fielders) { f.at(f.post.x, f.post.z, f.post.face === undefined ? 0 : f.post.face); f.lock = 0; f.cycle = null; f.state = 'idle'; f.anim.stopLayers(); f.anim.play(f.restClip, { at: arng.range(0, 2), fade: 0 }); }
+    for (const f of this.fielders) { f.at(f.post.x, f.post.z, f.post.face === undefined ? YAW(0, -1) : f.post.face); f.lock = 0; f.cycle = null; f.state = 'idle'; f.anim.stopLayers(); f.anim.play(f.restClip, { at: arng.range(0, 2), fade: 0 }); }
     for (const f of this.fielders.slice(2)) { f.lookAt(HOME.x, HOME.z); f.snapFacing(); }
-    this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW);
+    this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW());
     this.batter.cycle = null; this.batter.lock = 0; this.batter.anim.stopLayers();
     this.batter.showStick(true);
     this.batter.anim.play('stance', { fade: 0 });
     this.onDeck.at(10.5, T.street.plateZ - 8.5, 0).lookAt(0, T.street.moundZ).snapFacing();
     this.onDeck.cycle = null; this.onDeck.lock = 0; this.onDeck.showStick(true);
     this.onDeck.anim.play('bat_wait', { at: 1.2, fade: 0 });
-    this.stoopKid.at(-23.5, 26, -1.5);
+    this.stoopKid.at(-23.5, 26, YAW(1, 0));
     this.stoopKid.cycle = null; this.stoopKid.lock = 0;
     this.stoopKid.anim.play('sit_flip', { at: 1.1, fade: 0 });
     this.clearRunners();
@@ -613,7 +613,7 @@ registerScenario('anim_run', {
     // points of one cycle at once. Phase comes from distance travelled, never from the clock,
     // which is what keeps the planted foot from skating.
     const treadmill = (k, lane, x0) => {
-      k.at(x0, lane, -Math.PI / 2);
+      k.at(x0, lane, YAW(1, 0));
       k.speed = T.run.speed;
       k.goTo(32, lane, { speed: T.run.speed, onArrive: (y) => treadmill(y, lane, -20) });
     };
@@ -628,7 +628,7 @@ registerScenario('anim_run', {
     const s = a[4];
     s.showStick(false);
     s.setCycle(3.0, [
-      { t: 0.0, do: (x) => { x.at(-13, 51.4, -Math.PI / 2); x.speed = T.run.speed; x.goTo(1.5, 51.4, { speed: T.run.speed, hard: true }); } },
+      { t: 0.0, do: (x) => { x.at(-13, 51.4, YAW(1, 0)); x.speed = T.run.speed; x.goTo(1.5, 51.4, { speed: T.run.speed, hard: true }); } },
     ], 1.02);
     // and the slide into the chalk
     const d = a[5];
@@ -679,7 +679,7 @@ registerScenario('anim_pitch', {
     a.forEach((k, i) => {
       k.showStick(false);
       const x = -6.6 + i * 4.5, z = 43.2 + (i % 2) * 1.9;
-      k.at(x, z, -0.34);
+      k.at(x, z, YAW(0, -1) - 0.34);
       k.setCycle(2.1, [
         { t: 0.0, do: (y) => y.anim.play('windup', { restart: true, fade: 0.06 }) },
         { t: 0.92, do: (y) => y.anim.play('pitch_recover', { restart: true, fade: 0.05 }) },
