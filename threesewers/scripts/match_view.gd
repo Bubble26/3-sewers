@@ -274,10 +274,24 @@ var _bar_running := false
 var _throw_waiting := false
 var _throw_left := 0.0
 var _throw_total := 1.4
+var _film := false
+var _seed := 0
+
+# Under --write-movie the engine runs a fixed timestep, so the frame counter
+# IS the movie frame index. Printing it here is what lets the capture tool
+# pull the exact frames around an event instead of eyeballing a video.
+func mark(event: String) -> void:
+	if _film:
+		print("FILM %d %s" % [Engine.get_frames_drawn(), event])
 
 # ---------------------------------------------------------------- setup
 func _ready() -> void:
 	_perf = "--perf" in OS.get_cmdline_user_args()
+	_film = "--film" in OS.get_cmdline_user_args()
+	for a in OS.get_cmdline_user_args():
+		var av: String = a
+		if av.begins_with("--seed="):
+			_seed = int(av.substr(7))
 	if "--rt" in OS.get_cmdline_user_args():
 		# The soak runs at 10x, which packs 10x the choreography into every
 		# wall-clock second and makes frame cost look far worse than real play.
@@ -288,7 +302,7 @@ func _ready() -> void:
 				_report_perf()
 				get_tree().quit(0))
 	_base_pos = [Tuning.BASE_1, Tuning.BASE_2, Tuning.BASE_3, Tuning.PLATE]
-	core.setup(Game.cpu_team, Game.player_team, Game.roster, 1, Tuning.INNINGS)
+	core.setup(Game.cpu_team, Game.player_team, Game.roster, 1, Tuning.INNINGS, _seed)
 	_build_layers()
 	_build_world()
 	get_viewport().size_changed.connect(_on_resized)
@@ -728,12 +742,17 @@ func shake(amount: float) -> void:
 # The timer ignores time_scale so it lasts the same wall-clock time no matter
 # what Engine.time_scale is doing (the soak runs at 10x).
 func hit_stop(seconds: float) -> void:
-	if Game.smoke or seconds <= 0.0:
+	# Gate on the actual reason, not on the mode: a freeze is wrong only when
+	# time is compressed. That keeps hit-stop alive when the capture tool
+	# films a smoke run at true speed.
+	if seconds <= 0.0 or Engine.time_scale > 2.0:
 		return
 	var prev := Engine.time_scale
+	mark("stop_in %.3f" % seconds)
 	Engine.time_scale = 0.0001
 	await get_tree().create_timer(seconds, true, false, true).timeout
 	Engine.time_scale = prev
+	mark("stop_out")
 
 # One-shot particle burst at a world point, sized by its depth so a puff up
 # the street is as small as the kid standing next to it.
@@ -832,6 +851,7 @@ func _process_ball(delta: float) -> void:
 			var tau := _bt - _ta
 			if not _bounced:
 				_bounced = true
+				mark("bounce")
 				_fx_dust(_pB, 9)
 				shake(2.0)
 			bw = _pB.lerp(_pC, tau / _tb)
@@ -934,6 +954,7 @@ func _resolve_pitch() -> void:
 	var ev: Dictionary = core.resolve_swing(err) if swung else core.resolve_no_swing()
 	if String(ev.get("kind", "")) == "in_play":
 		var q := float(ev.get("quality", 0.5))
+		mark("contact q=%.2f" % q)
 		_fx_contact(bw, bh, clampf(q, 0.15, 1.0))
 		shake(4.0 + 14.0 * q)
 	elif String(ev.get("kind", "")) == "foul":
@@ -1112,6 +1133,7 @@ func _choreo_in_play(play: Dictionary) -> void:
 			if bool(play["window"]):
 				if Game.smoke:
 					print("smoke: window smash")
+				mark("window")
 				_fx_glass(Tuning.WINDOW_POS, 520.0)
 				shake(26.0)
 				await hit_stop(0.10)

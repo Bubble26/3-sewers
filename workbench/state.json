@@ -1,7 +1,7 @@
 {
  "run_started": "2026-08-17",
  "round": 1,
- "headline": "Round 1 \u2014 bars set. CRITICAL: game ships with zero audio. Wave 1 builders launched: audio, front-end, animation; orchestrator owns game-feel in match_view.gd.",
+ "headline": "Round 1 \u2014 game feel now real in pixels (hit-stop + shake measured, not assumed). Perf fixed at root: p99 24.5ms \u2192 5.1ms. Capture harness built: the game marks its own events so exact frames can be cut. NEW FINDING: portrait composition is far stronger than landscape \u2014 landscape leaves the batter tiny mid-frame.",
  "bars": [
   {
    "sys": "Audio",
@@ -52,11 +52,22 @@
   {
    "name": "Game feel / juice",
    "status": "work",
-   "score": 3,
+   "score": 5,
    "bar": "Hit-stop, shake, particles, trail at contact",
-   "note": "Ballistics real (gravity, restitution, spin-at-bounce). No hit-stop, no screen shake, no particles, no ball trail, no dust.",
-   "gap": "Contact has no physical impact language",
-   "shots": []
+   "note": "Built and VERIFIED IN CAPTURED FRAMES: hit-stop fires 3 frames @q0.96, 2 @q0.77, 1 @q0.17; screen shake measured >\u00b114px @q0.96 vs \u00b14px @q0.17, so magnitude tracks contact quality. Contact flash, dust at bounce, glass at window, ball trail all wired. Independent critic reviewing now \u2014 score is provisional until it lands.",
+   "gap": "Flash reads as soft bloom rather than sharp debris; ball departure not yet legible",
+   "shots": [
+    {
+     "f": "contact_portrait.png",
+     "w": 460,
+     "c": "Portrait, q=0.96 contact, 8 consecutive frames \u2014 batter looms as the reference demands"
+    },
+    {
+     "f": "contact_landscape.png",
+     "w": 460,
+     "c": "Landscape, same hit \u2014 batter is small and mid-frame; composition does not hold up"
+    }
+   ]
   },
   {
    "name": "Visual composition",
@@ -64,7 +75,7 @@
    "score": 6,
    "bar": "Owner's gaslit reference",
    "note": "One-point perspective, warm gothic grade, crowd on kerbs, far block. Procedural paint quality is the known ceiling.",
-   "gap": "Painterly texture/linework absent (needs external art per plan)",
+   "gap": "Landscape camera leaves the batter tiny mid-frame; portrait is right, landscape is not",
    "shots": [
     {
      "f": "base_portrait.png",
@@ -116,22 +127,22 @@
   },
   {
    "name": "Performance",
-   "status": "todo",
-   "score": 0,
+   "status": "pass",
+   "score": 9,
    "bar": "60fps mobile",
-   "note": "Never measured.",
-   "gap": "Unmeasured",
+   "note": "Measured, not guessed. Empty-tree floor test (0.05ms) proved the cost was ours; section timers showed script is only 0.15ms/frame, so the 24.5ms p99 was lazy per-animation texture loading mid-play, not simulation. Warming lineup textures up front: mean 6.87\u21921.41ms, p99 24.53\u21925.14ms against a 16.67ms budget.",
+   "gap": "Not yet measured on real iOS hardware",
    "shots": []
   }
  ],
  "gaps": [
   {
    "pri": "P0",
-   "t": "Audio subsystem entirely absent \u2014 no sound of any kind"
+   "t": "Audio subsystem entirely absent \u2014 no sound of any kind (builder running)"
   },
   {
    "pri": "P0",
-   "t": "No impact language at contact (hit-stop / shake / particles)"
+   "t": "Landscape camera composition fails the reference \u2014 batter tiny mid-frame"
   },
   {
    "pri": "P1",
@@ -139,14 +150,46 @@
   },
   {
    "pri": "P1",
-   "t": "Front-end (daylight paper) incoherent with night game"
+   "t": "Contact flash reads as soft bloom, not authored debris; ball departure unclear"
+  },
+  {
+   "pri": "P1",
+   "t": "Front-end (daylight paper) incoherent with night game (builder running)"
   },
   {
    "pri": "P2",
-   "t": "Performance never measured"
+   "t": "Perf never measured on real iOS hardware"
   }
  ],
  "log": [
+  {
+   "t": "R1",
+   "m": "Godot binary vanished from the sandbox mid-run; restored it and added tools/ensure_godot.sh so a lost toolchain is fixable, not fatal."
+  },
+  {
+   "t": "R1",
+   "m": "NEW FINDING: portrait composition matches the reference; landscape does not. Landscape camera needs its own tuning, not a shared constant."
+  },
+  {
+   "t": "R1",
+   "m": "Independent game-feel critic spawned on the captured frames \u2014 I built this, so I do not grade it."
+  },
+  {
+   "t": "R1",
+   "m": "Built tools/capture.sh: the game prints FILM <frame> <event>, --write-movie is fixed-timestep, so exact frames around any event can be cut. No more eyeballing video."
+  },
+  {
+   "t": "R1",
+   "m": "Game feel verified in pixels: hit-stop 3/2/1 frames by quality, shake \u00b114px vs \u00b14px by quality."
+  },
+  {
+   "t": "R1",
+   "m": "Perf root cause found by measurement: lazy texture loads, not simulation. p99 24.53 \u2192 5.14ms."
+  },
+  {
+   "t": "R1",
+   "m": "Decoupled view from art frame counts \u2014 Game.frames() now probes files, so re-timed animations stop being silently truncated."
+  },
   {
    "t": "R1",
    "m": "Bars established from brief references (Backyard Baseball, Punch-Out!!, owner reference image)."

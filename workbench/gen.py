@@ -6,11 +6,18 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 S = json.load(open(f"{ROOT}/state.json"))
 
 def img_tag(path, w=300):
+    """Inline every shot as a JPEG. The workbench is opened over a link, so a
+    page that takes ten seconds to paint is a page nobody opens."""
     p = f"{ROOT}/shots/{path}"
     if not os.path.exists(p): return f'<div class="missing">missing: {html.escape(path)}</div>'
-    b = base64.b64encode(open(p,'rb').read()).decode()
-    ext = 'png' if path.endswith('.png') else 'jpeg'
-    return f'<img src="data:image/{ext};base64,{b}" style="width:{w}px">'
+    from PIL import Image
+    import io
+    im = Image.open(p).convert("RGB")
+    if im.width > w * 2:
+        im = im.resize((w * 2, round(im.height * w * 2 / im.width)), Image.LANCZOS)
+    buf = io.BytesIO(); im.save(buf, "JPEG", quality=82, optimize=True)
+    b = base64.b64encode(buf.getvalue()).decode()
+    return f'<img src="data:image/jpeg;base64,{b}" style="width:{w}px">'
 
 STATUS_COLORS = {"pass":"var(--ok)","work":"var(--work)","fail":"var(--bad)","todo":"var(--idle)","new":"var(--work)"}
 
