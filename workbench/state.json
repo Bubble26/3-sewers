@@ -1,7 +1,7 @@
 {
  "run_started": "2026-08-17",
  "round": 3,
- "headline": "Round 3 \u2014 the batting re-grade found the deepest failure yet: the read was DECORATIVE. Tapping a fixed 310ms after every bounce scored 56.6% perfect against 71.5% for reading the pitch flawlessly. The mechanic the game is named for bought 2.4 points. Retuned so a single blind rhythm cannot be right about more than one pitch.",
+ "headline": "Round 3 \u2014 the batting re-grade found the read was DECORATIVE: a fixed 310ms tap after every bounce scored 56.6% perfect against 71.5% for reading the pitch. Retuned by search so no single rhythm fits two pitches. Then the dust finally drew \u2014 and showed the bounce was landing on the batter's head. Moved him out of the lane.",
  "bars": [
   {
    "sys": "Audio",
@@ -52,10 +52,10 @@
   {
    "name": "Game feel / juice",
    "status": "work",
-   "score": 6,
+   "score": 7,
    "bar": "Hit-stop, shake, particles, trail at contact",
-   "note": "Two bugs of the same shape, both invisible at runtime. The impact sprites were wired, committed and never drew a pixel \u2014 the loader guessed a prp_ prefix against fx_ art and returned null in silence. Then the bounce dust STILL never appeared, because it computed to z 687 against a batter at 1390. The batter stands between the camera and everything, so anything that must be read is now explicitly lifted past them \u2014 dust, grit, and the ball's shadow, which my own earlier fix had buried for 70-270ms after every bounce. Shake was also running at 9Hz, a cycle every 3.3 frames at 30fps, so an amplitude of 5.35 rendered as 1.65 visible pixels.",
-   "gap": "Needs a third critic pass on frames where the effects actually draw",
+   "note": "Three effects had been invisible for three different reasons, none of which raise an error at runtime: the sprites never loaded (prp_ prefix vs fx_ art), then the dust drew 700 z-levels behind the batter, then \u2014 with both fixed \u2014 it drew ON him, because the pitch descends through his silhouette. All three fixed; the puff now reads on the road. Shake was also oscillating at 9Hz, a full cycle every 3.3 frames at 30fps, so an amplitude of 5.35 rendered as 1.65 visible pixels.",
+   "gap": "Needs a third critic pass on frames where every effect actually draws",
    "shots": [
     {
      "f": "contact_portrait.png",
@@ -92,11 +92,17 @@
   {
    "name": "Batting readability",
    "status": "work",
-   "score": 6,
+   "score": 7,
    "bar": "Punch-Out!! tells",
-   "note": "Second independent analysis: 5/10, up from 3/10. Confirmed repaired: read time after the bounce -17ms -> +250/370/530ms; the batter no longer eats the ball; the prompt is 83.5% honest, up from 49%; the wind-up separates the fast ball 334ms before release. Found still broken and now fixed: the read was not required at all (blind tapping 56.6% perfect vs 71.5% reading); fast and drop sat within 0.14 ball diameters for the whole 200ms after the bounce. Ballistics re-derived by search, not guess \u2014 worst pair now 0.98 diameters apart at bounce+133ms, ideal presses 120/160ms apart against a 108ms perfect window.",
-   "gap": "Spinner and drop wind-ups are pixel-identical at 200ms \u2014 a tempo tell, not a pose tell",
-   "shots": []
+   "note": "Second analysis: 5/10 (from 3/10). Read time after the bounce is now +250/370/530ms; the prompt is 83.5% honest; the wind-up separates the fast ball 334ms before release. The two remaining failures it found are fixed: the read was optional (three ideal presses spanned 100ms inside a 108ms perfect window \u2014 now 120 and 160ms apart), and fast/drop sat within 0.14 ball diameters after the bounce. MEASURED IN CAPTURED FRAMES: hop apex now ranges 0.12 to 5.34 ball diameters across pitch types, against 0.16/0.17/1.2 before.",
+   "gap": "Worst per-frame travel is 1.9 diameters at 30fps (\u22480.97 at the 60fps target) \u2014 borderline",
+   "shots": [
+    {
+     "f": "bounce_now.png",
+     "w": 520,
+     "c": "The bounce: dust on visible cobbles, ball rising out of it, batter clear of the lane"
+    }
+   ]
   },
   {
    "name": "Roster & animation",
@@ -136,7 +142,7 @@
    "status": "pass",
    "score": 9,
    "bar": "60fps mobile",
-   "note": "Measured, not guessed. Empty-tree floor test (0.05ms) proved the cost was ours; section timers showed script is only 0.15ms/frame, so the 24.5ms p99 was lazy per-animation texture loading mid-play, not simulation. Warming lineup textures up front: mean 6.87\u21921.41ms, p99 24.53\u21925.14ms against a 16.67ms budget.",
+   "note": "Measured through every change. mean 1.58ms, p99 6.03ms against a 16.67ms budget after the ballistics retune and the new effects \u2014 the worst frame is still nearly three times inside budget.",
    "gap": "Not yet measured on real iOS hardware",
    "shots": []
   }
@@ -168,6 +174,14 @@
   }
  ],
  "log": [
+  {
+   "t": "R3",
+   "m": "Hop measured in captured frames: apex now spans 0.12-5.34 ball diameters by pitch type, against 0.16/0.17/1.2 before."
+  },
+  {
+   "t": "R3",
+   "m": "The dust finally drawing revealed the bounce was landing on the batter's silhouette. Widening his stance 20->77 world px clears the lane AND moves contact to the centre of the frame."
+  },
   {
    "t": "R3",
    "m": "PROCESS FAILURE: commit a150b70's message described six fixes it did not contain \u2014 a concurrent agent rewrote the file between my edits and my blanket `git add -A`. Re-applied as 1500582 and now staging only the files I actually edited."
