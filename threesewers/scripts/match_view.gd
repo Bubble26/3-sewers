@@ -62,12 +62,19 @@ const PITCH_PATTER_CHANCE := 0.3
 const CHEESE_CARD_T := 1.2
 const SETTLE_PAD := 0.35
 const PIP_DIM := Color(0.28, 0.26, 0.27, 0.4)
+const SHAKE_DECAY := 0.36
+const HITSTOP_MIN := 0.035
+const HITSTOP_GAIN := 0.075
+const TRAIL_MAX := 16
 
 # ---------------------------------------------------------------- kid sprite node
 class Kid extends Node2D:
-	const ANIM_N := {"idle": 4, "bat_stance": 2, "swing": 6, "run": 8, "pitch": 8,
-		"throw": 4, "catch": 3, "slide": 4, "celebrate": 4, "sulk": 2, "walk": 4,
-		"bat_back": 2, "swing_back": 6}
+	# Names only — Game.frames() discovers how many frames each one actually
+	# has, so the art generators can re-time an animation without the view
+	# needing to know.
+	const ANIMS: PackedStringArray = ["idle", "bat_stance", "swing", "run",
+		"pitch", "throw", "catch", "slide", "celebrate", "sulk", "walk",
+		"bat_back", "swing_back"]
 
 	var kid_id := ""
 	var anim := ""
@@ -131,13 +138,17 @@ class Kid extends Node2D:
 		_fps = fps
 		_loop = loop
 		_t = 0.0
-		_frames = Game.frames(kid_id, a, int(ANIM_N.get(a, 1)))
+		_frames = Game.frames(kid_id, a)
 		if not _frames.is_empty():
 			_set_tex(_frames[0])
 
+	static var frame_usec := 0
+
 	func _process(delta: float) -> void:
+		var _t0 := Time.get_ticks_usec()
 		_apply_projection()
 		if _frames.is_empty():
+			frame_usec += Time.get_ticks_usec() - _t0
 			return
 		_t += delta
 		var idx := int(_t * _fps)
@@ -149,9 +160,11 @@ class Kid extends Node2D:
 				return
 			idx = _frames.size() - 1
 		_set_tex(_frames[idx])
+		frame_usec += Time.get_ticks_usec() - _t0
 
 # ---------------------------------------------------------------- members
 var autopilot := false
+var _perf := false                 # --perf: sample frame times and report
 
 var core := MatchCore.new()
 var bg: Node2D
@@ -239,6 +252,21 @@ var _last_runs := -1
 var _tick_tw: Tween
 var _cam_tw: Tween
 var _card_busy := false
+# game feel
+var _root_home := Vector2.ZERO      # world_root rest position; shake offsets from here
+var _shake_amt := 0.0
+var _shake_t := 0.0
+var _base_scale := 1.0
+var trail: Line2D
+var _trail: Array[Vector2] = []
+var _bounced := false
+# perf: sampled every frame during a soak so the 60fps bar is a measurement,
+# not a hope
+var _ft: Array[float] = []
+var _ft_worst := 0.0
+var _t_ball := 0
+var _t_hud := 0
+var _t_kids := 0
 var _pitch_lane := 0
 var _pitch_type := "fast"
 var _bar_clock := 0.0
@@ -249,6 +277,16 @@ var _throw_total := 1.4
 
 # ---------------------------------------------------------------- setup
 func _ready() -> void:
+	_perf = "--perf" in OS.get_cmdline_user_args()
+	if "--rt" in OS.get_cmdline_user_args():
+		# The soak runs at 10x, which packs 10x the choreography into every
+		# wall-clock second and makes frame cost look far worse than real play.
+		# --rt measures at true speed.
+		Engine.time_scale = 1.0
+		get_tree().create_timer(45.0, true, false, true).timeout.connect(
+			func() -> void:
+				_report_perf()
+				get_tree().quit(0))
 	_base_pos = [Tuning.BASE_1, Tuning.BASE_2, Tuning.BASE_3, Tuning.PLATE]
 	core.setup(Game.cpu_team, Game.player_team, Game.roster, 1, Tuning.INNINGS)
 	_build_layers()
@@ -256,6 +294,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_on_resized)
 	_build_ball()
 	_build_hud()
+	_warm_textures()
 	if Game.smoke:
 		var guard := get_tree().create_timer(SMOKE_GUARD_REAL_S, true, false, true)
 		guard.timeout.connect(func() -> void:
@@ -263,6 +302,23 @@ func _ready() -> void:
 				push_error("SMOKE GUARD TIMEOUT")
 				get_tree().quit(1))
 	run_match()
+
+# Every animation's frames are pulled through Game.frames() the first time a
+# kid plays it — which meant the first slide, the first celebrate and the first
+# sulk each paid a disk hit mid-play. Measured as p99 frame spikes. Warming the
+# whole roster up front moves that cost to the loading beat, where nobody feels
+# it.
+func _warm_textures() -> void:
+	var ids: Array = []
+	for side in 2:
+		for id in core.lineups[side]:
+			if not (id in ids):
+				ids.append(id)
+	for id in ids:
+		for anim in Kid.ANIMS:
+			Game.frames(String(id), anim)
+	Game.frames("cop", "walk")
+	Game.frames("announcer", "idle")
 
 func _build_layers() -> void:
 	# Pick the projection from the real screen shape, then fit the design
@@ -286,6 +342,25 @@ func _build_layers() -> void:
 	fx = Node2D.new()
 	fx.name = "fx"
 	world_root.add_child(fx)
+	_root_home = world_root.position
+	_base_scale = k
+	# the spaldeen leaves a streak on a hard hit — the eye needs something to
+	# follow when the ball is small and the street is long
+	trail = Line2D.new()
+	trail.width = 7.0
+	trail.z_index = 3500
+	trail.joint_mode = Line2D.LINE_JOINT_ROUND
+	trail.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	trail.end_cap_mode = Line2D.LINE_CAP_ROUND
+	var grad := Gradient.new()
+	grad.set_color(0, Color(Tuning.PINK, 0.0))
+	grad.set_color(1, Color(Tuning.PINK, 0.62))
+	trail.gradient = grad
+	var wcurve := Curve.new()
+	wcurve.add_point(Vector2(0.0, 0.15))
+	wcurve.add_point(Vector2(1.0, 1.0))
+	trail.width_curve = wcurve
+	fx.add_child(trail)
 	hud = CanvasLayer.new()
 	hud.layer = 10
 	add_child(hud)
@@ -313,6 +388,8 @@ func _on_resized() -> void:
 	var k: float = maxf(vp.x / Tuning.vw, vp.y / Tuning.vh)
 	world_root.scale = Vector2(k, k)
 	world_root.position = vp * 0.5 - Vector2(Tuning.vw, Tuning.vh) * 0.5 * k
+	_root_home = world_root.position
+	_base_scale = k
 	for c in bg.get_children():
 		c.queue_free()
 	window_spr = null
@@ -586,6 +663,7 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	bw = _pA
 	bh = PITCH_ARC_H
 	_bt = 0.0
+	_bounced = false
 	_ball_mode = "pitch"
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -611,8 +689,122 @@ func _try_swing() -> void:
 	swing_btn.visible = false
 
 func _process(delta: float) -> void:
+	if not _perf:
+		_process_ball(delta)
+		_process_hud(delta)
+		_process_shake(delta)
+		return
+	var ms := float(Performance.get_monitor(Performance.TIME_PROCESS)) * 1000.0
+	_ft.append(ms)
+	_ft_worst = maxf(_ft_worst, ms)
+	var t0 := Time.get_ticks_usec()
 	_process_ball(delta)
+	var t1 := Time.get_ticks_usec()
 	_process_hud(delta)
+	_process_shake(delta)
+	var t2 := Time.get_ticks_usec()
+	_t_ball += t1 - t0
+	_t_hud += t2 - t1
+	_t_kids += Kid.frame_usec
+	Kid.frame_usec = 0
+
+# ---------------------------------------------------------------- game feel
+func _process_shake(delta: float) -> void:
+	if _shake_t <= 0.0:
+		return
+	_shake_t = maxf(0.0, _shake_t - delta)
+	var falloff := _shake_t / maxf(SHAKE_DECAY, 0.001)
+	var a := _shake_amt * falloff * falloff
+	world_root.position = _root_home + Vector2(
+		randf_range(-a, a), randf_range(-a, a))
+	if _shake_t <= 0.0:
+		world_root.position = _root_home
+
+func shake(amount: float) -> void:
+	_shake_amt = maxf(_shake_amt, amount)
+	_shake_t = SHAKE_DECAY
+
+# A real freeze: everything stops for a beat so the eye registers the hit.
+# The timer ignores time_scale so it lasts the same wall-clock time no matter
+# what Engine.time_scale is doing (the soak runs at 10x).
+func hit_stop(seconds: float) -> void:
+	if Game.smoke or seconds <= 0.0:
+		return
+	var prev := Engine.time_scale
+	Engine.time_scale = 0.0001
+	await get_tree().create_timer(seconds, true, false, true).timeout
+	Engine.time_scale = prev
+
+# One-shot particle burst at a world point, sized by its depth so a puff up
+# the street is as small as the kid standing next to it.
+func _burst(world: Vector2, height: float, cfg: Dictionary) -> void:
+	var pr := Tuning.project(world, height)
+	var s: float = Tuning.sprite_scale(pr.z)
+	var p := CPUParticles2D.new()
+	p.position = Vector2(pr.x, pr.y)
+	p.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + 2
+	p.emitting = true
+	p.one_shot = true
+	p.explosiveness = float(cfg.get("explosive", 0.95))
+	p.amount = int(cfg.get("amount", 12))
+	p.lifetime = float(cfg.get("life", 0.5))
+	p.direction = cfg.get("dir", Vector2(0, -1))
+	p.spread = float(cfg.get("spread", 60.0))
+	p.initial_velocity_min = float(cfg.get("vmin", 40.0)) * s
+	p.initial_velocity_max = float(cfg.get("vmax", 130.0)) * s
+	p.gravity = Vector2(0, float(cfg.get("grav", 520.0)) * s)
+	p.scale_amount_min = float(cfg.get("smin", 1.4)) * s
+	p.scale_amount_max = float(cfg.get("smax", 3.2)) * s
+	p.damping_min = 20.0
+	p.damping_max = 90.0
+	var g := Gradient.new()
+	g.set_color(0, cfg.get("c0", Color(Tuning.CHALK, 0.9)))
+	g.set_color(1, cfg.get("c1", Color(Tuning.ASPHALT, 0.0)))
+	p.color_ramp = g
+	fx.add_child(p)
+	var life: float = p.lifetime * 1.6
+	get_tree().create_timer(life).timeout.connect(func() -> void:
+		if is_instance_valid(p):
+			p.queue_free())
+
+func _fx_dust(world: Vector2, amount := 10) -> void:
+	_burst(world, 0.0, {"amount": amount, "life": 0.42, "dir": Vector2(0, -1),
+		"spread": 78.0, "vmin": 30.0, "vmax": 90.0, "grav": 300.0,
+		"smin": 1.2, "smax": 2.8,
+		"c0": Color(0.82, 0.72, 0.56, 0.55), "c1": Color(0.6, 0.52, 0.42, 0.0)})
+
+func _fx_contact(world: Vector2, height: float, power: float) -> void:
+	# a hard hit throws chalk-bright sparks; a weak one barely puffs
+	_burst(world, height, {"amount": int(8 + 20 * power), "life": 0.34,
+		"dir": Vector2(0, -1), "spread": 180.0,
+		"vmin": 90.0 * power, "vmax": 320.0 * power, "grav": 700.0,
+		"smin": 1.0, "smax": 2.6 + 2.0 * power,
+		"c0": Color(1.0, 0.94, 0.78, 0.95), "c1": Color(0.95, 0.7, 0.35, 0.0)})
+	var pr := Tuning.project(world, height)
+	var flash_tex: Texture2D = Game.prop("lightpool")
+	if flash_tex == null:
+		return
+	var fl := Sprite2D.new()
+	fl.texture = flash_tex
+	fl.position = Vector2(pr.x, pr.y)
+	fl.z_index = 3600
+	var mat := CanvasItemMaterial.new()
+	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	fl.material = mat
+	var s0: float = Tuning.sprite_scale(pr.z) * (0.9 + 1.6 * power)
+	fl.scale = Vector2(s0, s0) * 0.35
+	fl.modulate = Color(1, 0.92, 0.74, 0.85 * (0.4 + 0.6 * power))
+	fx.add_child(fl)
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(fl, "scale", Vector2(s0, s0) * 1.5, 0.22)
+	tw.tween_property(fl, "modulate:a", 0.0, 0.22)
+	tw.chain().tween_callback(fl.queue_free)
+
+func _fx_glass(world: Vector2, height: float) -> void:
+	_burst(world, height, {"amount": 30, "life": 0.9, "dir": Vector2(0, 1),
+		"spread": 120.0, "vmin": 60.0, "vmax": 260.0, "grav": 900.0,
+		"smin": 1.0, "smax": 2.4,
+		"c0": Color(0.86, 0.93, 0.98, 0.95), "c1": Color(0.6, 0.72, 0.8, 0.0)})
 
 func _process_ball(delta: float) -> void:
 	if _ball_mode == "pitch":
@@ -638,6 +830,10 @@ func _process_ball(delta: float) -> void:
 				- 0.5 * Tuning.BALL_G * _bt * _bt)
 		elif _bt < _cross_t:
 			var tau := _bt - _ta
+			if not _bounced:
+				_bounced = true
+				_fx_dust(_pB, 9)
+				shake(2.0)
 			bw = _pB.lerp(_pC, tau / _tb)
 			bh = maxf(0.0, _v2 * tau - 0.5 * Tuning.BALL_G * tau * tau)
 		elif not _vis_committed:
@@ -666,6 +862,7 @@ func _process_ball(delta: float) -> void:
 				bw = _h_land + _h_roll_dir * _h_roll_px
 				bh = 0.0
 				_apply_ball()
+				_clear_trail()
 				_ball_mode = ""
 				_ball_flying = false
 				ball_done.emit()
@@ -680,6 +877,7 @@ func _process_ball(delta: float) -> void:
 			pass
 		bw = pos
 		_apply_ball()
+		_push_trail()
 
 # A grounder is a chain of hops, each losing energy to the cobbles:
 # apex_k = apex · e^2k, hop time T_k = T · e^k. Returns the total duration.
@@ -694,6 +892,19 @@ func _build_hops(first_peak: float) -> float:
 		_h_hops.append(Vector2(at, first_peak * pow(e, 2 * k)))
 		at += frac
 	return total
+
+func _push_trail() -> void:
+	if _h_carry < 0.32:
+		return
+	_trail.append(ball.position)
+	while _trail.size() > TRAIL_MAX:
+		_trail.remove_at(0)
+	trail.points = PackedVector2Array(_trail)
+	trail.width = 7.0 * maxf(0.35, Tuning.proj_s(bw.y) * Tuning.v_xk * 0.5)
+
+func _clear_trail() -> void:
+	_trail.clear()
+	trail.points = PackedVector2Array()
 
 func _hit_height(u: float) -> float:
 	if _h_loft == "ground":
@@ -721,6 +932,13 @@ func _resolve_pitch() -> void:
 		swung = bool(_plan.get("swing", false))
 		err = float(_plan.get("err_ms", 0.0))
 	var ev: Dictionary = core.resolve_swing(err) if swung else core.resolve_no_swing()
+	if String(ev.get("kind", "")) == "in_play":
+		var q := float(ev.get("quality", 0.5))
+		_fx_contact(bw, bh, clampf(q, 0.15, 1.0))
+		shake(4.0 + 14.0 * q)
+	elif String(ev.get("kind", "")) == "foul":
+		_fx_contact(bw, bh, 0.25)
+		shake(3.0)
 	pitch_resolved.emit(ev)
 
 # ---------------------------------------------------------------- hit timeline
@@ -773,6 +991,7 @@ func _launch_hit(play: Dictionary) -> void:
 		_h_roll_px = HR_ROLL_PX
 		_h_roll_dir = Vector2(0, -1)
 	_sewer_prev_y = _h_from.y
+	_clear_trail()
 	if _h_carry > 0.5:
 		_view_punch(0.06, 0.7)
 	_bt = 0.0
@@ -855,6 +1074,7 @@ func _move_id_from(moves: Array) -> String:
 
 func _choreo_in_play(play: Dictionary) -> void:
 	var res := String(play["result"])
+	await hit_stop(HITSTOP_MIN + HITSTOP_GAIN * float(play["quality"]))
 	if float(play["quality"]) > 0.85:
 		_card("SOCK!", "", 0.4)   # contact-moment flash, plays under the ball flight
 	_launch_hit(play)
@@ -892,6 +1112,9 @@ func _choreo_in_play(play: Dictionary) -> void:
 			if bool(play["window"]):
 				if Game.smoke:
 					print("smoke: window smash")
+				_fx_glass(Tuning.WINDOW_POS, 520.0)
+				shake(26.0)
+				await hit_stop(0.10)
 				window_spr.texture = Game.prop("window_broken")
 				ticker(Announcer.line("window"))
 				_scatter_fielders()
@@ -1199,7 +1422,24 @@ func _cheese_beat(cheese_len: float) -> void:
 	await _beat(cheese_len + 0.9)
 	ticker(Announcer.line("cheese_end"))
 
+func _report_perf() -> void:
+	if not _perf or _ft.is_empty():
+		return
+	var sorted_ft := _ft.duplicate()
+	sorted_ft.sort()
+	var n := sorted_ft.size()
+	var sum := 0.0
+	for v in sorted_ft:
+		sum += v
+	var p95: float = sorted_ft[int(n * 0.95)]
+	var p99: float = sorted_ft[mini(int(n * 0.99), n - 1)]
+	print("PERF frames=%d mean=%.2fms p95=%.2fms p99=%.2fms worst=%.2fms budget=16.67ms"
+		% [n, sum / n, p95, p99, _ft_worst])
+	print("PERF split/frame: ball=%.3fms hud=%.3fms kids=%.3fms (rest=engine+draw)"
+		% [_t_ball / 1000.0 / n, _t_hud / 1000.0 / n, _t_kids / 1000.0 / n])
+
 func _finale() -> void:
+	_report_perf()
 	_update_hud(core.snapshot())
 	if Game.smoke:
 		print("SMOKE_OK")

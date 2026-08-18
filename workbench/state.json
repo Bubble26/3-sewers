@@ -1,0 +1,163 @@
+{
+ "run_started": "2026-08-17",
+ "round": 1,
+ "headline": "Round 1 \u2014 bars set. CRITICAL: game ships with zero audio. Wave 1 builders launched: audio, front-end, animation; orchestrator owns game-feel in match_view.gd.",
+ "bars": [
+  {
+   "sys": "Audio",
+   "ref": "Backyard Baseball '97 announcer density + arcade sports SFX; 1920s radio timbre",
+   "measure": "Event-coverage audit: every discrete game event maps to a cue. Rendered WAVs inspected for level/clipping/loop seams; in-engine capture confirms firing."
+  },
+  {
+   "sys": "Batting feel",
+   "ref": "Punch-Out!! readable timing duel",
+   "measure": "Frame-by-frame capture of all 3 pitch types; the hop must be visually distinguishable BEFORE the decision point. Window sizes measured in ms."
+  },
+  {
+   "sys": "Visual composition",
+   "ref": "Owner's gaslit-street reference image; Backyard Baseball roster charm",
+   "measure": "Blind A/B by fresh critic on rendered frames vs reference."
+  },
+  {
+   "sys": "Game feel / juice",
+   "ref": "Arcade sports impact language: hit-stop, shake, burst, trail",
+   "measure": "Captured frame sequences at contact; presence+magnitude of stop/shake/particles verified in pixels."
+  },
+  {
+   "sys": "Performance",
+   "ref": "60fps on mobile renderer",
+   "measure": "Godot frame-time instrumentation over a full game; worst-frame and mean reported."
+  },
+  {
+   "sys": "Roster charm",
+   "ref": "Backyard Baseball kids: instantly distinguishable, quirk-driven",
+   "measure": "12 kids at true game size in one sheet; critic must tell them apart and match each to its quirk."
+  },
+  {
+   "sys": "Front-end",
+   "ref": "Candy-store card rack; silent-film grammar",
+   "measure": "Captured title/select/finale screens; coherence with the night game world."
+  }
+ ],
+ "subsystems": [
+  {
+   "name": "Audio",
+   "status": "fail",
+   "score": 0,
+   "bar": "Every event has a cue; 1920s megaphone announcer",
+   "note": "ZERO audio exists. No AudioStreamPlayer anywhere, no assets/audio, no bus config. Brief lists megaphone patter as must-have.",
+   "gap": "Entire subsystem absent",
+   "shots": []
+  },
+  {
+   "name": "Game feel / juice",
+   "status": "work",
+   "score": 3,
+   "bar": "Hit-stop, shake, particles, trail at contact",
+   "note": "Ballistics real (gravity, restitution, spin-at-bounce). No hit-stop, no screen shake, no particles, no ball trail, no dust.",
+   "gap": "Contact has no physical impact language",
+   "shots": []
+  },
+  {
+   "name": "Visual composition",
+   "status": "work",
+   "score": 6,
+   "bar": "Owner's gaslit reference",
+   "note": "One-point perspective, warm gothic grade, crowd on kerbs, far block. Procedural paint quality is the known ceiling.",
+   "gap": "Painterly texture/linework absent (needs external art per plan)",
+   "shots": [
+    {
+     "f": "base_portrait.png",
+     "c": "portrait baseline",
+     "w": 210
+    },
+    {
+     "f": "base_landscape.png",
+     "c": "landscape baseline",
+     "w": 300
+    }
+   ]
+  },
+  {
+   "name": "Batting readability",
+   "status": "work",
+   "score": 5,
+   "bar": "Punch-Out!! tells",
+   "note": "Bounce ballistics differ per pitch type; never verified frame-by-frame that a human can read them before committing.",
+   "gap": "Unmeasured \u2014 no capture proving tells are readable",
+   "shots": []
+  },
+  {
+   "name": "Roster & animation",
+   "status": "work",
+   "score": 6,
+   "bar": "Backyard Baseball charm",
+   "note": "12 kids, 13 anims, 642 frames, back-view batter, facing+lean.",
+   "gap": "No secondary motion; idle is static bob",
+   "shots": []
+  },
+  {
+   "name": "Front-end",
+   "status": "work",
+   "score": 4,
+   "bar": "Candy-store rack, silent-film",
+   "note": "Title uses daylight aged-paper; game is night gothic \u2014 incoherent.",
+   "gap": "Title/select world does not match the game world",
+   "shots": []
+  },
+  {
+   "name": "Gameplay depth",
+   "status": "work",
+   "score": 5,
+   "bar": "Brief must-haves",
+   "note": "Core loop, sewers, window, CHEESE IT, throws all present and soak-tested.",
+   "gap": "No base-running choice; quirks not surfaced to player",
+   "shots": []
+  },
+  {
+   "name": "Performance",
+   "status": "todo",
+   "score": 0,
+   "bar": "60fps mobile",
+   "note": "Never measured.",
+   "gap": "Unmeasured",
+   "shots": []
+  }
+ ],
+ "gaps": [
+  {
+   "pri": "P0",
+   "t": "Audio subsystem entirely absent \u2014 no sound of any kind"
+  },
+  {
+   "pri": "P0",
+   "t": "No impact language at contact (hit-stop / shake / particles)"
+  },
+  {
+   "pri": "P1",
+   "t": "Batting tells never verified as readable before the decision point"
+  },
+  {
+   "pri": "P1",
+   "t": "Front-end (daylight paper) incoherent with night game"
+  },
+  {
+   "pri": "P2",
+   "t": "Performance never measured"
+  }
+ ],
+ "log": [
+  {
+   "t": "R1",
+   "m": "Bars established from brief references (Backyard Baseball, Punch-Out!!, owner reference image)."
+  },
+  {
+   "t": "R1",
+   "m": "Decomposition: 8 subsystems. Audio found entirely absent \u2014 promoted to P0."
+  },
+  {
+   "t": "R1",
+   "m": "Wave 1 launched: audio builder, front-end builder, animation builder in parallel; orchestrator owns match_view.gd game-feel to avoid conflicts."
+  }
+ ]
+}

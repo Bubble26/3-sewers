@@ -12,18 +12,25 @@ func _ready() -> void:
 	roster = JSON.parse_string(f.get_as_text())
 	smoke = "--smoke" in OS.get_cmdline_user_args()
 
-func frames(id: String, anim: String, count: int) -> Array:
+# `count` is a hint, not a contract: the art generators change frame counts
+# often, so we walk the numbered files until one is missing. A view that
+# under-guesses no longer silently drops the tail of an animation.
+const FRAME_CEIL := 64
+
+func frames(id: String, anim: String, count: int = 0) -> Array:
 	var key := id + "/" + anim
 	if _tex_cache.has(key): return _tex_cache[key]
-	var arr := []
-	for i in count:
-		var p := "res://assets/characters/chr_%s_%s_%d.png" % [id, anim, i]
-		if ResourceLoader.exists(p): arr.append(load(p))
-	if arr.is_empty():
-		for i in count:
-			var p2 := "res://assets/characters/npc_%s_%s_%d.png" % [id, anim, i]
-			if ResourceLoader.exists(p2): arr.append(load(p2))
+	var arr := _load_run("chr", id, anim)
+	if arr.is_empty(): arr = _load_run("npc", id, anim)
 	_tex_cache[key] = arr
+	return arr
+
+func _load_run(prefix: String, id: String, anim: String) -> Array:
+	var arr := []
+	for i in FRAME_CEIL:
+		var p := "res://assets/characters/%s_%s_%s_%d.png" % [prefix, id, anim, i]
+		if not ResourceLoader.exists(p): break
+		arr.append(load(p))
 	return arr
 
 func card(id: String) -> Texture2D:
