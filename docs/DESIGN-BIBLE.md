@@ -1,7 +1,7 @@
 # DESIGN BIBLE — the tie-breaker
 
 **Status: binding.** `BYB-REFERENCE.md` is the standard of *craft*. `PERIOD-REFERENCE.md` is the
-standard of *truth*. They disagree in about nine places, and every one of those disagreements has
+standard of *truth*. They disagree in exactly nine places (§1), and every one of those disagreements has
 already cost a builder a day. This document settles all nine, with numbers, and it outranks both
 parent documents wherever it speaks. If a brief, a critic, or a later document contradicts a line
 in here, this line wins until Ryan changes it.
@@ -32,7 +32,22 @@ value** and never in the **saturation, the exposure, or the tone**.
 
 ---
 
-## 1. The four laws that settle the nine conflicts
+## 1. The nine conflicts, and the four laws that settle them
+
+These are the nine places where the two references genuinely contradict each other. If you have hit
+one, the fourth column tells you where the answer is. Do not re-litigate them.
+
+| # | Backyard demands | The period forbids | Settled in |
+|---|---|---|---|
+| 1 | S ≥ 0.35 on the three largest colour areas | asphalt, granite and bluestone are near-neutral | §2.1, §14 check 8 |
+| 2 | flat bright midday, no dark corners | a 1:1 canyon puts the roadway in full shade from 2:50 pm | §3 |
+| 3 | the ball at 4.5:1 against everything | a brown-and-grey street at mid-value, and no pure white or black | §2.5, §14 check 13 |
+| 4 | sky at 25–40% of frame area | 60 ft of building on both sides of a 60 ft street | §14 check 10 |
+| 5 | nine kids as nine saturated colour accents | ecru collarless shirts, everything a hand-me-down | §2.9 |
+| 6 | no grime, no grade, no moody anything | four decades of coal soot on every surface | Laws 1–4, §4.4 |
+| 7 | chunky hand-lettered display type, high x-height | the period's own faces are thin, genteel and small | §6 |
+| 8 | a Backyard announcer over a modern mix | no PA, no broadcast, and a 1925 acoustic soundworld | §7 |
+| 9 | funny, not cute — jokes with a setup and a beat | a poor polyglot immigrant block where the obvious jokes are cruel | §8 |
 
 ### Law 1 — The Bright Middle
 Value runs **dark at the frame edges, light at the play plane.** The sooted upper facade and the
@@ -50,11 +65,18 @@ over 14 and it reads as a spotlight.
 **Chalk is our white. Ink is our black. Nothing in the world may be either.**
 
 * **Chalk** `#F6F0E2` (L\* 94.9). Reserved for: chalk marks, the pitch ring, the landing marker,
-  the ball's rim crescent, HUD lettering grounds, the ghost runner. **No environment material may
-  exceed L\* 80** — not brick, not sky, not laundry, not gold leaf. (Sky tops out at L\* 79.)
+  the ball's rim crescent, HUD lettering grounds, the ghost runner. **Nothing else in the game — no
+  brick, no sky, no laundry, no gold leaf, no skin, no cloth — may exceed L\* 89**, and **no
+  backdrop material** (anything the ball flies against: pavement, brick, sky, haze) may exceed
+  **L\* 84**. Chalk therefore sits at least 6 points above the brightest thing in the world and
+  11 points above anything the ball crosses. The brightest world materials, for reference: coal
+  haze `#D8CFB8` at 83.3, lower sky `#A8C6E2` at 78.6, palest skin `#F8D6B6` at 87.7.
 * **Ink** `#2A1D1A` (L\* 12.3). Reserved for: character and prop outlines, the ball outline, HUD
-  hairlines. **No environment material may fall below L\* 28** — not the areaway, not under the
-  stoop, not under the parked Ford, not the deep shade of the El.
+  hairlines. **No material may fall below L\* 28 in any contiguous region larger than 32×32 px** —
+  not the areaway, not under the stoop, not under the parked Ford, not the deep shade of the El.
+  **Linear ironwork alone is exempt down to L\* 19** — window sash, fire-escape bars, the recesses
+  of a manhole casting — because those are 2–6 px wide and never read as a field. Nothing anywhere
+  goes below L\* 19 except an ink outline.
 
 Everything the player must read lives outside the band the world is allowed to occupy. This single
 rule is why a pink ball and a nine-kid roster stay legible against a brown-and-grey street, and it
@@ -92,8 +114,8 @@ WCAG relative luminance. These have been computed, not eyeballed — see §2.5.
 | Belgian block, wear-polished crown | `#A8917A` | 30° | 0.21 | 61.6 |
 | Bluestone sidewalk flag | `#9A9184` | 35° | 0.10 | 60.6 |
 | Granite curb | `#8E877A` | 39° | 0.08 | 56.6 |
-| Manhole iron, worn high points | `#9A9188` | — | 0.06 | 60 |
-| Manhole iron, recesses | `#3B322B` | 32° | 0.15 | 21 → **lift to `#4A4038`, L\* 28** |
+| Manhole iron, worn high points | `#9A9188` | 30° | 0.08 | 60.7 |
+| Manhole iron, recesses (linear grooves only) | `#3B322B` | 26° | 0.16 | 21.5 |
 
 **The deliberate deviation, stated openly:** `PERIOD-REFERENCE §10.1` gives asphalt as `#4A474A`
 (S 0.03, L\* 30). We push it **+10 L\* and +0.15 S into the warm band**. The justification is in the
@@ -202,7 +224,7 @@ best-of-two against every environment colour in §2.1–§2.3 is:
 | Sky, lower | 78.6 | 1.56 | **9.19** | 9.19 |
 | Coal-haze band | 83.3 | 1.37 | **10.50** | 10.50 |
 | Contact shadow | 29.7 | **8.32** | 1.72 | 8.32 |
-| Shirt ecru | 88.1 | 1.19 | **12.00** | 12.00 |
+| Shirt ecru | 85.3 | 1.29 | **11.10** | 11.10 |
 
 Note the shape of that table: **the two treatments hand off to each other.** Below L\* 50 the chalk
 rim carries the ball; above L\* 50 the ink outline does. There is no backdrop in the game where
@@ -220,14 +242,36 @@ fly, and that is not a tuning problem, it is a spec violation.
    moment the ball leaves the bat. It is a gameplay mechanic, not decoration.
 3. **A scale floor**: the ball never renders under **6 px** across, at any distance.
 4. **A trail** on hard-hit balls only — 6 frames, chalk-cream, fading to nothing, never a glow.
-5. **Contact shadow** on the ground under the ball at all times, per §2.6.
+5. **Contact shadow** on the ground under the ball at all times, per §2.7.
 
 **The same logic applies to every readability mark in the game.** *Every* chalk-cream UI element —
 the pitch ring, the landing marker, the chalk foul line, the count tallies, the ghost runner —
 carries a **1.5 px ink outline**, so each one is a two-sided read and none of them can be lost
 against a light sidewalk or a dark shadow. One rule, no exceptions, no per-element tuning.
 
-### 2.6 Contact shadows
+### 2.6 How the players stay readable against a brown-and-grey street
+
+The ball gets three treatments because it is 6 px. A kid is 200 px, so a kid gets five, and all
+five are cheap:
+
+1. **A 2 px ink-derived outline** at all times (§4.2) — a darkened, saturated version of the fill it
+   borders, never grey. This alone separates a kid from brick.
+2. **One saturated garment** at 6–12% of the silhouette (§2.9), drawn from twelve dyed-wool hues,
+   with **no two adjacent fielders sharing a hue.** Against a roadway at S 0.18 and brick at S 0.44,
+   a sweater at S 0.46–0.62 is the most saturated thing in its neighbourhood.
+3. **A mandatory contact shadow** (§2.7) — the difference between standing on the street and
+   floating above it, and the most common Craft failure in the genre.
+4. **A silhouette family** (§5.4) that survives being filled with solid black at 96 px. Colour is
+   the *sixth* hook and the blackout test is precisely the test that deletes it.
+5. **The Bright Middle** (Law 1) — the kids stand on the lightest ground in the frame, in front of
+   facades that get darker as they go up. The composition is doing readability work before any
+   shader runs.
+
+**The check:** in a fielding frame, a critic must be able to name **6 of 9** kids from a thresholded
+96 px silhouette, *and* find every one of the nine in under two seconds in the full-colour frame.
+Failing either is a Readability fail; failing the first is also a Character fail.
+
+### 2.7 Contact shadows
 
 Mandatory under every kid, every base, every prop, every vehicle, the ball, and every spectator.
 Soft ellipse, **opacity 0.28–0.42**, blur radius 8–14% of the long axis, long axis 0.9–1.2× the
@@ -236,10 +280,10 @@ period's own `#3E4658` blue-violet — which is simultaneously the complement of
 (BYB's rule) and the colour of skylight fill in a canyon (the period's physics). **The two
 references agree here exactly; there is no shadow anywhere in this game that is grey or black.**
 
-### 2.7 Skin
+### 2.8 Skin
 
 Six tones, all warm, all high-value, all cartoon rather than naturalistic, each with one shade step
-(−12 L\*, hue +4° warm) and one blush (`#E08878` at 20%). The block is Italian, Eastern European
+(−12 L\*, hue +4° warm) and one blush (`#DE8062`, hue 15°, at 20% — deliberately outside the ball's reserved hue band). The block is Italian, Eastern European
 Jewish, Irish, German, Black Harlem, Puerto Rican and Chinese, so the spread is not decoration —
 it is the period fact.
 
@@ -255,13 +299,13 @@ it is the period fact.
 No tone may be used on more than **six** of the thirty kids. Tone is never correlated with a stat,
 a nickname, a team, or a joke.
 
-### 2.8 Clothing, team colours, and where the saturation goes
+### 2.9 Clothing, team colours, and where the saturation goes
 
 **The conflict:** BYB requires every kid to be a saturated colour accent at 1–3% of frame area.
 The period requires ecru collarless shirts and everyone's clothes a size wrong.
 
 **The resolution: the shirt is period; the accent moves up one garment.** Shirts are ecru
-(`#E8DCC4` / `#DDCFB4` / `#D2C3A6` / `#EFE6D2` — four values, no hues). **Every kid carries exactly
+(`#E2D4B4` L\* 85.3 / `#D8C8A6` L\* 81.1 / `#CBBA96` L\* 76.1 / `#BEAD8A` L\* 71 — four values, no hues, all held below the L\* 86 line so a chalk mark laid over a shirt still reads). **Every kid carries exactly
 one saturated garment** — a knitted wool sweater, a vest, a cap, a set of suspenders, or a hair
 ribbon — covering **6–12% of the kid's silhouette area**. Home-dyed wool in 1925 came out of the
 dye lot whatever colour the dye lot gave, so this is period-legal and it is where our chroma lives.
@@ -341,9 +385,11 @@ Backyard's exposure in the same frame** because we chose a geometry in which the
 than compromising either one.
 
 ### 3.4 The floor and the ceiling, restated as engine constraints
-* No 64×64 px region of a gameplay frame below **L\* 26**. Areaways, under-stoop recesses, under
-  parked cars and the deep shade of the El are **lifted to L\* 28 minimum**, by raising ambient —
-  never by adding a light.
+* **Two different floors, and they are not the same number.** The *material* floor is L\* 28 (Law 2);
+  the *rendered* floor is **no 64×64 px region of a gameplay frame below L\* 26**, which leaves exactly
+  enough headroom for a 0.42-opacity contact shadow over the darkest legal brick. Areaways,
+  under-stoop recesses, under parked cars and the deep shade of the El are **lifted by raising
+  ambient — never by adding a light.**
 * Ratio of brightest to darkest 64×64 region stays **under 5:1**.
 * No bloom, no vignette, no chromatic aberration, no depth of field, no film grain, no colour LUT,
   no tone-mapping curve that a 1997 sprite artist could not have painted by hand.

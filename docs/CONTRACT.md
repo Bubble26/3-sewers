@@ -19,6 +19,7 @@ console errors is a failed build, no exceptions.
 
     node tools/film.mjs contact --frames 12 --step 0.05   # numbered frame strip, for motion
     node tools/playthrough.mjs --seeds 3    # play whole games headlessly: softlocks, pacing, scores
+    node tools/audition.mjs crack whiff     # render audio cues offline -> wav + analysis PNG
     node tools/bundle.mjs                   # dist/stickball.html, one self-contained file
     node tools/serve.mjs 8123               # dev server if you want to poke by hand
 
@@ -46,6 +47,18 @@ console errors is a failed build, no exceptions.
   state machine and delegates every decision to a slot, so those six systems are built and
   judged separately without sharing a file. Unfilled slots fall back to `src/game/defaults.js`,
   which is placeholder behaviour and never the finished answer.
+
+## Audio is judged too
+
+Sound cannot be screenshotted, so the audio systems must expose
+
+    app.audio.renderOffline({ cue, seconds, sampleRate }) -> Promise<AudioBuffer>
+    app.audio.listCues() -> string[]
+
+which builds the *same* graph the live path uses, into an `OfflineAudioContext`. `tools/audition.mjs`
+turns that into a playable wav plus measured attack, decay, crest factor, spectral centroid and
+implied tempo, which is what an audio critic scores. A cue that only exists in the live path and
+cannot be rendered offline is untestable, and untestable counts as unbuilt.
 
 ## Hard technical rules
 
