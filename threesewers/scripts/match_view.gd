@@ -11,11 +11,31 @@ signal ui_pitch(p: Dictionary)
 # ---------------------------------------------------------------- view constants
 # (world layout + feel constants come from Tuning; these are presentation-only)
 const FIELDER_SCALE := 0.8
-const BATTER_POS := Vector2(662, 2352)
+# The batter stands one bat-reach to the right of the plate, so the barrel's
+# sweet spot sweeps THROUGH the plate rather than past it. This used to be
+# 662 — 22px from the plate — while the barrel reaches 74px, which meant the
+# bat swept to x=569 and the ball crossed at 585..695. They could never meet.
+const BATTER_POS := Vector2(714, 2352)
+
+# Contact geometry, measured off the swing_back art (tools/measure_bat.py):
+# at the contact frame the barrel's sweet spot is CONTACT_REACH world px to
+# the batter's left, CONTACT_H above the cobbles. Re-measure if that art is
+# re-drawn — the whole moment of contact hangs off these two numbers.
+const CONTACT_REACH := 74.0
+const CONTACT_H := 80.0
+const SWING_FPS := 20.0
+const SWING_CONTACT_FRAME := 3.0
+# A swing is not instant: the bat needs this long to reach the ball, so the
+# player must press BEFORE the crossing, and the timing window is centred on
+# the press moment rather than on the crossing itself.
+const SWING_LEAD := SWING_CONTACT_FRAME / SWING_FPS
 const PITCH_HAND_OFF := Vector2(0, -40)     # release point above pitcher origin
 const PITCH_BOUNCE_Y := 2278.0              # one-bounce point short of the plate
 const PITCH_BOUNCE_LANE_X := 46.0
-const PITCH_CROSS_LANE_X := 55.0
+# Lanes spread wide at the BOUNCE, which is where the player reads them, then
+# converge at the plate: a 55px spread there was wider than the bat is thick,
+# so an off-centre lane could not be struck however well it was timed.
+const PITCH_CROSS_LANE_X := 12.0
 const PITCH_TB := 0.22                      # bounce -> plate time
 const PITCH_TB_DROP := 0.3                  # the drop dies off the bounce
 const PITCH_ARC_H := 70.0
@@ -63,6 +83,9 @@ const CHEESE_CARD_T := 1.2
 const SETTLE_PAD := 0.35
 const PIP_DIM := Color(0.28, 0.26, 0.27, 0.4)
 const SHAKE_DECAY := 0.36
+const SHAKE_FREQ := 9.0     # oscillations per second of the springback
+const SOCK_CARD_DELAY := 0.22   # let the struck ball clear the card's footprint
+const HIT_SPEED_GAIN := 1.15    # how much carry compresses the flight time
 const HITSTOP_MIN := 0.035
 const HITSTOP_GAIN := 0.075
 const TRAIL_MAX := 16
@@ -256,6 +279,7 @@ var _card_busy := false
 var _root_home := Vector2.ZERO      # world_root rest position; shake offsets from here
 var _shake_amt := 0.0
 var _shake_t := 0.0
+var _shake_dir := Vector2(0.35, 1.0).normalized()
 var _base_scale := 1.0
 var trail: Line2D
 var _trail: Array[Vector2] = []
@@ -276,6 +300,9 @@ var _throw_left := 0.0
 var _throw_total := 1.4
 var _film := false
 var _seed := 0
+var _contact_t := -1.0
+var _contact_from := Vector2.ZERO
+var _contact_from_h := 0.0
 
 # Under --write-movie the engine runs a fixed timestep, so the frame counter
 # IS the movie frame index. Printing it here is what lets the capture tool
@@ -368,10 +395,11 @@ func _build_layers() -> void:
 	trail.end_cap_mode = Line2D.LINE_CAP_ROUND
 	var grad := Gradient.new()
 	grad.set_color(0, Color(Tuning.PINK, 0.0))
-	grad.set_color(1, Color(Tuning.PINK, 0.62))
+	grad.set_color(1, Color(Tuning.PINK, 0.78))
 	trail.gradient = grad
 	var wcurve := Curve.new()
-	wcurve.add_point(Vector2(0.0, 0.15))
+	wcurve.add_point(Vector2(0.0, 0.0))
+	wcurve.add_point(Vector2(0.55, 0.42))
 	wcurve.add_point(Vector2(1.0, 1.0))
 	trail.width_curve = wcurve
 	fx.add_child(trail)
@@ -418,6 +446,20 @@ func _view_punch(amount: float, t := 0.5) -> void:
 	_cam_tw = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	_cam_tw.tween_property(world_root, "scale",
 		Vector2(base, base) * (1.0 + amount), t)
+
+# A punch snaps IN and eases OUT. _view_punch's single slow tween at 6% was
+# measured at a 2% frame-to-frame scale change — below the threshold of
+# noticing. This kicks hard over two frames, then settles.
+func _view_kick(amount: float) -> void:
+	if _cam_tw != null:
+		_cam_tw.kill()
+	var base: float = maxf(get_viewport_rect().size.x / Tuning.vw,
+		get_viewport_rect().size.y / Tuning.vh)
+	_cam_tw = create_tween()
+	_cam_tw.tween_property(world_root, "scale",
+		Vector2(base, base) * (1.0 + amount), 0.05).set_trans(Tween.TRANS_QUAD)
+	_cam_tw.tween_property(world_root, "scale",
+		Vector2(base, base), 0.42).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 # ---------------------------------------------------------------- world
 const STREET_TOP := 600.0
@@ -510,11 +552,16 @@ func _apply_ball() -> void:
 	var sc := Tuning.sprite_scale(pr.z)
 	ball_spr.scale = Vector2(BALL_SCALE, BALL_SCALE) * sc
 	ball.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + 1
-	# the shadow stays on the ground, so it is projected without the height
+	# The shadow stays on the ground, so it is projected without the height.
+	# It is the only cue for how high the ball is, and it used to vanish
+	# underneath the ball at exactly the moment that matters — the bounce.
+	# So it grows and fades as the ball climbs, and stays wider than the ball
+	# so a rim of it always shows even when the two are on top of each other.
 	var gr := Tuning.project(bw, 0.0)
+	var climb := clampf(bh / 420.0, 0.0, 1.0)
 	ball_shadow.position = Vector2(gr.x, gr.y) - ball.position
-	ball_shadow.scale = Vector2(1.3, 0.55) * sc
-	ball_shadow.modulate = Color(0, 0, 0, clampf(0.34 - bh * 0.0002, 0.10, 0.34))
+	ball_shadow.scale = Vector2(1.55 + 1.15 * climb, 0.60 + 0.42 * climb) * sc
+	ball_shadow.modulate = Color(0, 0, 0, lerpf(0.52, 0.13, climb))
 
 # ---------------------------------------------------------------- kids on the field
 func _spawn_kid(id: String, pos: Vector2, kid_scale := 1.0) -> Kid:
@@ -671,12 +718,13 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	# already lives in _pC.x, so the bow bends opposite for the deception
 	_spin_bow = -spin * 0.35
 	if not _plan.is_empty() and bool(_plan.get("swing", false)):
-		_vis_commit_t = _cross_t + clampf(float(_plan["err_ms"]) / 1000.0,
+		_vis_commit_t = _swing_aim() + clampf(float(_plan["err_ms"]) / 1000.0,
 			-Tuning.SWING_EARLY, Tuning.SWING_LATE - 0.02)
 	ball.visible = true
 	bw = _pA
 	bh = PITCH_ARC_H
 	_bt = 0.0
+	_contact_t = -1.0
 	_bounced = false
 	_ball_mode = "pitch"
 
@@ -689,18 +737,39 @@ func _unhandled_input(event: InputEvent) -> void:
 	if pressed:
 		_try_swing()
 
+# The moment the player should press: the bat needs SWING_LEAD to arrive, so
+# aiming at the crossing itself would always be late.
+# Where the barrel's sweet spot passes through. The batter is placed so this
+# lands on the plate, so it is the plate — but named, because everything about
+# the moment of contact is measured from here.
+func contact_point() -> Vector2:
+	return Vector2(BATTER_POS.x - CONTACT_REACH, Tuning.PLATE.y)
+
+func _swing_aim() -> float:
+	return _cross_t - SWING_LEAD
+
 func _try_swing() -> void:
 	if autopilot or _ball_mode != "pitch" or not _human_bat or _committed:
 		return
-	if _bt < _cross_t - Tuning.SWING_EARLY or _bt > _cross_t + Tuning.SWING_LATE:
+	var aim := _swing_aim()
+	if _bt < aim - Tuning.SWING_EARLY or _bt > aim + Tuning.SWING_LATE:
 		return
 	_committed = true
 	_vis_committed = true
-	_commit_err = (_bt - _cross_t) * 1000.0
-	if batter_node != null and is_instance_valid(batter_node):
-		batter_node.play("swing_back", 14.0, false)
+	_commit_err = (_bt - aim) * 1000.0
+	_begin_swing()
 	hint_lbl.visible = false
 	swing_btn.visible = false
+
+# Start the bat and book the instant it will arrive. The ball is steered onto
+# that instant, so bat and ball are in the same place at the same time by
+# construction instead of by hope.
+func _begin_swing() -> void:
+	_contact_t = _bt + SWING_LEAD
+	_contact_from = bw
+	_contact_from_h = bh
+	if batter_node != null and is_instance_valid(batter_node):
+		batter_node.play("swing_back", SWING_FPS, false)
 
 func _process(delta: float) -> void:
 	if not _perf:
@@ -723,18 +792,27 @@ func _process(delta: float) -> void:
 	Kid.frame_usec = 0
 
 # ---------------------------------------------------------------- game feel
+# A jolt, not a tremor. Random offsets on both axes every frame read as a
+# nervous camera operator; a real impact shoves the frame one way and springs
+# back. So: a damped oscillation along a fixed direction, with only a little
+# noise across it to keep the springback from looking mechanical.
 func _process_shake(delta: float) -> void:
 	if _shake_t <= 0.0:
 		return
 	_shake_t = maxf(0.0, _shake_t - delta)
+	var elapsed := SHAKE_DECAY - _shake_t
 	var falloff := _shake_t / maxf(SHAKE_DECAY, 0.001)
 	var a := _shake_amt * falloff * falloff
-	world_root.position = _root_home + Vector2(
-		randf_range(-a, a), randf_range(-a, a))
+	var swing := cos(elapsed * SHAKE_FREQ * TAU)
+	var across := _shake_dir.orthogonal() * randf_range(-a, a) * 0.18
+	world_root.position = _root_home + _shake_dir * a * swing + across
 	if _shake_t <= 0.0:
 		world_root.position = _root_home
 
-func shake(amount: float) -> void:
+func shake(amount: float, dir := Vector2.ZERO) -> void:
+	if amount > _shake_amt or _shake_t <= 0.0:
+		_shake_dir = dir.normalized() if dir.length_squared() > 0.0001 \
+			else Vector2(0.35, 1.0).normalized()
 	_shake_amt = maxf(_shake_amt, amount)
 	_shake_t = SHAKE_DECAY
 
@@ -806,7 +884,10 @@ func _fx_contact(world: Vector2, height: float, power: float) -> void:
 	var fl := Sprite2D.new()
 	fl.texture = flash_tex
 	fl.position = Vector2(pr.x, pr.y)
-	fl.z_index = 3600
+	# Under the ball, never over it. On a fixed high layer this bleached the
+	# spaldeen out of the frame for seven frames at the exact moment the
+	# player needed to see it leave the bat.
+	fl.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0))
 	var mat := CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	fl.material = mat
@@ -831,12 +912,12 @@ func _process_ball(delta: float) -> void:
 		# cpu swing anim at its planned error
 		if not _vis_committed and _vis_commit_t >= 0.0 and _bt >= _vis_commit_t:
 			_vis_committed = true
-			if batter_node != null and is_instance_valid(batter_node):
-				batter_node.play("swing_back", 14.0, false)
+			_begin_swing()
 		# batting hint while the window is open
 		if _human_bat:
+			var aim := _swing_aim()
 			var window_open := not _committed \
-				and _bt >= _cross_t - Tuning.SWING_EARLY and _bt <= _cross_t + Tuning.SWING_LATE
+				and _bt >= aim - Tuning.SWING_EARLY and _bt <= aim + Tuning.SWING_LATE
 			hint_lbl.visible = window_open
 			swing_btn.visible = not autopilot and not _committed
 			swing_btn.modulate = Color(1, 1, 1, 1.0) if window_open else Color(1, 1, 1, 0.55)
@@ -852,17 +933,29 @@ func _process_ball(delta: float) -> void:
 			if not _bounced:
 				_bounced = true
 				mark("bounce")
-				_fx_dust(_pB, 9)
-				shake(2.0)
+				_fx_dust(_pB, 14)
+				shake(6.5, Vector2(0, 1))
 			bw = _pB.lerp(_pC, tau / _tb)
 			bh = maxf(0.0, _v2 * tau - 0.5 * Tuning.BALL_G * tau * tau)
 		elif not _vis_committed:
 			var u := minf((_bt - _cross_t) / MITT_TIME, 1.0)
 			bw = _pC.lerp(_mitt, u)
 			bh = PITCH_ARC_BOB * (1.0 - u)
+		if _contact_t > 0.0:
+			# Swung. Steer the ball onto the barrel's sweet spot so it ARRIVES
+			# there exactly as the bat does. It used to sit parked at the plate
+			# for four frames waiting for a bat that swept past it anyway,
+			# which is why contact looked like hitting a ball off a tee.
+			var span := maxf(_contact_t - (_contact_t - SWING_LEAD), 0.001)
+			var u := clampf(1.0 - (_contact_t - _bt) / span, 0.0, 1.0)
+			var e := u * u * (3.0 - 2.0 * u)
+			bw = _contact_from.lerp(contact_point(), e)
+			bh = lerpf(_contact_from_h, CONTACT_H, e)
 		_apply_ball()
-		# contact pending: ball holds at the plate until the window closes
-		if _bt >= _cross_t + Tuning.SWING_LATE:
+		if _contact_t > 0.0:
+			if _bt >= _contact_t:
+				_resolve_pitch()
+		elif _bt >= _cross_t + Tuning.SWING_LATE:
 			_resolve_pitch()
 	elif _ball_mode == "hit":
 		_bt += delta
@@ -920,7 +1013,7 @@ func _push_trail() -> void:
 	while _trail.size() > TRAIL_MAX:
 		_trail.remove_at(0)
 	trail.points = PackedVector2Array(_trail)
-	trail.width = 7.0 * maxf(0.35, Tuning.proj_s(bw.y) * Tuning.v_xk * 0.5)
+	trail.width = 9.5 * maxf(0.35, Tuning.proj_s(bw.y) * Tuning.v_xk * 0.5)
 
 func _clear_trail() -> void:
 	_trail.clear()
@@ -956,10 +1049,11 @@ func _resolve_pitch() -> void:
 		var q := float(ev.get("quality", 0.5))
 		mark("contact q=%.2f" % q)
 		_fx_contact(bw, bh, clampf(q, 0.15, 1.0))
-		shake(4.0 + 14.0 * q)
+		shake(5.0 + 15.0 * q, Vector2(-1.0, 0.3))
+		_view_kick(0.05 + 0.10 * q)
 	elif String(ev.get("kind", "")) == "foul":
 		_fx_contact(bw, bh, 0.25)
-		shake(3.0)
+		shake(3.5, Vector2(-1.0, 0.3))
 	pitch_resolved.emit(ev)
 
 # ---------------------------------------------------------------- hit timeline
@@ -971,19 +1065,24 @@ func _launch_hit(play: Dictionary) -> void:
 	var res := String(play["result"])
 	_h_caught = res == "out_fly" or res == "out_line"
 	_h_peak = float(HIT_PEAK.get(_h_loft, 130.0))
+	# Exit speed. Flight time came only from the arc's peak, so a hard hit and
+	# a dribbler crossed the screen at nearly the same rate — measured at just
+	# 1.4x apart. Carry now compresses the flight, which is what a stung ball
+	# actually does: flatter, faster, there sooner.
+	var g_mul := 1.0 + HIT_SPEED_GAIN * _h_carry
 	_h_roll_t = 0.0
 	_h_roll_px = 0.0
 	_h_roll_dir = Vector2.ZERO
 	if _h_window:
 		_h_land = Tuning.WINDOW_POS
 		_h_peak = HIT_PEAK["fly"] * (0.85 + 0.35 * _h_carry)
-		_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
+		_h_dur = sqrt(8.0 * _h_peak / (Tuning.BALL_G * g_mul))
 	elif bool(play["fire_escape"]):
 		var fe: Vector2 = Tuning.FE_L if float(play["lane"]) < 0.0 else Tuning.FE_R
 		var inward := 34.0 if float(play["lane"]) < 0.0 else -34.0
 		_h_land = fe + Vector2(inward, 40.0)
 		_h_peak = HIT_PEAK["fly"]
-		_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
+		_h_dur = sqrt(8.0 * _h_peak / (Tuning.BALL_G * g_mul))
 	else:
 		var lx := Tuning.PLATE.x + float(play["lane"]) * HIT_LANE_X \
 			+ randf_range(-HIT_JITTER, HIT_JITTER)
@@ -997,10 +1096,10 @@ func _launch_hit(play: Dictionary) -> void:
 			"fly":
 				# deep flies genuinely hang longer: T = sqrt(8·peak/G)
 				_h_peak = HIT_PEAK["fly"] * (0.85 + 0.35 * _h_carry)
-				_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
+				_h_dur = sqrt(8.0 * _h_peak / (Tuning.BALL_G * g_mul))
 			"line":
 				_h_peak = HIT_PEAK["line"]
-				_h_dur = sqrt(8.0 * _h_peak / Tuning.BALL_G)
+				_h_dur = sqrt(8.0 * _h_peak / (Tuning.BALL_G * g_mul))
 			_:
 				_h_dur = _build_hops(HIT_PEAK["ground"])
 				if not _h_caught:
@@ -1014,7 +1113,7 @@ func _launch_hit(play: Dictionary) -> void:
 	_sewer_prev_y = _h_from.y
 	_clear_trail()
 	if _h_carry > 0.5:
-		_view_punch(0.06, 0.7)
+		_view_punch(0.04, 0.7)
 	_bt = 0.0
 	_ball_flying = true
 	_ball_mode = "hit"
@@ -1096,8 +1195,17 @@ func _move_id_from(moves: Array) -> String:
 func _choreo_in_play(play: Dictionary) -> void:
 	var res := String(play["result"])
 	await hit_stop(HITSTOP_MIN + HITSTOP_GAIN * float(play["quality"]))
+	# The pitch line ("...rocks and fires down the cobbles!") was still sitting
+	# under the frame while the hit played out, describing something that had
+	# already happened. Clear it and let the result line replace it.
+	_tick_clear()
 	if float(play["quality"]) > 0.85:
-		_card("SOCK!", "", 0.4)   # contact-moment flash, plays under the ball flight
+		# Slammed in at contact, the card landed squarely over the lane and hid
+		# the struck ball for four frames — the player's first sight of their
+		# own hit arrived 130ms late. Silent-film grammar wants the action
+		# first and the intertitle as punctuation, so it waits for the ball to
+		# climb clear.
+		_card_after(SOCK_CARD_DELAY, "SOCK!", "", 0.4)
 	_launch_hit(play)
 	var fpos := String(play.get("fielder", ""))
 	if fpos != "" and fielders.has(fpos):
@@ -1135,7 +1243,7 @@ func _choreo_in_play(play: Dictionary) -> void:
 					print("smoke: window smash")
 				mark("window")
 				_fx_glass(Tuning.WINDOW_POS, 520.0)
-				shake(26.0)
+				shake(26.0, Vector2(0.15, -1.0))
 				await hit_stop(0.10)
 				window_spr.texture = Game.prop("window_broken")
 				ticker(Announcer.line("window"))
@@ -1508,6 +1616,17 @@ func _show_finale_ui() -> void:
 	hud.add_child(v)
 
 # ---------------------------------------------------------------- cards / camera / fx
+# Fire a card on its own timeline so the choreography does not stall on it.
+func _card_after(delay: float, text: String, sub := "", hold := 0.9) -> void:
+	await _beat(delay)
+	_card(text, sub, hold)
+
+func _tick_clear() -> void:
+	if _tick_tw != null:
+		_tick_tw.kill()
+	tick_lbl.text = ""
+	tick_lbl.visible_characters = -1
+
 func _card(text: String, sub := "", hold := 0.9, slam := false) -> void:
 	while _card_busy:
 		await _beat(0.05)
