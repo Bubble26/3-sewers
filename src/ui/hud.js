@@ -1,3 +1,4 @@
+import { registerSystem } from '../app.js';
 // DOM-based scorebug + count. Kept out of WebGL so text stays crisp.
 export class HUD {
   constructor(root) {
@@ -21,3 +22,10 @@ export class HUD {
     this.$('[data-outs]').textContent = `${s.outs} out`;
   }
 }
+
+export default registerSystem({
+  name: 'hud',
+  order: 200,
+  init(app) { this.hud = new HUD(document.getElementById('ui')); },
+  lateUpdate(dt, app) { this.hud.update(app.sim.state); },
+});

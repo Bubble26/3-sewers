@@ -1,3 +1,5 @@
+import { registerSystem } from '../app.js';
+import { bus } from '../core/bus.js';
 // Procedural WebAudio. No sample files -> the whole game stays a single self-contained page.
 export class Audio {
   constructor() { this.ctx = null; this.enabled = true; this.master = null; }
@@ -23,3 +25,16 @@ export class Audio {
   whiff() { this.blip(120, 0.1, 'triangle', 0.12); }
 }
 export const audio = new Audio();
+
+export default registerSystem({
+  name: 'audio',
+  order: 150,
+  init(app) {
+    app.audio = audio;
+    if (app.flags.harness) audio.enabled = false;   // headless runs stay silent + deterministic
+    bus.on('bat:contact', () => audio.crack());
+    bus.on('strike', () => audio.whiff());
+    const unlock = () => { audio.ensure(); removeEventListener('pointerdown', unlock); removeEventListener('keydown', unlock); };
+    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
+  },
+});

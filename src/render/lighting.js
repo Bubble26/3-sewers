@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { registerSystem } from '../app.js';
 
 // Late-afternoon September light down a Manhattan side street.
+// Owned by the sky-light-atmosphere piece.
 export function buildLighting(scene) {
   const hemi = new THREE.HemisphereLight(0xdfeaf2, 0x6b5a49, 0.75);
   scene.add(hemi);
@@ -19,3 +21,9 @@ export function buildLighting(scene) {
   scene.add(bounce);
   return { hemi, sun, bounce };
 }
+
+export default registerSystem({
+  name: 'lighting',
+  order: 5,
+  init(app) { Object.assign(this, buildLighting(app.scene)); },
+});

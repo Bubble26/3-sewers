@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { registerSystem } from '../app.js';
 import { T } from '../core/tuning.js';
 
 // The block: asphalt, curbs, sidewalks, tenement facades either side.
+// Owned by the street-architecture piece.
 export function buildStreet(scene) {
   const group = new THREE.Group();
   group.name = 'street';
@@ -36,7 +38,6 @@ export function buildStreet(scene) {
     }
   }
 
-  // Manhole cover = home plate. Chalk bases mark the rest.
   const plate = new THREE.Mesh(
     new THREE.CircleGeometry(1.7, 24),
     new THREE.MeshStandardMaterial({ color: 0x3a3833, roughness: 0.8, metalness: 0.35 })
@@ -49,3 +50,9 @@ export function buildStreet(scene) {
   scene.add(group);
   return group;
 }
+
+export default registerSystem({
+  name: 'street',
+  order: 10,
+  init(app) { this.group = buildStreet(app.scene); },
+});

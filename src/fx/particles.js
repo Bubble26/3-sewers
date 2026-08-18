@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { registerSystem } from '../app.js';
+import { bus } from '../core/bus.js';
 
 // Cheap pooled dust puffs for slides, contact and bounces.
 export class Puffs {
@@ -42,3 +44,15 @@ export class Puffs {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 }
+
+export default registerSystem({
+  name: 'puffs',
+  order: 60,
+  init(app) {
+    this.puffs = new Puffs(app.scene);
+    app.puffs = this.puffs;
+    bus.on('bat:contact', () => this.puffs.burst(new THREE.Vector3(0, 3, app.T.street.plateZ + 1), 10, 4));
+    bus.on('ball:bounce', (p) => this.puffs.burst(p.pos, 5, 2.2));
+  },
+  update(dt) { this.puffs.update(dt); },
+});
