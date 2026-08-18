@@ -1,0 +1,28 @@
+{
+  "wave": "4b",
+  "title": "The show — sound",
+  "maxRounds": 4,
+  "pieces": [
+    {
+      "key": "sfx-engine",
+      "title": "Sound engine and effects",
+      "files": ["src/audio/engine.js", "src/audio/sfx.js"],
+      "scenarios": ["pitch", "contact"],
+      "brief": "You own the sound engine and every effect in it. Follow docs/DESIGN-BIBLE.md section 7.4 and 7.5.\n\nFirst, the engine: a proper WebAudio graph with buses (effects, music, voice, ambience), ducking, per-cue gain, simple distance attenuation, and a master limiter so nothing ever clips. Then the requirement from docs/CONTRACT.md: expose app.audio.renderOffline({ cue, seconds, sampleRate }) that rebuilds the SAME graph into an OfflineAudioContext, and app.audio.listCues(). Without those, your work cannot be judged and counts as unbuilt. Verify with node tools/audition.mjs.\n\nEvery sound is synthesised — no sample files, the game must stay one self-contained page. Build the crack of a broomstick on a rubber ball (which is a hollow pock, not a baseball crack), the whiff, the ball on brick, on iron, on a car fender, into laundry, down a sewer, a window breaking, footsteps on asphalt and on a sidewalk, a slide, a catch, the bat dropping, the ash can lid.\n\nThe city bed: traffic in the distance, a klaxon, the El passing overhead, a radio through an open window, a knife grinder's bell, a dog, church bells, a mother calling somebody in. These should feel like a place, sit under the action, and never fight the play.\n\nJudge yourself with node tools/audition.mjs on every cue and read the analysis PNGs: attack times, decay, crest factor and spectral centroid tell you whether a sound has the shape the design bible asks for."
+    },
+    {
+      "key": "music",
+      "title": "The 1920s score",
+      "files": ["src/audio/music.js"],
+      "scenarios": ["pitch"],
+      "brief": "You own the music. Follow docs/DESIGN-BIBLE.md section 7.1 and 7.2.\n\nWrite a procedural 1920s score — ragtime and hot jazz, period-correct harmony and rhythm: stride piano left hand, syncopated right, a clarinet line, a plunger-muted cornet, banjo, tuba or string bass on the downbeats, brushes. Real chord progressions and real voice leading, not a random note generator. It must swing, which means the eighth-note ratio and the accent pattern matter more than the notes.\n\nBuild cues that fit the game: a title theme with a hook somebody could hum, a team-select vamp, a low-key bed during play that ducks under the announcer, a stinger for a big hit, a between-innings rag, a win theme, a loss theme, and per-character walk-up stings as the bible calls for. The score must respond to the game — tension when the count is full, a lift on a rally.\n\nAll synthesised through WebAudio, no samples. Register every cue with the audio engine and make each one render offline so node tools/audition.mjs can measure it — check the implied tempo and the onset pattern in the analysis output and confirm it actually swings.\n\nThe bible's governing rule is that the score never competes with the announcer or with the crack of the bat. Prove the ducking works."
+    },
+    {
+      "key": "announcer",
+      "title": "Announcer and kid chatter",
+      "files": ["src/audio/announcer.js", "src/ui/bubbles.js"],
+      "scenarios": ["bubbles", "pitch"],
+      "brief": "You own the voice of the game, which in Backyard Baseball is most of its personality. Follow docs/DESIGN-BIBLE.md sections 7.2, 7.3 and 8, and docs/BYB-REFERENCE.md section 6.\n\nOur announcer is not in a booth — the bible puts him on the block. Build the play-by-play system: line selection driven by sim events and game state, real cadence with pauses and builds, escalation as a ball climbs, the pause before a close call, running gags, and non sequiturs that land. Lines must never repeat back-to-back and the whole bank must be big enough that a full game does not exhaust it.\n\nVoicing: the browser's speechSynthesis where it exists, tuned for pitch, rate and character, with an always-available fallback so the game is never silent-mouthed — text in a speech bubble, plus a synthesised vocal texture. This must be tested headlessly, so make it work with no audio device present.\n\nKid chatter: infield noise, taunts, the argument about whether it was foul, somebody calling for the ball, the little kid who narrates his own at-bat. Speech bubbles in src/ui/bubbles.js in the period's lettering, positioned so they never cover the ball, with the personality lines from src/chars/roster.js.\n\nThe comedy has to be ours: 1925 kid comedy per the bible's register, not modern sitcom. Write a lot of lines and make them good — this is where the game becomes lovable.\n\nRegister a 'bubbles' scenario a critic can read the writing from."
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "wave": "5",
+  "title": "The polish",
+  "maxRounds": 4,
+  "pieces": [
+    {
+      "key": "input-onboarding",
+      "title": "Controls and onboarding",
+      "files": ["src/core/input.js", "src/ui/prompts.js"],
+      "scenarios": ["prompt_first_pitch", "pitch"],
+      "brief": "You own the hands on the controls. Backyard Baseball was playable by a seven-year-old with a mouse, and that is the standard.\n\nBuild one input layer serving keyboard, mouse, touch and gamepad, with rebindable actions, a clean action-event API the gameplay pieces subscribe to, and no dropped inputs at 60fps. Touch must be genuinely good — this will be played on a phone.\n\nBuild onboarding that teaches by playing: contextual prompts in the period's lettering that appear exactly when a new verb becomes relevant and disappear once used, a first at-bat that cannot be lost, and a difficulty ramp that is invisible. No tutorial wall, no modal explaining the controls.\n\nMake every control discoverable in the game's own voice — a kid on the stoop telling you to swing is better than a keycap icon.\n\nRegister 'prompt_first_pitch' and verify with node tools/playthrough.mjs that a game can be played start to finish through the input layer."
+    },
+    {
+      "key": "performance",
+      "title": "Performance",
+      "files": ["src/render/perf.js"],
+      "scenarios": ["perf_stress", "wide"],
+      "brief": "You own the frame budget. The whole block is alive now and something has to keep it at 60fps.\n\nMeasure first: build an instrumentation pass that reports draw calls, triangles, texture memory, and per-system CPU time, and put it behind a debug flag plus expose it on __SB so tools can read it. Then fix what you find — instancing, merged geometry, LOD, frustum-aware updates, shadow map sizing, throttled far-field animation, texture atlasing.\n\nAdd a quality tier system (high/medium/low) that degrades gracefully and picks a sensible default from measured frame time, so the game runs on a phone without looking broken. The design bible's readability rules must hold at every tier — the ball stays the brightest object in frame even on low.\n\nBuild a 'perf_stress' scenario: the busiest thing the game can produce (full roster animating, deep fly, fx firing, crowd and atmosphere running) and report measured numbers before and after your work in your summary.\n\nDo not delete other pieces' features to hit the budget. Make them cheaper."
+    },
+    {
+      "key": "signature-moments",
+      "title": "Signature moments",
+      "files": ["src/game/moments.js"],
+      "scenarios": ["moment_sewer_shot", "moment_car", "moment_window", "moment_walkoff"],
+      "brief": "You own the twelve beats in docs/DESIGN-BIBLE.md section 9 — the specific things a player would tell a friend about. Every other piece has built the machinery; your job is to make sure these actually happen, land, and are staged well.\n\nFor each of the twelve: verify it can occur in real play, orchestrate the moment across camera, fx, audio, announcer and rules so it reads as an authored beat rather than an accident, give it a trigger that fires often enough to be memorable and rarely enough to stay special, and register a scenario that reproduces it deterministically.\n\nYou coordinate rather than reimplement: fire events, request camera moves, request fx, cue the announcer. If a piece is missing a capability you need, say so in known_weakness rather than building it yourself in the wrong file.\n\nThe test is simple and harsh: run node tools/playthrough.mjs across several seeds and confirm from the event stream that at least eight of the twelve fire in a normal game, then read film strips of each one and confirm each is staged well enough that a player would remember it."
+    }
+  ]
+}

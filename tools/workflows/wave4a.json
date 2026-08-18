@@ -1,0 +1,35 @@
+{
+  "wave": "4a",
+  "title": "The show — picture",
+  "maxRounds": 4,
+  "pieces": [
+    {
+      "key": "camera-direction",
+      "title": "Camera direction",
+      "files": ["src/render/cameras.js"],
+      "scenarios": ["cam_pitch", "cam_contact", "cam_homer", "cam_replay"],
+      "brief": "You own where the audience is standing. Backyard Baseball's camera is a director, not a tripod, and ours has to be too.\n\nBuild a camera director that reads the sim's events and cuts: the pitch camera behind and above the batter with the plate readable; the snap to follow contact; the swing to a low three-quarter as a deep ball climbs the facade; the hold on the fielder converging; the cut to the runner and the base on a close play; the pull-back for a home run so the whole street is in frame; the slow push on a celebration.\n\nMake it smooth and never nauseating: real easing, no snap-back, no gimbal roll, a settled hold at the end of every move so the eye can rest. Shake and zoom on contact are handed to you by events from the batting piece — implement them as camera behaviour with a strict budget so the frame never becomes unreadable.\n\nBuild the replay system: the sim's last few seconds re-rendered from a different angle with a slow-motion ramp, triggered on the plays that deserve it. That is a Backyard Baseball signature and it is worth doing properly.\n\nThe hard requirement from the design bible: the ball is always findable. If a camera move can lose the ball, that move is wrong.\n\nRegister 'cam_pitch', 'cam_contact', 'cam_homer' and 'cam_replay', each judgeable from a film strip."
+    },
+    {
+      "key": "hud-scorebug",
+      "title": "Scorebug and HUD",
+      "files": ["src/ui/hud.js", "src/ui/typography.js"],
+      "scenarios": ["hud_states", "pitch", "contact"],
+      "brief": "You own everything drawn on top of the world. Follow docs/DESIGN-BIBLE.md section 6 (typography — two faces, and only two) and section 11 (the HUD translation table).\n\nThe scorebug must be a 1925 object rather than a 2020 overlay: think a hand-lettered enamel sign, a chalked slate, a scoreboard a kid painted. It carries the score, the inning, the count, the outs and who is up, and it has to be readable in one glance at 1600x900 and still readable on a phone.\n\nThe base diagram is the street's own geometry, not a baseball diamond icon. The count is chalk marks. Show the batter's name and the pitch that was just thrown. Everything animates in and out with weight; nothing pops.\n\nBuild the typography module the whole UI uses: embed the faces as base64 in CSS or draw the letterforms procedurally — no network fetch, ever. Give the rest of the game a text-drawing API so menus, speech bubbles and portraits all speak with the same voice.\n\nMake a 'hud_states' scenario that shows the HUD across several game situations in one strip so a critic can judge the whole system at once."
+    },
+    {
+      "key": "menus-screens",
+      "title": "Menus and screens",
+      "files": ["src/ui/screens.js", "src/ui/title.js"],
+      "scenarios": ["screen_title", "screen_pause", "screen_results", "screen_inning"],
+      "brief": "You own the frame around the game. In Backyard Baseball the menus are half the charm, so these are not chrome.\n\nThe title screen must make somebody want to play: the street at golden hour, kids drifting in, a hand-lettered logo, the ball rolling to a stop against the manhole cover, music. It is the first thing anyone sees and it is judged hardest.\n\nBuild: the title, the pause screen, the between-innings card (a newspaper-style beat that tells you the score and something funny that just happened), the game-over results with a box score in period style, and the transitions between all of them. Transitions matter — a wipe with character beats a fade.\n\nEverything operable by keyboard, mouse and touch, with visible focus states, and everything readable on a phone.\n\nCoordinate with the team-select screen owned by src/ui/teamselect.js — do not edit that file, but make the flow between title, team select and the game seamless.\n\nRegister 'screen_title', 'screen_pause', 'screen_results' and 'screen_inning'."
+    },
+    {
+      "key": "juice-fx",
+      "title": "Juice",
+      "files": ["src/fx/particles.js", "src/fx/impact.js", "src/fx/comic.js"],
+      "scenarios": ["fx_contact", "fx_homer", "fx_slide", "fx_celebration"],
+      "brief": "You own the exclamation marks. This is the difference between a game that works and a game that feels good.\n\nBuild: dust when a kid slides or stops hard, grit kicked off asphalt, the puff at contact, chalk dust when the ball hits a chalked base, brick dust off a facade, pigeon scatter, a sewer splash, glass when a window goes, sweat and effort marks, speed lines on a hard-hit ball, a ball trail that reads the arc without smearing the frame, confetti and hat-throwing on a win.\n\nThe comic layer, exactly as bounded by the design bible: impact stars, a hand-lettered POW or a period equivalent on the biggest hits, motion smears on a huge swing. Restraint is the whole skill here — it must feel drawn, not dropped in from an asset store, and it must never obscure the ball.\n\nOwn hitstop and screen shake in cooperation with the camera piece: you emit the request, the camera executes it. Tune the frames precisely — the design bible section 12 gives the numbers.\n\nEverything is instanced and pooled; the whole fx budget must fit in a 60fps frame at 1600x900.\n\nRegister 'fx_contact', 'fx_homer', 'fx_slide' and 'fx_celebration', each judged from a film strip rather than a still."
+    }
+  ]
+}
