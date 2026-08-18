@@ -1,0 +1,17 @@
+{
+  "out": "shots",
+  "viewport": {
+    "W": 1600,
+    "H": 900
+  },
+  "shots": [
+    "shots/pitch.png",
+    "shots/contact.png",
+    "shots/deep_fly.png",
+    "shots/wide.png"
+  ],
+  "errors": [],
+  "console": [
+    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

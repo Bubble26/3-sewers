@@ -1,0 +1,9 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #12100e; overflow: hidden; font-family: system-ui, sans-serif; }
+#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
+.hud { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; color: #f7edd8; }
+.scorebug { display: inline-flex; gap: 14px; align-items: center; background: rgba(24,20,16,.82); border: 2px solid #c9a24a; border-radius: 6px; padding: 8px 16px; font-weight: 700; letter-spacing: .06em; }
+.scorebug b { font-size: 1.25em; margin-left: 6px; }
+.count { margin-top: 6px; font-size: .95em; opacity: .9; }

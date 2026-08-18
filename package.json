@@ -1,0 +1,15 @@
+{
+  "name": "stickball-1920",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "shoot": "node tools/shoot.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "^1.49.0",
+    "three": "^0.170.0"
+  }
+}
