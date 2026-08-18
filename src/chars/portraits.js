@@ -32,7 +32,7 @@ import {
   CHALK, INK, SKIN, CLOTH, ACCENTS, AIR, PAVEMENT, FACADE, BALL, soot,
 } from '../render/palette.js';
 import {
-  FAMILIES, HAIR, WOOL, LEATHER, SOCKWOOL, mix, inkOf, coolShade, bounceOf, hexCSS,
+  FAMILIES, HAIR, LEATHER, mix, inkOf, coolShade, bounceOf, hexCSS,
 } from './wardrobe.js';
 import { slabText, chalkText, chalkStroke } from '../world/props.js';
 import { ROSTER, getKid, STAT_KEYS, STAT_LABEL, MAX_STAT } from './roster.js';
@@ -193,11 +193,16 @@ function solid(g, path, fill, o = {}) {
  * wardrobe.deformHead() in two dimensions. Same jaw / cheek / crown / chin dials,
  * same formulae, so the card and the kid agree about what his head looks like.
  */
-function headOutline(hs, steps = 84) {
+function headOutline(hs, steps = 84, wobbleSeed = 0) {
   const pts = [];
+  const wr = wobbleSeed ? new RNG(wobbleSeed) : null;
+  // three low-frequency lobes plus a little grit: a head drawn by a hand, not swept
+  const p1 = wr ? wr.range(0, TAU) : 0, p2 = wr ? wr.range(0, TAU) : 0;
+  const a1 = wr ? wr.range(0.012, 0.030) : 0, a2 = wr ? wr.range(0.008, 0.020) : 0;
   for (let i = 0; i < steps; i++) {
     const a = (i / steps) * TAU;
-    let x = Math.cos(a), y = Math.sin(a);
+    const wob = wr ? 1 + a1 * Math.sin(a * 3 + p1) + a2 * Math.sin(a * 5 + p2) : 1;
+    let x = Math.cos(a) * wob, y = Math.sin(a) * wob;
     const t = clamp((0.25 - y) / 1.25, 0, 1);
     const jaw = 1 - hs.jaw * t * t;
     const cheek = 1 + hs.cheek * Math.exp(-((y + 0.12) * (y + 0.12)) / 0.05);
@@ -467,7 +472,7 @@ export function drawPortrait(g, kidRef, box, o = {}) {
 
   /* hair behind */
   const hairBack = () => {
-    const pts = headOutline(hs).map(([x, y]) => [cx + x * unit * (1 + hairdo.back + 0.04), cy + y * unit * (1 + hairdo.back)]);
+    const pts = headOutline(hs, 84, seed + 11).map(([x, y]) => [cx + x * unit * (1 + hairdo.back + 0.04), cy + y * unit * (1 + hairdo.back)]);
     blob(g, pts, 0.5);
   };
   if (hairdo.back > 0.03) {
@@ -489,7 +494,7 @@ export function drawPortrait(g, kidRef, box, o = {}) {
   drawTails(g, { kid, a, cx, cy, hw, hh, hairdo, hairCol, accent, lw });
 
   /* the head */
-  const headPts = headOutline(hs).map(([x, y]) => [cx + x * unit, cy + y * unit]);
+  const headPts = headOutline(hs, 84, seed + 3).map(([x, y]) => [cx + x * unit, cy + y * unit]);
   const headPath = () => blob(g, headPts, 0.5);
   solid(g, headPath, skin, { bounds: { x: cx - hw * 0.62, y: cy - hh * 0.62, w: hw * 1.24, h: hh * 1.30 }, lw });
 
@@ -1042,7 +1047,7 @@ export function chalkHead(g, kidRef, cx, cy, size, o = {}) {
   const alpha = o.alpha ?? 0.55;
   const w = Math.max(1.8, size * 0.030);
   let seed = (o.seed || 1) * 7;
-  const pts = headOutline(hs, 30).map(([x, y]) => [cx + x * unit, cy + y * unit]);
+  const pts = headOutline(hs, 30, (o.seed || 1) * 17 + 3).map(([x, y]) => [cx + x * unit, cy + y * unit]);
   pts.push(pts[0]);
   chalkStroke(g, pts, w, seed++, alpha, col);
   // two dots and a line: how a nine-year-old draws a nine-year-old
@@ -1626,17 +1631,6 @@ function paintSheet(g, W, H) {
     weight: 0.20, serif: 8, jitter: 1.2, seed: 21,
     shadow: { dx: 2.6, dy: 3, color: C(mix(ACCENTS.red, INK, 0.45)) },
   });
-
-  /* two spares from somebody's pocket, face down, in the corners nobody uses */
-  for (const [sx, sy, rot, sc, sd] of [[24, 6, 1.42, 0.44, 5], [DW - 26, 92, -1.62, 0.40, 9]]) {
-    const bw2 = cw * sc, bh2 = bw2 / CARD_ASPECT;
-    g.save();
-    g.translate(sx, sy);
-    g.rotate(rot);
-    cardShadow(g, 0, 0, bw2, bh2, 0.8);
-    drawCardBack(g, 0, 0, bw2, bh2, sd);
-    g.restore();
-  }
 
   /* the cards */
   const r = new RNG(97);

@@ -35,7 +35,7 @@
  *   home      the family's community — a fact of the block, never a punchline (§8.3)
  *   rep       ONE line. The thing you would say about him at the hydrant.
  *   stats     { power contact speed arm fielding nerve }, each 1..4, drawn as chalk tallies.
- *             House rules from DESIGN-BIBLE §5.5, enforced by assertRoster() below:
+ *             House rules from DESIGN-BIBLE §5.5, enforced by auditRoster() below:
  *             every kid has at least one 4 and at least one 1 or 2; nobody is good at
  *             everything except one legend; the best hitter and the best arm are
  *             different kids.
@@ -49,6 +49,14 @@
  *   title     an earned label rendered over the head, or ''
  *   accent    key into palette ACCENTS — his one saturated garment (§2.9)
  *   art       the full appearance spec: see wardrobe.js K() for the dial names
+ *             ({ id name nick sex fam skin hair accent slot hairStyle prop pose team
+ *               ex dh scale quirk }), plus ONE dial this file adds:
+ *               art.hat === 'none'  — this kid plays bare-headed, whatever headwear
+ *               the silhouette family carries. Five girls use it, because 1925 girls
+ *               on a block wore a ribbon or a bob and not a boy's newsboy cap
+ *               (PERIOD §5.1), and thirteen caps in a sixteen-card set is a set of
+ *               caps rather than a set of kids. wardrobe.FAMILIES does not read this
+ *               dial yet, so the 3-D rig still caps those five: see the hand-off note.
  *   voice     { pitch, rasp, sting }
  *
  * Legacy fields (power/speed/armRate/colors) are kept at the bottom of each record

@@ -42,7 +42,7 @@ import { M, buildingTop } from '../world/facade.js';
  * they are still a single place to turn a knob. */
 export const SP = {
   radius: T.ball.radius,      // 0.18 ft collision radius
-  drawR: 0.32,                // drawn a size larger than it is — BYB legibility
+  drawR: 0.36,                // drawn a size larger than it is — BYB legibility
   mass: 0.0442,               // lb.  0.7 oz, the real weight of a pink rubber core
 
   gravity: T.ball.gravity,    // 32.2 ft/s²
@@ -67,7 +67,7 @@ export const SP = {
   maxStep: 0.11,              // ft of travel per substep — smaller than the ball
   maxSubsteps: 26,
 
-  grateSlip: 26.0,            // below this normal speed a ball drops through bar grating
+  grateAngle: 0.45,           // steeper than ~27° off the deck and it goes between the bars
   windowBreak: 62,            // above this it is not a boom any more, it is a bill
   fenderKick: 0.42,           // how far sideways a Model T fender throws it
   hardImpact: 46,             // ft/s — the line between a tick and a wallop
@@ -76,7 +76,7 @@ export const SP = {
   loiterSpeed: 9.0, loiterHold: 1.15, // rolling slowly with a fielder on it
   playCap: 7.5,                       // nobody chases a ball for longer than this
 
-  minPx: 15,                  // the ball never draws smaller than this
+  minPx: 17,                  // the ball never draws smaller than this
   maxBump: 3.2,
   markerPx: 26,
   trailFrames: 7, trailSpeed: 52,
@@ -207,12 +207,19 @@ function buildFireEscapes() {
       for (let i = 0; i < 7; i++) {
         const t = (i + 0.5) / 7;
         const y = LADDER_REST + (y0 - LADDER_REST) * t, z = zLo + (zHi - zLo) * t;
-        reg(`${tag} rung ${i}`, box(la, y, z - 0.16, lb, y + 0.10, z + 0.16), 'iron',
-          { sfx: 'clang_iron', tag: 'rung', rung: i, scoring: 'foul', fe: tag });
+        // a 1-inch round bar takes far more out of a ball than a flat plate does,
+        // which is exactly why a fire escape ticks the ball down instead of
+        // throwing it back into the street
+        reg(`${tag} rung ${i}`, box(la, y - 0.05, z - 0.11, lb, y + 0.06, z + 0.11), 'iron',
+          { sfx: 'clang_iron', tag: 'rung', rung: i, scoring: 'foul', fe: tag, bias: 0.52,
+            // a rung is a round bar, so it is solved as one: a ball landing off
+            // centre is thrown along the ladder instead of straight back up, and
+            // that is the whole reason the rattle cascades
+            cy: y, cz: z, crad: 0.11 });
       }
       for (const [xs, k] of [[la, 'a'], [lb, 'b']]) {
         reg(`${tag} stringer ${k}`, box(xs - 0.06, LADDER_REST - 0.2, zHi - 0.3, xs + 0.06, y0 + 0.5, zLo + 0.3),
-          'iron', { sfx: 'clang_iron', tag: 'stringer', scoring: 'foul', fe: tag });
+          'iron', { sfx: 'clang_iron', tag: 'stringer', scoring: 'foul', fe: tag, bias: 0.62 });
       }
     });
   }
@@ -427,17 +434,24 @@ function resolve(hit, ball, sim) {
   const col = hit.col;
   const surfName = col.surface;
   _n.set(hit.nx, hit.ny, hit.nz);
+  if (col.crad) {                       // round bar, solved as a cylinder along x
+    const dy = ball.pos.y - col.cy, dz = ball.pos.z - col.cz;
+    const L = Math.hypot(dy, dz);
+    if (L > 1e-5) _n.set(0, dy / L, dz / L);
+  }
   const vn = ball.vel.dot(_n);
   if (vn >= 0) { ignoreFor(col, 0.08); return null; }
   const speed = -vn;
 
-  /* — bar grating: a spaldeen is smaller than the slots, and once it has spent
-       its first bounce it simply goes through and drops into the ladder well — */
-  if (col.tag === 'grate' && speed < SP.grateSlip && _n.y > 0.5) {
+  /* — bar grating: bars run one way, so a ball that skims the deck skips along
+       it and rings, and a ball that comes down steeply goes between the bars and
+       into the ladder well.  Angle, not speed, decides — which is what actually
+       happens to a small rubber ball on a fire escape. — */
+  if (col.tag === 'grate' && _n.y > 0.5 && speed > SP.grateAngle * ball.vel.length()) {
     ignoreFor(col, 0.45);
     emitImpact('through', col, 'iron', _n, speed, ball, { through: true, level: col.level });
     bus.emit('ball:fire_escape', { phase: 'through_grating', level: col.level, pos: ball.pos.clone() });
-    ball.vel.multiplyScalar(0.55);
+    ball.vel.multiplyScalar(0.40);   // squeezing between the bars costs it dearly
     return { carom: 'iron' };
   }
 
@@ -694,31 +708,32 @@ provide('ballphysics', {
 const TAU = Math.PI * 2;
 
 function bodyTexture(wear) {
-  const size = 128, C = size / 2, R = 58;
+  const size = 128, C = size / 2, R = 52;
   const { c, g } = makeCanvas(size, size);
   const body = [PAL.bodyNew, PAL.bodyWorn, PAL.bodySewer][wear];
   const shade = [PAL.shadeNew, PAL.shadeWorn, PAL.shadeSewer][wear];
   g.clearRect(0, 0, size, size);
+  // flat body — the ball is the brightest object in frame and it never shades down
   g.fillStyle = body;
   g.beginPath(); g.arc(C, C, R, 0, TAU); g.fill();
-  // two-band toon shading, never a gradient
   g.save();
   g.beginPath(); g.arc(C, C, R, 0, TAU); g.clip();
-  g.fillStyle = shade;
-  g.beginPath(); g.arc(C + 30, C + 34, R * 1.02, 0, TAU); g.fill();
+  // one narrow shade crescent at the lower-right: enough to make it a sphere,
+  // not enough to cost it any contrast
+  g.drawImage(crescentDisc(size, R, R - 4.5, -5.5, shade), 0, 0);
   // the moulded seam channel, and the felt that never quite came off
-  g.strokeStyle = PAL.seam; g.lineWidth = 4.5; g.lineCap = 'round';
+  g.strokeStyle = PAL.seam; g.lineWidth = 6; g.lineCap = 'round';
   g.beginPath();
-  g.ellipse(C, C, R * 0.82, R * 0.30, -0.42, Math.PI * 0.08, Math.PI * 1.02);
+  g.ellipse(C, C, R * 0.80, R * 0.30, -0.42, Math.PI * 0.06, Math.PI * 1.04);
   g.stroke();
   if (wear < 2) {
     g.fillStyle = PAL.felt;
-    for (const [fx, fy, fr] of [[-24, -12, 3.2], [10, 6, 2.4], [30, 20, 2.0]]) {
+    for (const [fx, fy, fr] of [[-22, -10, 3.4], [9, 5, 2.6], [27, 18, 2.2]]) {
       g.beginPath(); g.arc(C + fx, C + fy, fr, 0, TAU); g.fill();
     }
   } else {
     g.fillStyle = 'rgba(42,29,26,0.30)';
-    for (const [fx, fy, fr] of [[-18, 14, 9], [16, -20, 7], [26, 26, 6]]) {
+    for (const [fx, fy, fr] of [[-16, 12, 9], [14, -18, 7], [24, 24, 6]]) {
       g.beginPath(); g.arc(C + fx, C + fy, fr, 0, TAU); g.fill();
     }
   }
@@ -726,25 +741,31 @@ function bodyTexture(wear) {
   return canvasTexture(c);
 }
 
-function crescent(size, r, dx, dy, colour) {
+function crescentDisc(size, rOut, rCut, d, colour) {
   const { c, g } = makeCanvas(size, size);
   const C = size / 2;
   g.fillStyle = colour;
-  g.beginPath(); g.arc(C, C, r, 0, TAU); g.fill();
+  g.beginPath(); g.arc(C, C, rOut, 0, TAU); g.fill();
   g.globalCompositeOperation = 'destination-out';
-  g.beginPath(); g.arc(C + dx, C + dy, r * 0.955, 0, TAU); g.fill();
+  g.beginPath(); g.arc(C + d, C + d, rCut, 0, TAU); g.fill();
   return c;
 }
 
-/** the half that does not spin: ink silhouette + chalk rim, upper-left third */
+/**
+ * The half that does not spin: the ink silhouette and the chalk rim crescent.
+ * The crescent is built as one disc minus a slightly smaller disc pushed down-right,
+ * so it is thickest at the upper-left and tapers to nothing at the lower-right —
+ * a rim light drawn by hand, which is what §2.5 asks for and what makes the ball
+ * survive both a sunlit sidewalk and a shaded areaway.
+ */
 function rimTexture() {
-  const size = 128, C = size / 2, R = 58;
+  const size = 128, C = size / 2;
   const { c, g } = makeCanvas(size, size);
   g.clearRect(0, 0, size, size);
-  g.drawImage(crescent(size, R - 3.0, 15, 15, PAL.ink), 0, 0);      // the crescent's own ink
-  g.drawImage(crescent(size, R - 6.0, 16.4, 16.4, PAL.chalk), 0, 0); // the chalk rim
-  g.strokeStyle = PAL.ink; g.lineWidth = 6.5;
-  g.beginPath(); g.arc(C, C, R - 2.6, 0, TAU); g.stroke();           // the outline, always
+  g.drawImage(crescentDisc(size, 52.5, 45.6, 5.0, PAL.ink), 0, 0);    // 1.5px of ink under it
+  g.drawImage(crescentDisc(size, 51.0, 47.0, 5.0, PAL.chalk), 0, 0);  // the chalk rim itself
+  g.strokeStyle = PAL.ink; g.lineWidth = 8;
+  g.beginPath(); g.arc(C, C, 54, 0, TAU); g.stroke();                 // the outline, always
   return canvasTexture(c);
 }
 
@@ -1041,11 +1062,11 @@ registerScenario('carom_fire_escape', {
     stage(1931);
     // fouled off into the second-floor balcony of the cigar store: onto the
     // grating, through it, and down the drop ladder rung by rung
-    launch(V(0.4, 3.2, 1.2), V(15.5, 46.7, 10.5), V(-10, 0, 18));
-    app.camera.position.set(12.5, 17.5, 3.0);
-    app.camera.lookAt(29.5, 12.6, 22.5);
+    launch(V(0.4, 3.2, 1.2), V(18.0, 50.0, 12.0), V(-10, 0, 18));
+    app.camera.position.set(12.0, 15.5, 5.0);
+    app.camera.lookAt(30.0, 18.5, 23.0);
   },
-  settle: 2.62,
+  settle: 2.60,
 });
 
 registerScenario('sewer_shot', {

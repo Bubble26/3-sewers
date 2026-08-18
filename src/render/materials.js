@@ -130,9 +130,9 @@ function cachedTex(key, build) {
  */
 export function brickTexture({
   base = FACADE.brick, mortar = FACADE.mortar, seed = 7, feet = 24, wide = 12,
-  sootMax = 0.30, sun = 0.0,
+  sootMax = 0.30, sun = 0.0, power = 1.25,
 } = {}) {
-  const key = `brick:${base}:${mortar}:${seed}:${feet}:${wide}:${sootMax}:${sun}`;
+  const key = `brick:${base}:${mortar}:${seed}:${feet}:${wide}:${sootMax}:${sun}:${power}`;
   return cachedTex(key, () => {
     const W = 512, H = 1024;
     const [c, g] = canvas(W, H);
@@ -150,7 +150,7 @@ export function brickTexture({
       for (let i = -1; i * brickW + off < W + brickW; i++) {
         const x = i * brickW + off;
         // Law 1 + Law 3: soot is a function of height and it takes value only.
-        let col = sootAtHeight(base, heightFt, { curb: 0, cornice: feet, max: sootMax, power: 1.25 });
+        let col = sootAtHeight(base, heightFt, { curb: 0, cornice: feet, max: sootMax, power });
         if (sun > 0) col = sunlit(col, sun * Math.min(1, heightFt / feet) * 0.8);
         if (heightFt < 3.2) col = mix(col, AIR.brickBounce, 0.16 * (1 - heightFt / 3.2));
         const v = R.range(-0.10, 0.085);
@@ -862,7 +862,7 @@ export const MAT = {
   /** Brick, with courses and the soot gradient baked in over `feet` of wall. */
   brick(kind = 'brick', o = {}) {
     const base = FACADE[kind] ?? FACADE.brick;
-    const map = brickTexture({ base, feet: o.feet ?? 24, wide: o.wide ?? 12, seed: o.seed ?? 7, sootMax: o.sootMax ?? 0.30, sun: o.sun ?? 0 });
+    const map = brickTexture({ base, feet: o.feet ?? 24, wide: o.wide ?? 12, seed: o.seed ?? 7, sootMax: o.sootMax ?? 0.30, sun: o.sun ?? 0, power: o.power ?? 1.25 });
     return toon(base, { map, repeat: o.repeat ?? [1, 1], bounceStr: 0.5, key: `brick${kind}${o.feet}${o.seed}` });
   },
   /** Bluestone, granite, brownstone: matte, mid-value, the stuff the stoop is made of. */
@@ -919,6 +919,40 @@ export const MAT = {
   },
   shadow: contactShadow,
 };
+
+/**
+ * A sewer casting. In this game it is home plate and second base, so it is a gameplay object
+ * as much as a prop: worn high points at L* 60.7, recesses at L* 21.5 — the ONLY place the
+ * palette goes under L* 28, and legal because those grooves are 2-6 px wide and never read as
+ * a field (Law 2, the linear-ironwork exemption).
+ */
+export function manholeMesh(radius = 1.2) {
+  const g = new THREE.Group();
+  const hi = toon(PAVEMENT.manholeHigh, { tex: ironTexture({ seed: 31, rust: 0.2 }), texAmt: 0.5, repeat: [2, 2], bounceStr: 1.1, key: 'mhHi' });
+  const mid = toon(mix(PAVEMENT.manholeHigh, PAVEMENT.manholeLow, 0.52), { bounceStr: 0.9, key: 'mhMid' });
+  g.add(meshOf(new THREE.CylinderGeometry(radius, radius * 0.98, 0.12, 26), mid, 0, 0.055, 0));
+  g.add(meshOf(new THREE.CylinderGeometry(radius * 0.93, radius * 0.93, 0.10, 26), mid, 0, 0.10, 0));
+  const bar = new THREE.BoxGeometry(radius * 1.72, 0.055, 0.19);
+  const bars = new THREE.InstancedMesh(bar, hi, 22);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  let n = 0;
+  for (let ring = 0; ring < 2; ring++) {
+    for (let i = 0; i < 11; i++) {
+      const off = (i - 5) * radius * 0.155;
+      const sc = Math.sqrt(Math.max(0.04, 1 - (off / (radius * 0.86)) ** 2));
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), ring * Math.PI / 2);
+      v.set(ring ? off : 0, 0.155, ring ? 0 : off);
+      m.compose(v, q, new THREE.Vector3(sc, 1, 1));
+      bars.setMatrixAt(n++, m);
+    }
+  }
+  bars.count = n;
+  g.add(bars);
+  const rim = meshOf(new THREE.TorusGeometry(radius * 0.99, 0.05, 5, 26), hi, 0, 0.13, 0);
+  rim.rotation.x = -Math.PI / 2;
+  g.add(rim);
+  return g;
+}
 
 /**
  * The two-sided ball (§2.5) as a ready-made object: body, chalk rim crescent on the upper
@@ -1289,7 +1323,7 @@ function buildStyleSet() {
   const tenH = 58;
   add(meshOf(
     new THREE.BoxGeometry(46, tenH, 2.0),
-    MAT.brick('brick', { feet: 30, wide: 12, repeat: [3.8, tenH / 30], seed: 7, sootMax: 0.40 }),
+    MAT.brick('brick', { feet: 34, wide: 12, repeat: [3.8, tenH / 34], seed: 7, sootMax: 0.52, power: 1.0 }),
     -24, tenH / 2, -12.9,
   ));
   // A3: a painted advertisement on brick, and it is where this wall pays its Law 4 bill.
@@ -1316,7 +1350,7 @@ function buildStyleSet() {
   // the party wall of the next house along, one building in eight is ochre (§2.2)
   add(meshOf(
     new THREE.BoxGeometry(24, 52, 2.0),
-    MAT.brick('ochre', { feet: 30, wide: 12, repeat: [2, 52 / 30], seed: 12, sootMax: 0.44 }),
+    MAT.brick('ochre', { feet: 34, wide: 12, repeat: [2, 52 / 34], seed: 12, sootMax: 0.54, power: 1.0 }),
     -59, 26, -13.2,
   ));
 
@@ -1423,13 +1457,14 @@ function buildStyleSet() {
   const stoop = new THREE.Group();
   stoop.position.set(-5.0, 0, -11.6);
   const treadM = MAT.stone(mix(PAVEMENT.sidewalk, PAVEMENT.blockCrown, 0.30), { seed: 6, cols: 1, rows: 1 });
-  const cheekM = toon(mix(FACADE.ochreShade, PAVEMENT.curb, 0.30), { tex: ironTexture({ seed: 22, rust: 0 }), texAmt: 0.35, repeat: [2, 2], key: 'cheek' });
+  const cheekM = toon(soot(mix(FACADE.ochreShade, FACADE.brickShade, 0.45), 0.10), { tex: ironTexture({ seed: 22, rust: 0 }), texAmt: 0.30, repeat: [2, 2], key: 'cheek' });
   for (let i = 0; i < 6; i++) {
     stoop.add(meshOf(new THREE.BoxGeometry(7.6, 0.66, 1.30), treadM, 0, 0.33 + i * 0.66, 7.0 - i * 1.30));
     stoop.add(meshOf(new THREE.BoxGeometry(7.4, 0.66, 0.10), toon(soot(PAVEMENT.sidewalk, 0.42), { bounceStr: 1.6, key: 'riser' }), 0, 0.33 + i * 0.66, 7.65 - i * 1.30));
   }
   for (const s of [-1, 1]) {
     stoop.add(meshOf(new THREE.BoxGeometry(0.9, 4.0, 8.0), cheekM, s * 4.1, 2.0, 3.6));
+    stoop.add(meshOf(new THREE.BoxGeometry(1.15, 0.34, 8.3), treadM, s * 4.1, 4.15, 3.6));
     const railM = MAT.iron(FACADE.iron[0], { seed: 7, repeat: [1, 2] });
     for (let i = 0; i < 6; i++) {
       stoop.add(meshOf(new THREE.CylinderGeometry(0.055, 0.055, 2.7, 7), railM, s * 4.1, 4.3 + i * 0.33, 6.6 - i * 1.30));
@@ -1447,7 +1482,7 @@ function buildStyleSet() {
   /* --- iron in the street: an ash can with the lid off, and a hydrant --- */
   const canG = new THREE.Group();
   canG.position.set(1.0, 0.62, -7.0);
-  const canM = MAT.iron(mix(FACADE.iron[0], PAVEMENT.curb, 0.34), { seed: 9, rust: 1, repeat: [3, 1] });
+  const canM = MAT.iron(mix(FACADE.iron[2], PAVEMENT.curb, 0.42), { seed: 9, rust: 1, repeat: [3, 1] });
   canG.add(meshOf(new THREE.CylinderGeometry(1.05, 0.86, 3.0, 16), canM, 0, 1.5, 0));
   for (let i = 0; i < 3; i++) canG.add(meshOf(new THREE.TorusGeometry(1.02 - i * 0.04, 0.055, 5, 18), canM, 0, 0.7 + i * 0.85, 0));
   const lid = meshOf(new THREE.CylinderGeometry(1.16, 1.16, 0.16, 16), canM, 1.95, 0.66, 0.9);
@@ -1529,6 +1564,17 @@ function buildStyleSet() {
     g.closePath(); g.stroke();
   }, { seed: 41 })), 15.5, 0.03, 10.0));
   marker.rotation.x = -Math.PI / 2;
+
+  /* --- home plate is a sewer casting, which is why a home run is a "two-sewer" hit --- */
+  const plate = manholeMesh(1.25);
+  plate.position.set(15.5, 0.01, 15.0);
+  add(plate);
+  addOutline(plate, { px: 1.2 });
+  const plate2 = manholeMesh(1.25);
+  plate2.position.set(-13.0, 0.01, 12.0);
+  plate2.rotation.y = 0.4;
+  add(plate2);
+  addOutline(plate2, { px: 1.0 });
 
   /* --- the kid, on the brightest ground in the frame (Law 1), and his broomstick --- */
   const kid = buildMannequin({ seed: 5, skinStep: 2, wool: ACCENTS.indigo, capCol: ACCENTS.mustard, bat: true });

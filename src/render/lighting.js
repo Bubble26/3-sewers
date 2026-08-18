@@ -3,7 +3,7 @@ import { registerSystem } from '../app.js';
 import { bus } from '../core/bus.js';
 import { registerScenario } from '../core/scenarios.js';
 import { AIR, PAVEMENT, CHALK } from '../render/palette.js';
-import { SKY, CANYON, setTimeOfDay, v3, mix } from '../world/sky.js';
+import { SKY, CANYON, setTimeOfDay, occlusionAt, v3, mix } from '../world/sky.js';
 import { roadHeight, GROUND } from '../world/props.js';
 
 // The sky-light-atmosphere piece is three modules and one line in modules.js.
@@ -259,14 +259,31 @@ class ContactShadows {
     this.tracked.push({ mesh, root, w: par.width || 2.2, d: par.height || 1.6, base: mesh.material.opacity ?? 0.36 });
   }
 
-  quad(i, x, y, z, w, d, a) {
+  /**
+   * A shadow laid flat on the paving, `w` wide and `len` long, running from the
+   * subject's feet along the sun's shadow direction.
+   *
+   * A round ellipse is the textbook answer and it is the wrong one here: the
+   * game camera sits twelve feet up and looks seven degrees down, so a 1.5ft
+   * disc at a kid's feet is five pixels tall and every one of them is hidden
+   * behind the kid who casts it. A raking shadow, on the other hand, runs away
+   * from the feet across open pavement, tells you where the sun is, and gets
+   * dramatically longer at golden hour without a line of extra code.
+   */
+  quad(i, x, y, z, w, len, dx, dz, a) {
     if (i >= this.cap || a <= 0.004) return false;
-    const o = i * 12, hw = w * 0.5, hd = d * 0.5;
-    const P = this.pos;
-    P[o] = x - hw; P[o + 1] = y; P[o + 2] = z - hd;
-    P[o + 3] = x + hw; P[o + 4] = y; P[o + 5] = z - hd;
-    P[o + 6] = x + hw; P[o + 7] = y; P[o + 8] = z + hd;
-    P[o + 9] = x - hw; P[o + 10] = y; P[o + 11] = z + hd;
+    const hw = w * 0.5, hl = len * 0.5;
+    // the foot end sits half a width behind the subject, so the blob still
+    // reads as a pool of contact shade even when the sun is high
+    const cx = x + dx * (hl - hw * 0.55), cz = z + dz * (hl - hw * 0.55);
+    const px = -dz, pz = dx;
+    const P = this.pos, o = i * 12;
+    const put = (k, sl, sw) => {
+      P[o + k] = cx + dx * hl * sl + px * hw * sw;
+      P[o + k + 1] = y;
+      P[o + k + 2] = cz + dz * hl * sl + pz * hw * sw;
+    };
+    put(0, -1, -1); put(3, -1, 1); put(6, 1, 1); put(9, 1, -1);
     const C = this.col, m = i * 16;
     for (let k = 0; k < 4; k++) {
       C[m + k * 4] = this.tint.r; C[m + k * 4 + 1] = this.tint.g;
@@ -277,6 +294,9 @@ class ContactShadows {
 
   update(app) {
     let n = 0;
+    // shadows run the way the sun says they run, and stretch as it drops
+    const dx = -SKY.h[0], dz = -SKY.h[1];
+    const stretch = Math.min(2.6, 1 / Math.max(0.24, SKY.rise));
     for (const t of this.tracked) {
       t.root.getWorldPosition(this._p);
       const ground = roadHeight(this._p.x);
@@ -285,7 +305,13 @@ class ContactShadows {
       t.mesh.visible = false;
       const lift = Math.max(0, ground - this._p.y);
       const k = 1 - Math.min(1, lift / 9);                            // shrink with height
-      if (this.quad(n, this._p.x, ground + 0.018, this._p.z, t.w * (0.72 + 0.34 * k), t.d * (0.72 + 0.34 * k), t.base * (0.45 + 0.55 * k))) n++;
+      // a kid standing in the shade has a soft pool; a kid in the sun band
+      // throws the long afternoon shadow that tells you the sun is there.
+      const sun = occlusionAt(this._p.x, ground + 2.2, this._p.z, 1.6);
+      const w = t.w * (0.80 + 0.26 * k);
+      const len = w * (1.0 + sun * stretch * t.w * 1.05);
+      if (this.quad(n, this._p.x, ground + 0.018, this._p.z, w, len, dx, dz,
+        t.base * (0.50 + 0.50 * k) * (1 - 0.22 * sun))) n++;
     }
     // the ball, per §2.5: a contact shadow on the ground at all times
     const bv = app.get('ballview');
@@ -294,7 +320,8 @@ class ContactShadows {
       const ground = roadHeight(p.x);
       const h = Math.max(0, p.y - ground);
       const k = 1 / (1 + h * 0.16);
-      if (this.quad(n, p.x, ground + 0.024, p.z, 1.5 * k + 0.5, 1.2 * k + 0.4, 0.40 * k)) n++;
+      const w = 1.5 * k + 0.5;
+      if (this.quad(n, p.x, ground + 0.024, p.z, w, w * 1.25, dx, dz, 0.40 * k)) n++;
     }
     this.geo.setDrawRange(0, n * 6);
     this.geo.attributes.position.needsUpdate = true;

@@ -66,8 +66,8 @@ import { MAT, ballMesh } from '../render/materials.js';
 export const PT = {
   // the delivery, in seconds. DESIGN-BIBLE §12: anticipation 8–14 frames,
   // windup 24–40, and the leg-kick apex is a HELD pose.
-  set: 0.42,              // stand on the manhole, ball behind the hip
-  lookIn: 0.34,           // find the catcher, take the sign, nod
+  set: 0.34,              // stand on the manhole, ball behind the hip
+  lookIn: 0.28,           // find the catcher, take the sign, nod
   windup: 0.90,           // rock back → gather → kick → stride → release
   releaseAt: 0.94,        // fraction of the windup at which the ball leaves the hand
   apexAt: 0.48,           // fraction at which the leg kick tops out
@@ -182,19 +182,19 @@ const NEVER_PITCH = new Set(['filomena']);
  * which one, it does not author bodies that belong to somebody else.
  */
 const RITUAL = {
-  sal: { clip: 'fidget_pants', extra: 0.38, say: 'nine rubs on the thigh, and the block counts along' },
+  sal: { clip: 'fidget_pants', extra: 0.26, say: 'nine rubs on the thigh, and the block counts along' },
   kathleen: { clip: 'fidget_chatter', extra: 0.10, announce: true, say: 'she tells you what is coming' },
   irving: { clip: null, extra: 0.00, slot: 'side', say: 'sidearm, from somewhere off the curb' },
   bessie: { clip: 'fidget_chatter', extra: 0.06, talks: true, say: 'talks the whole way through' },
-  rose: { clip: 'fidget_chatter', extra: 0.30, say: 'counts to three. Always three.' },
-  otto: { clip: 'fidget_spit', extra: 0.20, say: 'blows on his fingers. In August.' },
-  stash: { clip: 'fidget_look', extra: 0.24, say: 'checks the third-floor window' },
+  rose: { clip: 'fidget_chatter', extra: 0.22, say: 'counts to three. Always three.' },
+  otto: { clip: 'fidget_spit', extra: 0.16, say: 'blows on his fingers. In August.' },
+  stash: { clip: 'fidget_look', extra: 0.18, say: 'checks the third-floor window' },
   eugene: { clip: 'fidget_pigeon', extra: 0.16, hide: true, say: 'hides it behind his hip — the pigeon gives it away' },
-  ethel: { clip: 'fidget_stretch', extra: 0.26, say: 'windmills the arm. Twice.' },
-  jesus: { clip: 'fidget_pebble', extra: 0.22, loves: 'skip', say: 'bounces it off the block first, just to hear it' },
+  ethel: { clip: 'fidget_stretch', extra: 0.20, say: 'windmills the arm. Twice.' },
+  jesus: { clip: 'fidget_pebble', extra: 0.17, loves: 'skip', say: 'bounces it off the block first, just to hear it' },
   luz: { clip: null, extra: 0.12, ace: true, say: 'the windup every kid on this block has tried to copy' },
   ling: { clip: 'fidget_stocking', extra: 0.14, say: 'wipes it on her sleeve and hands it back cleaner' },
-  maureen: { clip: 'fidget_look', extra: 0.55, say: 'will not throw until everybody is set' },
+  maureen: { clip: 'fidget_look', extra: 0.40, say: 'will not throw until everybody is set' },
   tommy: { clip: 'fidget_stretch', extra: 0.10, heat: true, say: 'the catcher stands up and backs off two steps' },
   dom: { clip: 'fidget_look', extra: 0.30, say: 'has never been allowed to pitch, and is doing it anyway' },
 };
@@ -481,6 +481,11 @@ export class PitcherAI {
    */
   choose(sim) {
     const st = sim.state;
+    if (this.forced && PITCHES[this.forced]) {
+      const t = PITCHES[this.forced];
+      const b = getKid(st.batterIdx % ROSTER.length);
+      return this.finish({ type: t, spot: this.forcedSpot || SPOTS.knees, grooved: !!t.grooved }, sim, readBatter(b), b);
+    }
     const batter = getKid(st.batterIdx % ROSTER.length);
     const read = readBatter(batter);
     const pr = this.profile;
@@ -604,27 +609,30 @@ function delivery(name, k) {
       } },
       // 3 — LEG KICK APEX. The pose the whole street imitates.
       { t: apex, ease: 'out', pose: {
-        chest: { rx: 6 + (k.lean ?? 0), ry: 40 * turn }, neck: { rx: 8, ry: -46 * turn },
-        armL: { rx: 54, rz: 30 }, elbL: [126, 0, 0], armR: { rx: -26 - 14 * hands, rz: -30 }, elbR: [96, 0, 0],
-        legL: { rx: 104 * kick, rz: 8 }, kneeL: [-112 * kick, 0, 0], footL: [24 * kick, 0, 0],
-        legR: { rx: -4 }, kneeR: [-6, 0, 0],
-        base: { py: 0.1 * kick, sy: 0.04, sx: -0.02, sz: -0.02 }, brim: [-6, 0, 0],
+        hips: { ry: 22 * turn, rz: -7 * kick },
+        chest: { rx: 6 + (k.lean ?? 0), ry: 46 * turn }, neck: { rx: 8, ry: -52 * turn },
+        armL: { rx: 58, rz: 34 }, elbL: [126, 0, 0], armR: { rx: -34 - 20 * hands, rz: -34 }, elbR: [96, 0, 0],
+        legL: { rx: 118 * kick, rz: 12 }, kneeL: [-124 * kick, 0, 0], footL: [30 * kick, 0, 0],
+        legR: { rx: -6, rz: 3 }, kneeR: [-5, 0, 0], footR: [-14 * kick, 0, 0],
+        base: { py: 0.20 * kick, sy: 0.06, sx: -0.03, sz: -0.03 }, brim: [-9, 0, 0], shirt: [-12, 0, 0],
       } },
-      // 3b — held. Only the hair and the brim move.
+      // 3b — held. Only the hair, the brim and the shirttail move.
       { t: apex + hold, ease: 'hold', pose: {
-        chest: { rx: 8 + (k.lean ?? 0), ry: 46 * turn }, neck: { rx: 10, ry: -52 * turn },
-        armL: { rx: 56, rz: 32 }, elbL: [130, 0, 0], armR: { rx: -32 - 16 * hands, rz: -32 }, elbR: [100, 0, 0],
-        legL: { rx: 110 * kick, rz: 10 }, kneeL: [-118 * kick, 0, 0], footL: [28 * kick, 0, 0],
-        legR: { rx: -4 }, kneeR: [-4, 0, 0],
-        base: { py: 0.12 * kick, sy: 0.05, sx: -0.02, sz: -0.02 }, brim: [-3, 0, 0],
+        hips: { ry: 26 * turn, rz: -9 * kick },
+        chest: { rx: 8 + (k.lean ?? 0), ry: 52 * turn }, neck: { rx: 10, ry: -58 * turn },
+        armL: { rx: 60, rz: 36 }, elbL: [130, 0, 0], armR: { rx: -40 - 22 * hands, rz: -36 }, elbR: [100, 0, 0],
+        legL: { rx: 124 * kick, rz: 14 }, kneeL: [-130 * kick, 0, 0], footL: [34 * kick, 0, 0],
+        legR: { rx: -6, rz: 3 }, kneeR: [-3, 0, 0], footR: [-16 * kick, 0, 0],
+        base: { py: 0.23 * kick, sy: 0.07, sx: -0.035, sz: -0.035 }, brim: [-4, 0, 0], shirt: [-6, 0, 0],
       } },
       // 4 — stride. Front foot reaches, the arm is STILL BACK. That is the separation.
       { t: 0.82 * d, ease: 'drive', pose: {
-        chest: { rx: -10 + (k.lean ?? 0) * 0.6, ry: 30 * turn }, neck: { rx: 4, ry: -40 * turn },
-        armL: { rx: 80, rz: 24 }, elbL: [70, 0, 0], armR: { rx: -96, rz: -26 + s.rz * 0.35 }, elbR: [70, 0, 0],
-        legL: { rx: 46 * (k.stride ?? 1), rz: 12 }, kneeL: [-30, 0, 0], footL: [-10, 0, 0],
-        legR: { rx: -20 }, kneeR: [-26, 0, 0],
-        base: { py: -0.14, pz: -0.28 * (k.stride ?? 1) },
+        hips: { ry: 8 * turn },
+        chest: { rx: -10 + (k.lean ?? 0) * 0.6, ry: 32 * turn }, neck: { rx: 4, ry: -42 * turn },
+        armL: { rx: 84, rz: 26 }, elbL: [70, 0, 0], armR: { rx: -112, rz: -26 + s.rz * 0.35 }, elbR: [66, 0, 0],
+        legL: { rx: 54 * (k.stride ?? 1), rz: 14 }, kneeL: [-26, 0, 0], footL: [-14, 0, 0],
+        legR: { rx: -24 }, kneeR: [-28, 0, 0],
+        base: { py: -0.18, pz: -0.40 * (k.stride ?? 1) }, shirt: [-18, 0, 0],
       } },
       // 5 — RELEASE. Arm slot decides what this looks like, and it is the tell.
       { t: rel, ease: 'whip', pose: {
@@ -632,7 +640,7 @@ function delivery(name, k) {
         armL: { rx: 22, rz: 30 }, elbL: [46, 0, 0], armR: { rx: s.rx * 0.86, rz: s.rz }, elbR: [s.elb + 18, 0, 0],
         legL: { rx: 34 * (k.stride ?? 1), rz: 10 }, kneeL: [-10, 0, 0],
         legR: { rx: -46 }, kneeR: [-64, 0, 0],
-        base: { py: -0.2, pz: -0.5 * (k.stride ?? 1) }, shirt: [24, 0, 0], brim: [12, 0, 0],
+        base: { py: -0.26, pz: -0.66 * (k.stride ?? 1) }, shirt: [26, 0, 0], brim: [14, 0, 0],
       } },
       // 6 — fall off. Follow-through and overlap, never a snap back to rest.
       { t: d, ease: 'whip', pose: {
@@ -640,7 +648,7 @@ function delivery(name, k) {
         armL: { rx: 14, rz: 32 }, elbL: [40, 0, 0], armR: { rx: s.rx, rz: s.rz * 0.8 }, elbR: [s.elb, 0, 0],
         legL: { rx: 30 * (k.stride ?? 1), rz: 10 }, kneeL: [-6, 0, 0],
         legR: { rx: -58 }, kneeR: [-78, 0, 0],
-        base: { py: -0.22, pz: -0.55 * (k.stride ?? 1) }, shirt: [30, 0, 0], brim: [18, 0, 0],
+        base: { py: -0.30, pz: -0.74 * (k.stride ?? 1) }, shirt: [34, 0, 0], brim: [20, 0, 0],
       } },
     ],
   });
@@ -917,7 +925,7 @@ const pitching = {
     app.scene.add(this.mark);
 
     // the ball in the hand, before it is anywhere else
-    this.held = ballMesh(T.ball.radius, 'worn');
+    this.held = ballMesh(T.ball.radius * 1.12, 'worn');
     this.held.visible = false;
     app.scene.add(this.held);
 
@@ -945,6 +953,9 @@ const pitching = {
     if (!k) return null;
     return k;
   },
+
+  /** Show a named pitch on the next delivery. Used by the showcase scenarios. */
+  force(id, spot) { this.ai.forced = id || null; this.ai.forcedSpot = spot || null; return this; },
 
   /** Public: the roster record of whoever is pitching. */
   pitcher() { return this.ai.profile.kid; },
@@ -1006,9 +1017,9 @@ const pitching = {
     if (!hand) return;
     hand.updateWorldMatrix(true, false);
     _v.setFromMatrixPosition(hand.matrixWorld);
-    // out of the palm, not out of the wrist bone
-    _w.set(0, -0.34 * (k.scale || 1), 0).applyMatrix4(hand.matrixWorld);
-    this.held.position.lerpVectors(_v, _w, 1.0);
+    // just clear of the wrist, on the outside of the fist
+    _w.set(0, -0.20 * (k.scale || 1), 0).applyMatrix4(hand.matrixWorld);
+    this.held.position.lerpVectors(_v, _w, 0.55);
     this.held.visible = true;
   },
 
@@ -1231,9 +1242,9 @@ provide('pitching', impl);
 let diagram = null;
 
 /** Where the chalk diagram is hung: broadside across the block, past the manhole. */
-const DIA = { z: 30, half: 20.5 };
+const DIA = { z: 38, half: 20.5 };
 
-function chalkDot() { return new THREE.SphereGeometry(0.105, 8, 6); }
+function chalkDot() { return new THREE.SphereGeometry(0.072, 7, 5); }
 
 /**
  * WHAT HE'S GOT — the five paths, chalked in the air across the block so you can see
@@ -1255,29 +1266,31 @@ function buildDiagram(app) {
 
   const geo = chalkDot();
   const dotMat = MAT.chalk({ fog: true });
-  const inkMat = MAT.outline(INK, 3.2);
-  const STEP = 1 / 22;
+  const inkMat = MAT.outline(INK, 1.9);
+  // one chalk mark every 1/150 s of flight: the spacing IS the speed. The hummer comes
+  // out as a strung-out dashed line, the lofter as a near-solid one.
+  const STEP = 1 / 150;
 
   const rows = PITCH_ORDER.map((id, i) => {
     const type = PITCHES[id];
-    // strictly coplanar: five curves out of ONE hand is a diagram, five curves at five
-    // depths is a cloud. They separate in the middle of the flight, which is where the
-    // eye reads a pitch anyway.
-    const p0 = new THREE.Vector3(0, 4.30, PT.moundZ - PT.release.stride);
-    const cross = new THREE.Vector3(0, [3.15, 2.35, 2.80, 3.05, 1.55][i], PT.plateZ);
+    // strictly coplanar: five curves out of nearly one hand is a diagram, five curves at
+    // five depths is a cloud. They separate through the middle of the flight, which is
+    // where the eye reads a pitch anyway. The small spread at the hand is the arm slot.
+    const p0 = new THREE.Vector3(0, [4.55, 4.35, 3.90, 4.25, 4.45][i], PT.moundZ - PT.release.stride);
+    const cross = new THREE.Vector3(0, [3.25, 2.25, 2.80, 3.05, 1.50][i], PT.plateZ);
     const p = solve(type, p0, cross, { aim: cross, hand: 1, phase: 1.1 + i * 1.7 });
     return { id, type, p, i };
   });
 
   for (const r of rows) {
-    const n = Math.min(34, Math.max(8, Math.round(r.p.flight / STEP)));
+    const n = Math.min(260, Math.max(12, Math.round(r.p.flight / STEP)));
     const dots = new THREE.InstancedMesh(geo, dotMat, n);
     const ink = new THREE.InstancedMesh(geo, inkMat, n);
     const d = new THREE.Object3D();
     for (let k = 0; k < n; k++) {
       pathAt(r.p, (k + 0.5) * (r.p.flight / n), _v);
       d.position.copy(_v);
-      d.scale.setScalar(0.86 + 0.3 * Math.sin(k * 1.7));   // hand-laid, never machined
+      d.scale.setScalar(0.84 + 0.26 * Math.sin(k * 1.7));  // hand-laid, never machined
       d.updateMatrix();
       dots.setMatrixAt(k, d.matrix);
       ink.setMatrixAt(k, d.matrix);
@@ -1305,7 +1318,7 @@ function buildDiagram(app) {
   const zone = new THREE.Mesh(new THREE.PlaneGeometry(PT.ring.feet, PT.ring.feet), new THREE.MeshBasicMaterial({
     map: ringTexture(), transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide, fog: false,
   }));
-  zone.position.set(DIA.half + 0.4, 2.6, DIA.z);
+  zone.position.set(-DIA.half - 0.5, 2.55, DIA.z);
   zone.renderOrder = 7;
   g.add(zone);
 
@@ -1329,14 +1342,14 @@ function buildDiagram(app) {
     const hit = nearestOnPath(r.p, cx);
     const to = new THREE.Vector3(cx, hit + 0.5, DIA.z - 0.2);
     const from = new THREE.Vector3(cx, cy - H * 0.5 - 0.15, DIA.z - 0.2);
-    const nn = Math.max(2, Math.min(9, Math.round((from.y - to.y) / 0.62)));
+    const nn = Math.max(2, Math.min(14, Math.round((from.y - to.y) / 0.52)));
     const lead = new THREE.InstancedMesh(geo, dotMat, nn);
     const leadInk = new THREE.InstancedMesh(geo, inkMat, nn);
     const d3 = new THREE.Object3D();
     for (let k = 0; k < nn; k++) {
       const u = (k + 1) / (nn + 1);
       d3.position.lerpVectors(from, to, u);
-      d3.scale.setScalar(0.5);
+      d3.scale.setScalar(0.62);
       d3.updateMatrix();
       lead.setMatrixAt(k, d3.matrix); leadInk.setMatrixAt(k, d3.matrix);
     }
@@ -1392,9 +1405,9 @@ registerScenario('pitch_types', {
     app.pitching.markT = 0;
     app.sim.state.phase = 'idle';
     app.sim.ball.live = false; app.sim.ball.inFlight = false;
-    app.camera.fov = 36;
-    app.camera.position.set(0.5, 15.2, -14);
-    app.camera.lookAt(0, 7.2, DIA.z);
+    app.camera.fov = 37;
+    app.camera.position.set(0.4, 12.2, -7.5);
+    app.camera.lookAt(0, 7.4, DIA.z);
     app.camera.updateProjectionMatrix();
     faceCards(app);
   },
@@ -1402,16 +1415,23 @@ registerScenario('pitch_types', {
 });
 
 /** The delivery, held at the leg-kick apex — the pose the whole street imitates. */
+// how far into the delivery the still is taken; the film tool overrides it to 0
+let WINDUP_OFFSET = null;
+const WINDUP_AT = () => (WINDUP_OFFSET !== null ? WINDUP_OFFSET
+  : (APP.pitching.apexT ?? 0.9) + PT.apexHold * 0.5);
+globalThis.__SB_WINDUP_AT = (v) => { WINDUP_OFFSET = v; };
+
 registerScenario('pitch_windup', {
   seed: 1926,
   setup: () => {
     const app = APP;
+    app.pitching.force('heat', SPOTS.upIn);
     app.sim.reset(1926);
-    const P = app.pitching;
-    app.clock.advance((P.apexT ?? 0.9) + PT.apexHold * 0.5);
+    app.pitching.force(null);
+    app.clock.advance(WINDUP_AT());
     app.camera.fov = 46;
-    app.camera.position.set(-12.4, 10.5, 28.2);
-    app.camera.lookAt(0, 2.6, PT.moundZ);
+    app.camera.position.set(17.4, 9.2, 41.6);
+    app.camera.lookAt(-1.2, 3.1, PT.moundZ + 1.2);
     app.camera.updateProjectionMatrix();
   },
   settle: 0,
@@ -1422,14 +1442,16 @@ registerScenario('pitch_aim', {
   seed: 1927,
   setup: () => {
     const app = APP;
+    app.pitching.force('heat', SPOTS.outLow);
     app.sim.reset(1927);
+    app.pitching.force(null);
     const P = app.pitching;
     app.clock.advance((P.releaseT ?? 1.6) + 0.02);
     const f = app.sim.pitch ? app.sim.pitch.flight : 0.7;
-    app.clock.advance(f * 0.52);
-    app.camera.fov = 42;
-    app.camera.position.set(-14.6, 8.2, 4.4);
-    app.camera.lookAt(0.4, 3.8, 24);
+    app.clock.advance(f * 0.38);
+    app.camera.fov = 40;
+    app.camera.position.set(6.4, 7.0, -13.2);
+    app.camera.lookAt(-1.0, 3.3, 26);
     app.camera.updateProjectionMatrix();
   },
   settle: 0,

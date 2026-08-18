@@ -22,7 +22,7 @@ import { registerScenario } from '../core/scenarios.js';
 import { RNG } from '../core/rng.js';
 import { bus } from '../core/bus.js';
 import {
-  CHALK, INK, PAVEMENT, FACADE, ACCENTS, CLOTH, AIR, soot,
+  CHALK, INK, PAVEMENT, FACADE, ACCENTS, CLOTH,
 } from '../render/palette.js';
 import { mix, inkOf, hexCSS, LEATHER } from '../chars/wardrobe.js';
 import { chalkStroke } from '../world/props.js';
@@ -30,7 +30,7 @@ import {
   screen, cardCanvas, bustCanvas, cardShadow, pavement, slab, chalk, slabW, wrap, say,
   fitSlab, fitChalk, chalkHead,
 } from '../chars/portraits.js';
-import { ROSTER, getKid, POOL, CAPTAINS, pickValue, STAT_KEYS } from '../chars/roster.js';
+import { getKid, POOL, CAPTAINS, pickValue } from '../chars/roster.js';
 
 const C = (h) => hexCSS(h);
 const TAU = Math.PI * 2;
