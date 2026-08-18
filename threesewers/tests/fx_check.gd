@@ -21,16 +21,36 @@ func _load(name_s: String) -> Texture2D:
 			return load(p)
 	return null
 
+# The front end and the HUD load by their own paths, so they need checking too.
+const UI := ["ui_pip_ball", "ui_pip_out", "ui_pip_star", "ui_ticket",
+	"ui_banner", "ui_plate", "ui_rack_header", "ui_ribbon", "ui_scrim",
+	"ui_shelf", "ui_stamp", "ui_card_plate"]
+
+func _check(bad: Array, label: String, t: Texture2D) -> void:
+	if t == null:
+		bad.append("%s: not found" % label)
+	elif t.get_width() < 2 or t.get_height() < 2:
+		bad.append("%s: degenerate %dx%d" % [label, t.get_width(), t.get_height()])
+
 func _init() -> void:
 	var bad: Array = []
 	for n in NEEDED:
-		var t := _load(String(n))
-		if t == null:
-			bad.append("%s: not found" % n)
-		elif t.get_width() < 2 or t.get_height() < 2:
-			bad.append("%s: degenerate %dx%d" % [n, t.get_width(), t.get_height()])
+		_check(bad, String(n), _load(String(n)))
+	for n in UI:
+		var p := "res://assets/ui/%s.png" % n
+		_check(bad, String(n), load(p) if ResourceLoader.exists(p) else null)
+	# every kid's card, and the back-view art the batter actually wears
+	var f := FileAccess.open("res://data/characters.json", FileAccess.READ)
+	if f != null:
+		var roster = JSON.parse_string(f.get_as_text())
+		if roster is Dictionary:
+			for id in roster.keys():
+				for suffix in ["card", "bat_back_0", "swing_back_0"]:
+					var p2 := "res://assets/characters/chr_%s_%s.png" % [id, suffix]
+					_check(bad, "%s_%s" % [id, suffix],
+						load(p2) if ResourceLoader.exists(p2) else null)
 	if bad.is_empty():
-		print("FX OK  (%d sprites)" % NEEDED.size())
+		print("FX OK  (%d sprites + ui + roster)" % NEEDED.size())
 		quit(0)
 	for b in bad:
 		print("FX FAIL  ", b)
