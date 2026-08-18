@@ -118,7 +118,7 @@ export const ROSTER = [
     accent: 'red',
     art: {
       id: 'sal', name: 'Salvatore Marino', nick: 'Socks', sex: 'b', fam: 'fireplug',
-      skin: 3, hair: 0, accent: 'red', slot: 'sweater', prop: 'newspaper',
+      skin: 3, hair: 0, accent: 'red', slot: 'sweater', prop: 'stick',
       pose: 'batReady', team: 0, ex: 'determined', quirk: { browThick: 1.3, droopy: 'R' },
     },
     voice: { pitch: 0.92, rasp: 0.55, sting: 'trombone' },
@@ -141,7 +141,7 @@ export const ROSTER = [
     art: {
       id: 'kathleen', name: 'Kathleen Doyle', nick: 'Legs', sex: 'g', fam: 'beanpole',
       skin: 0, hair: 3, accent: 'bottleGreen', slot: 'ribbon', hairStyle: 'ponytail',
-      prop: null, pose: 'point', team: 1, ex: 'grin', dh: -0.06, quirk: { freckles: 2 },
+      prop: 'ball', pose: 'point', team: 1, ex: 'grin', dh: -0.06, quirk: { freckles: 2 },
     },
     voice: { pitch: 1.18, rasp: 0.30, sting: 'penny_whistle' },
     power: 4, speed: 9, armRate: 8, colors: { shirt: 0x2f7f63, cap: 0x6d3f2a },
@@ -162,7 +162,7 @@ export const ROSTER = [
     accent: 'claret',
     art: {
       id: 'filomena', name: 'Filomena Greco', nick: 'Fanny', sex: 'g', fam: 'fireplug',
-      skin: 3, hair: 0, accent: 'claret', slot: 'sweater', hairStyle: 'braids',
+      skin: 3, hair: 0, accent: 'claret', slot: 'sweater', hat: 'none', hairStyle: 'braids',
       prop: null, pose: 'ready', team: 0, ex: 'neutral', dh: -0.08, scale: 0.9,
       quirk: { eyeSize: 1.06 },
     },
@@ -230,7 +230,7 @@ export const ROSTER = [
     accent: 'plum',
     art: {
       id: 'bessie', name: 'Bessie Katz', nick: 'Beans', sex: 'g', fam: 'melon',
-      skin: 2, hair: 1, accent: 'plum', slot: 'ribbon', hairStyle: 'pigtails',
+      skin: 2, hair: 1, accent: 'plum', slot: 'ribbon', hat: 'none', hairStyle: 'pigtails',
       prop: 'jar', pose: 'hipsHands', team: 1, ex: 'taunt', quirk: { tongue: 'L' },
     },
     voice: { pitch: 1.22, rasp: 0.48, sting: 'wood_block' },
@@ -384,7 +384,7 @@ export const ROSTER = [
     accent: 'periwinkle',
     art: {
       id: 'luz', name: 'Luz Ortiz', nick: 'Lefty', sex: 'g', fam: 'brace',
-      skin: 3, hair: 0, accent: 'periwinkle', slot: 'ribbon', hairStyle: 'braids',
+      skin: 3, hair: 0, accent: 'periwinkle', slot: 'ribbon', hat: 'none', hairStyle: 'braids',
       prop: null, pose: 'crutch', team: 0, ex: 'smug', dh: 0.05,
     },
     voice: { pitch: 1.14, rasp: 0.22, sting: 'cuatro' },
@@ -406,7 +406,7 @@ export const ROSTER = [
     accent: 'bottleGreen',
     art: {
       id: 'ling', name: 'Chin Yuk-ling', nick: 'Lefty', sex: 'g', fam: 'sack',
-      skin: 2, hair: 0, accent: 'bottleGreen', slot: 'sweater', hairStyle: 'bob',
+      skin: 2, hair: 0, accent: 'bottleGreen', slot: 'sweater', hat: 'none', hairStyle: 'bob',
       prop: 'cards', pose: 'sleeves', team: 1, ex: 'neutral', dh: -0.04, scale: 0.94,
       quirk: { eyeSize: 1.08 },
     },
@@ -429,7 +429,7 @@ export const ROSTER = [
     accent: 'plum',
     art: {
       id: 'maureen', name: 'Maureen Sheehan', nick: 'Duchess', sex: 'g', fam: 'bandbox',
-      skin: 0, hair: 5, accent: 'plum', slot: 'ribbon', hairStyle: 'bob',
+      skin: 0, hair: 5, accent: 'plum', slot: 'ribbon', hat: 'none', hairStyle: 'bob',
       prop: null, pose: 'tidy', team: 0, ex: 'smug', dh: 0.04, quirk: { freckles: 1 },
     },
     voice: { pitch: 1.24, rasp: 0.08, sting: 'celesta' },

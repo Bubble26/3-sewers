@@ -89,16 +89,16 @@ const PRESETS = {
     },
     fog: { color: AIR.haze, near: 130, far: 660 },
     rig: {
-      keyHex: sunlit(0xffffff, 0.28), keyI: 1.62,
-      skyHex: mix(AIR.skyFill, AIR.haze, 0.30), groundHex: AIR.brickBounce, hemiI: 1.05,
-      bounceHex: AIR.brickBounce, bounceI: 0.30,
-      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.45), ambI: 0.22,
+      keyHex: sunlit(0xffffff, 0.30), keyI: 1.26,
+      skyHex: mix(AIR.skyFill, AIR.haze, 0.34), groundHex: AIR.brickBounce, hemiI: 1.16,
+      bounceHex: AIR.brickBounce, bounceI: 0.34,
+      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.45), ambI: 0.27,
     },
     wash: {
-      sunCol: sunlit(PAVEMENT.asphaltSun, 0.42), sunA: 0.20,
-      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.62), shdA: 0.34,
-      wallSunCol: sunlit(FACADE.brickSun, 0.38), wallSunA: 0.15,
-      wallShdCol: mix(FACADE.brickShade, AIR.shadowTint, 0.58), wallShdA: 0.13,
+      sunCol: sunlit(PAVEMENT.asphaltSun, 0.48), sunA: 0.24,
+      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.50), shdA: 0.22,
+      wallSunCol: sunlit(FACADE.brickSun, 0.40), wallSunA: 0.16,
+      wallShdCol: mix(FACADE.brickShade, AIR.shadowTint, 0.55), wallShdA: 0.12,
       shaft: 0.055,
     },
   },
@@ -111,33 +111,33 @@ const PRESETS = {
     // but the plate keeps five feet of sun, on purpose. Authored, not computed.
     alt: 25, h: [-0.790, -0.613],
     sky: {
-      zenith: mix(soot(AIR.skyUpper, 0.30), AIR.shadowTint, 0.22),
-      upper: mix(AIR.skyUpper, AIR.sunTint, 0.16),
-      lower: mix(AIR.skyLower, AIR.sunTint, 0.34),
-      horizon: sunlit(AIR.haze, 0.52),
-      glow: sunlit(AIR.haze, 0.72),
-      glowK: 16, glowAmt: 0.72, scatter: 0.52,
+      zenith: mix(soot(AIR.skyUpper, 0.24), AIR.shadowTint, 0.28),
+      upper: mix(AIR.skyUpper, AIR.sunTint, 0.22),
+      lower: mix(AIR.skyLower, AIR.sunTint, 0.52),
+      horizon: sunlit(AIR.haze, 0.70),
+      glow: sunlit(AIR.haze, 0.88),
+      glowK: 9, glowAmt: 0.82, scatter: 0.66,
     },
     cloud: {
-      lit: sunlit(AIR.haze, 0.34),
-      mid: mix(sunlit(AIR.haze, 0.34), FACADE.ochre, 0.34),
-      shade: mix(AIR.skyLower, AIR.shadowTint, 0.62),
-      cirrus: sunlit(AIR.haze, 0.44),
+      lit: sunlit(AIR.haze, 0.46),
+      mid: mix(sunlit(AIR.haze, 0.40), FACADE.ochre, 0.42),
+      shade: mix(mix(AIR.skyLower, AIR.shadowTint, 0.66), FACADE.ochreShade, 0.22),
+      cirrus: sunlit(AIR.haze, 0.58),
       alpha: 0.95,
     },
-    fog: { color: sunlit(AIR.haze, 0.34), near: 100, far: 620 },
+    fog: { color: sunlit(AIR.haze, 0.50), near: 90, far: 600 },
     rig: {
-      keyHex: sunlit(0xffffff, 0.62), keyI: 1.55,
-      skyHex: mix(AIR.skyFill, AIR.sunTint, 0.18), groundHex: sunlit(AIR.brickBounce, 0.30), hemiI: 1.02,
-      bounceHex: sunlit(AIR.brickBounce, 0.34), bounceI: 0.40,
-      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.55), ambI: 0.24,
+      keyHex: sunlit(0xffffff, 0.70), keyI: 1.34,
+      skyHex: mix(AIR.skyFill, AIR.sunTint, 0.26), groundHex: sunlit(AIR.brickBounce, 0.40), hemiI: 1.08,
+      bounceHex: sunlit(AIR.brickBounce, 0.44), bounceI: 0.52,
+      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.60), ambI: 0.28,
     },
     wash: {
-      sunCol: sunlit(PAVEMENT.blockCrown, 0.62), sunA: 0.30,
-      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.74), shdA: 0.40,
-      wallSunCol: sunlit(FACADE.ochre, 0.55), wallSunA: 0.30,
-      wallShdCol: mix(FACADE.brickShade, AIR.shadowTint, 0.66), wallShdA: 0.16,
-      shaft: 0.10,
+      sunCol: sunlit(PAVEMENT.blockCrown, 0.74), sunA: 0.38,
+      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.62), shdA: 0.28,
+      wallSunCol: sunlit(FACADE.ochre, 0.66), wallSunA: 0.34,
+      wallShdCol: mix(FACADE.brickShade, AIR.shadowTint, 0.62), wallShdA: 0.17,
+      shaft: 0.11,
     },
   },
 };
@@ -346,61 +346,81 @@ function cloudAtlas(P) {
   const rng = new RNG(19250922);
   const LIT = css(P.lit), MID = css(P.mid), SHD = css(P.shade), CIR = css(P.cirrus);
 
-  const lobes = (n, w, h, baseY, spread) => {
-    const out = [];
-    for (let i = 0; i < n; i++) {
-      const u = n === 1 ? 0.5 : i / (n - 1);
-      const bell = Math.sin(Math.PI * (0.14 + 0.72 * u));
-      out.push({
-        x: (u - 0.5) * w * spread,
-        y: baseY - bell * h * (0.38 + 0.52 * rng.next()),
-        r: h * (0.30 + 0.34 * bell) * (0.78 + 0.44 * rng.next()),
-      });
-    }
-    return out;
-  };
-
-  const drawCumulus = (ox, oy, n, w, h, spread) => {
-    const baseY = oy + TILE * 0.70;
+  /**
+   * One cumulus: a flat base of small lobes all tangent to the same waterline,
+   * a cauliflower crown of bigger lobes above it, and the whole silhouette then
+   * cut into three tone bands on a diagonal — poster banding, hard stops, no
+   * airbrush. The sun is up and to the sprite's right, which is where it is in
+   * the world when the camera looks east down the block.
+   */
+  const drawCumulus = (ox, oy, nBase, nCrown, spanU, hU) => {
+    const baseY = oy + TILE * 0.74;
     const cx = ox + TILE * 0.5;
-    const L = lobes(n, w, h, baseY, spread);
-    const body = () => {
+    const span = TILE * spanU, H = TILE * hU;
+    const lobes = [];
+    let minR = 1e9;
+    for (let i = 0; i < nBase; i++) {
+      const u = nBase === 1 ? 0.5 : i / (nBase - 1);
+      const bell = 0.34 + 0.66 * Math.sin(Math.PI * (0.10 + 0.80 * u));
+      const r = H * 0.30 * bell * (0.86 + 0.28 * rng.next());
+      lobes.push({ x: cx + (u - 0.5) * span, y: baseY - r, r, crown: 0 });
+      minR = Math.min(minR, r);
+    }
+    for (let i = 0; i < nCrown; i++) {
+      const u = nCrown === 1 ? 0.5 : i / (nCrown - 1);
+      const bell = 0.42 + 0.58 * Math.sin(Math.PI * (0.16 + 0.68 * u));
+      const r = H * 0.52 * bell * (0.82 + 0.36 * rng.next());
+      const lift = H * (0.16 + 0.40 * bell) * (0.8 + 0.4 * rng.next());
+      lobes.push({ x: cx + (u - 0.5) * span * 0.68 + (rng.next() - 0.5) * H * 0.16, y: baseY - r - lift, r, crown: 1 });
+    }
+    const silhouette = () => {
       g.beginPath();
-      for (const l of L) { g.moveTo(cx + l.x + l.r, l.y); g.arc(cx + l.x, l.y, l.r, 0, Math.PI * 2); }
-      g.rect(cx - w * 0.5 * spread, baseY - h * 0.30, w * spread, h * 0.30);
+      for (const l of lobes) { g.moveTo(l.x + l.r, l.y); g.arc(l.x, l.y, l.r, 0, Math.PI * 2); }
+      g.moveTo(lobes[0].x, baseY - minR);
+      g.rect(lobes[0].x, baseY - minR, lobes[nBase - 1].x - lobes[0].x, minR);
       g.closePath();
     };
-    // 1. the body
+
     g.save();
-    body(); g.fillStyle = MID; g.fill();
-    // 2. clip to it, then lay the two other bands inside
+    silhouette();
     g.clip();
-    // the blue-violet belly: the body pushed up and away from the sun
-    g.save();
-    g.translate(-h * 0.10, -h * 0.30);
-    body(); g.fillStyle = SHD; g.fill();
-    g.restore();
-    // and the mid band back over it, leaving the belly as a rim
-    g.save();
-    g.translate(h * 0.06, -h * 0.44);
-    body(); g.fillStyle = MID; g.fill();
-    g.restore();
-    // the sunlit crown, offset toward the sun (up and to the sprite's right)
-    g.save();
-    g.translate(h * 0.13, h * 0.20);
-    body(); g.fillStyle = LIT; g.fill();
-    g.restore();
-    g.restore();
-    // 3. a hand-cut edge: a thin lit rim on the top lobes only
-    g.save();
-    g.lineWidth = Math.max(2, h * 0.045);
-    g.strokeStyle = LIT;
+    // three bands, cut on the diagonal the sun comes from
+    const grd = g.createLinearGradient(cx - span * 0.5, baseY, cx + span * 0.42, baseY - H * 1.5);
+    grd.addColorStop(0.00, SHD);
+    grd.addColorStop(0.30, SHD);
+    grd.addColorStop(0.315, MID);
+    grd.addColorStop(0.66, MID);
+    grd.addColorStop(0.675, LIT);
+    grd.addColorStop(1.00, LIT);
+    g.fillStyle = grd;
+    g.fillRect(ox, oy, TILE, TILE);
+    // the belly: a flat shaded strip along the waterline, which is what makes a
+    // cumulus sit in the air instead of floating like a paper cut-out
+    const belly = g.createLinearGradient(0, baseY - H * 0.34, 0, baseY);
+    belly.addColorStop(0, 'rgba(0,0,0,0)');
+    belly.addColorStop(1, SHD);
+    g.globalAlpha = 0.85;
+    g.fillStyle = belly;
+    g.fillRect(ox, baseY - H * 0.34, TILE, H * 0.4);
+    g.globalAlpha = 1;
+    // lit rims on the crown lobes, shade rims underneath: inside the clip, so
+    // nothing can poke a corner out of the silhouette
     g.lineCap = 'round';
-    for (const l of L) {
-      if (l.r < h * 0.24) continue;
+    for (const l of lobes) {
+      if (l.r < H * 0.20) continue;
+      g.lineWidth = Math.max(2.2, l.r * 0.16);
+      g.strokeStyle = LIT;
       g.beginPath();
-      g.arc(cx + l.x, l.y, l.r - g.lineWidth * 0.5, Math.PI * 1.06, Math.PI * 1.92);
+      g.arc(l.x, l.y, l.r - g.lineWidth * 0.45, Math.PI * 1.20, Math.PI * 2.02);
       g.stroke();
+      if (!l.crown) continue;
+      g.lineWidth = Math.max(1.8, l.r * 0.11);
+      g.strokeStyle = SHD;
+      g.globalAlpha = 0.55;
+      g.beginPath();
+      g.arc(l.x, l.y, l.r - g.lineWidth * 0.45, Math.PI * 0.22, Math.PI * 0.86);
+      g.stroke();
+      g.globalAlpha = 1;
     }
     g.restore();
   };
@@ -411,25 +431,25 @@ function cloudAtlas(P) {
     g.strokeStyle = CIR;
     g.lineCap = 'round';
     for (let i = 0; i < streaks; i++) {
-      const y = (rng.next() - 0.5) * TILE * 0.5;
-      const len = TILE * (0.42 + 0.5 * rng.next());
-      const x0 = rng.range(6, TILE - len - 6);
-      g.globalAlpha = 0.30 + 0.42 * rng.next();
-      g.lineWidth = 2 + rng.next() * 7;
+      const y = (rng.next() - 0.5) * TILE * 0.44;
+      const len = TILE * (0.44 + 0.46 * rng.next());
+      const x0 = rng.range(8, TILE - len - 8);
+      g.globalAlpha = 0.26 + 0.40 * rng.next();
+      g.lineWidth = 2 + rng.next() * 8;
       g.beginPath();
       g.moveTo(x0, y);
-      g.bezierCurveTo(x0 + len * 0.34, y - 9 - rng.next() * 12, x0 + len * 0.7, y + 5, x0 + len, y - 3 - rng.next() * 8);
+      g.bezierCurveTo(x0 + len * 0.34, y - 8 - rng.next() * 11, x0 + len * 0.70, y + 5, x0 + len, y - 3 - rng.next() * 7);
       g.stroke();
     }
     g.restore();
   };
 
-  drawCumulus(0, 0, 7, TILE * 0.92, TILE * 0.42, 0.86);
-  drawCumulus(TILE, 0, 5, TILE * 0.76, TILE * 0.50, 0.72);
-  drawCumulus(TILE * 2, 0, 9, TILE * 0.98, TILE * 0.34, 0.94);
-  drawCumulus(TILE * 3, 0, 3, TILE * 0.50, TILE * 0.44, 0.52);
-  drawCumulus(0, TILE, 6, TILE * 0.88, TILE * 0.30, 0.90);
-  drawCumulus(TILE, TILE, 4, TILE * 0.62, TILE * 0.56, 0.60);
+  drawCumulus(0, 0, 7, 4, 0.80, 0.36);
+  drawCumulus(TILE, 0, 5, 3, 0.60, 0.44);
+  drawCumulus(TILE * 2, 0, 9, 5, 0.90, 0.28);
+  drawCumulus(TILE * 3, 0, 3, 2, 0.40, 0.40);
+  drawCumulus(0, TILE, 6, 4, 0.84, 0.26);
+  drawCumulus(TILE, TILE, 4, 3, 0.52, 0.50);
   drawCirrus(TILE * 2, TILE, 5);
   drawCirrus(TILE * 3, TILE, 4);
 
@@ -452,26 +472,28 @@ function makeClouds() {
     const ce = Math.cos(el * D2R);
     out.push({
       pos: new THREE.Vector3(Math.sin(az * D2R) * R * ce, Math.sin(el * D2R) * R, Math.cos(az * D2R) * R * ce),
-      w, h: w * (tile[4] || 0.55), uv: TILE_UV(tile[0], tile[1]), dim,
+      w, h: w * tile[2], uv: TILE_UV(tile[0], tile[1]), dim,
       drift: r.range(0.5, 1.4), phase: r.range(0, 6.28), flip: r.chance(0.5),
     });
   };
-  // the two that sit in the canyon gap, where the gameplay camera can see them
-  put(-5, 12.5, 210, [0, 0, 0, 0, 0.50]);
-  put(9, 15.5, 150, [1, 0, 0, 0, 0.62]);
-  put(2, 21.0, 118, [3, 0, 0, 0, 0.80], 0.94);
+  // the three that sit in the canyon gap, where the gameplay camera sees them
+  put(-7, 10.5, 118, [0, 0, 0.46]);
+  put(8, 13.0, 86, [1, 0, 0.60]);
+  put(1, 17.5, 70, [3, 0, 0.78], 0.95);
+  put(17, 9.0, 96, [2, 0, 0.36], 0.97);
   // and the rest of the hemisphere, for the wide and roof-level shots
-  put(-34, 17, 250, [2, 0, 0, 0, 0.40]);
-  put(38, 13, 190, [0, 1, 0, 0, 0.36]);
-  put(66, 22, 230, [1, 1, 0, 0, 0.82], 0.96);
-  put(-72, 19, 200, [0, 0, 0, 0, 0.50], 0.96);
-  put(128, 26, 260, [2, 0, 0, 0, 0.40], 0.92);
-  put(-140, 15, 220, [1, 0, 0, 0, 0.62], 0.92);
-  put(176, 20, 240, [0, 1, 0, 0, 0.36], 0.90);
+  put(-34, 15, 170, [2, 0, 0.36]);
+  put(40, 12, 130, [0, 1, 0.32]);
+  put(68, 20, 150, [1, 1, 0.80], 0.96);
+  put(-74, 17, 140, [0, 0, 0.46], 0.96);
+  put(126, 24, 180, [2, 0, 0.36], 0.92);
+  put(-138, 14, 150, [1, 0, 0.60], 0.92);
+  put(174, 19, 160, [0, 1, 0.32], 0.90);
+  put(96, 11, 120, [3, 0, 0.78], 0.94);
   // cirrus, high and thin
-  put(-18, 30, 320, [2, 1, 0, 0, 0.42], 0.85);
-  put(46, 34, 300, [3, 1, 0, 0, 0.42], 0.85);
-  put(-96, 28, 300, [2, 1, 0, 0, 0.42], 0.8);
+  put(-20, 27, 280, [2, 1, 0.40], 0.85);
+  put(48, 31, 260, [3, 1, 0.40], 0.85);
+  put(-100, 25, 260, [2, 1, 0.40], 0.80);
   return out;
 }
 

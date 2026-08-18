@@ -247,7 +247,7 @@ export class Trail {
     }
     this.pos.needsUpdate = true;
     this.col.needsUpdate = true;
-    this.mat.opacity = Math.min(0.46, this.strength);
+    this.mat.opacity = Math.min(0.62, this.strength);
   }
 }
 
@@ -311,6 +311,28 @@ export class Rig {
     }
   }
   updateSecondary(dt) { if (Rig.SECONDARY_OFF) return; for (const j of this.jiggles) j.update(dt); }
+
+  /**
+   * Height of the root above its rest position, in feet — i.e. how far off the ground the
+   * clip has thrown this kid. Everything that has to know whether a kid is airborne (the
+   * contact shadow, dust, the landing thump) reads it from here rather than guessing.
+   */
+  get lift() { const j = this.joints.get('base'); return j ? j.obj.position.y - j.rp.y : 0; }
+
+  /**
+   * The contact shadow is mandatory under every kid (§2.7) — but a shadow that stays the same
+   * size while the kid is two feet in the air is worse than none, because it welds him to the
+   * road. Drive it off `lift`: shrink and fade going up, spread and darken on a squash.
+   */
+  updateShadow() {
+    const sh = this.shadow;
+    if (!sh) return;
+    const h = this.lift / Math.max(0.5, this.height * 0.34);
+    const k = h >= 0 ? 1 / (1 + h * 1.15) : 1 - h * 0.30;
+    const s = Math.max(0.34, Math.min(1.34, k));
+    sh.obj.scale.set(sh.sx * s, sh.sy * s, 1);
+    sh.obj.material.opacity = sh.op * Math.max(0.16, Math.min(1.12, k * k * 1.05));
+  }
 
   /** Put both mitts on the handle. No-op for a kid who is not carrying one. */
   solveHands() {
@@ -444,6 +466,13 @@ export function bindRig(kid, opts = {}) {
   rig.addJiggle('hair', { k: 130, damp: 11, gain: 2.2, max: 0.8 });
   rig.addJiggle('shirt', { k: 105, damp: 10, gain: 2.0, max: 0.7 });
   if (rig.get('crutch')) rig.addJiggle('crutch', { k: 150, damp: 13, gain: 1.1, max: 0.4 });
+
+  // the character piece parks a soft ellipse under every kid; adopt it so it can breathe
+  const sh = kid.getObjectByName('contactShadow');
+  if (sh && sh.material) {
+    sh.material = sh.material.clone();          // per-kid, so one jump cannot fade the block
+    rig.shadow = { obj: sh, sx: sh.scale.x, sy: sh.scale.y, op: sh.material.opacity };
+  }
 
   kid.userData.animRig = rig;
   return rig;

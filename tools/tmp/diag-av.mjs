@@ -1,0 +1,42 @@
+import { chromium } from 'playwright';
+import { listen } from '../serve.mjs';
+const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const { srv, port } = await listen(0);
+const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-angle=swiftshader','--use-gl=angle','--enable-unsafe-swiftshader','--no-sandbox','--disable-dev-shm-usage'] });
+const page = await browser.newPage({ viewport: { width: 420, height: 460 } });
+page.on('pageerror', e => console.log('PAGEERR', e.message));
+await page.goto(`http://127.0.0.1:${port}/index.html?harness=1`, { waitUntil: 'load' });
+await page.waitForFunction(() => globalThis.__SB && globalThis.__SB.ready, null, { timeout: 60000 });
+const CLIPS = process.argv.slice(2);
+const shots = [];
+for (const spec of CLIPS) {
+  const [name, tt] = spec.split('@');
+  const t = Number(tt || 0);
+  await page.evaluate(async ({ name, t }) => {
+    const SB = globalThis.__SB;
+    await SB.scenario('anim_celebrate');
+    const app = SB.app;
+    const p = app.get('players');
+    const k = p.batter;
+    for (const o of p.kids) o.group.visible = (o === k);
+    k.cycle = null; k.lock = 0; k.target = null; k.speed = 0;
+    k.anim.stopLayers();
+    k.at(0, 40, 0);
+    k.anim.play(name, { fade: 0, restart: true });
+    k.anim.t = t; k.anim.fade = 1; k.anim.prev = null;
+    k.update(1/60);
+    const H = k.group.rotation.y;
+    k.group.rotation.y = k.face = k.faceGoal = Math.atan2(-5.6, -11.2);
+    app.camera.position.set(k.pos.x - 5.6, 5.4, k.pos.y - 11.2);
+    app.camera.lookAt(k.pos.x, 2.9, k.pos.y);
+    app.camera.fov = 40; app.camera.updateProjectionMatrix();
+    SB.renderOnce();
+  }, { name, t });
+  const buf = await page.screenshot({ type: 'jpeg', quality: 88 });
+  shots.push({ spec, d: `data:image/jpeg;base64,${buf.toString('base64')}` });
+}
+const sheet = await browser.newPage({ viewport: { width: Math.min(shots.length,5)*428+16, height: Math.ceil(shots.length/5)*496+40 } });
+await sheet.setContent(`<style>body{margin:0;background:#14120f;color:#e9dfc7;font:12px system-ui;padding:8px}.g{display:grid;grid-template-columns:repeat(${Math.min(shots.length,5)},420px);gap:8px}img{display:block;width:420px}</style><div class="g">${shots.map(s=>`<figure style="margin:0"><img src="${s.d}"><figcaption>${s.spec}</figcaption></figure>`).join('')}</div>`);
+await sheet.screenshot({ path: 'shots/av-r1a/poses.png', fullPage: true });
+await browser.close(); srv.close();
+console.log('ok');
