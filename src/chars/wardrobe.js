@@ -32,6 +32,15 @@ export const hexOf = (r, g, b) => (Math.round(clamp(r, 0, 1) * 255) << 16)
   | (Math.round(clamp(g, 0, 1) * 255) << 8) | Math.round(clamp(b, 0, 1) * 255);
 export const hexCSS = (h) => `#${(h >>> 0).toString(16).padStart(6, '0')}`;
 
+/**
+ * Vertex colours are handed to the GPU in the LINEAR working space — three.js converts
+ * material.color and textures for you and does not convert vertex colours. Baking sRGB
+ * hex straight into a colour attribute is what makes an authored palette come out pale,
+ * gold-rimmed and washed out, so every baked colour goes through here first.
+ */
+const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+export const linOf = (h) => rgbOf(h).map(srgbToLinear);
+
 export function mix(a, b, t) {
   const [ar, ag, ab] = rgbOf(a), [br, bg, bb] = rgbOf(b);
   return hexOf(ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t);
@@ -70,8 +79,10 @@ function coolHue(h, deg) {
 
 /** Band 2: the base at 0.72x luminance, hue rotated +6 cool. Terminator is hard. */
 export function coolShade(hex, k = 0.72) {
-  const [h, s, l] = toHSL(hex);
-  return fromHSL(coolHue(h, 6), Math.min(1, s + 0.04), l * k);
+  const [r, g, b] = rgbOf(hex);
+  const dark = hexOf(r * k, g * k, b * k);          // exactly 0.72x luminance, hue held
+  const [h, sa, l] = toHSL(mix(dark, AIR.shadowTint, 0.10));   // and 6 degrees toward skylight
+  return fromHSL(coolHue(h, 6), Math.min(1, sa + 0.03), l);
 }
 /** Band 3: undersides catch a warm kick off the roadway — brickBounce at 25%, +6 L*. */
 export function bounceOf(hex) {
@@ -81,7 +92,7 @@ export function bounceOf(hex) {
 /** §4.2 outline: same hue, L* down ~40 points, saturation up. Never grey, never flat ink. */
 export function inkOf(hex) {
   const [h, s, l] = toHSL(hex);
-  return fromHSL(h, Math.min(1, s * 1.18 + 0.10), Math.max(0.055, l * 0.30));
+  return fromHSL(h, Math.min(1, s * 1.25 + 0.12), Math.max(0.050, Math.min(0.26, l * 0.24)));
 }
 
 /* Cloth the palette does not name directly, all derived from it — never invented. */
@@ -102,9 +113,9 @@ export const HAIR = [
   soot(PAVEMENT.belgianBlock, 0.30),         // mousy
 ];
 export const LEATHER = [
-  soot(ACCENTS.tan, 0.42),
-  soot(FACADE.brickShade, 0.44),
-  soot(PAVEMENT.asphaltDark, 0.10),
+  soot(ACCENTS.tan, 0.46),
+  soot(FACADE.brickShade, 0.42),
+  soot(mix(ACCENTS.tan, FACADE.brickShade, 0.6), 0.56),
 ];
 export const SOCKWOOL = [
   soot(PAVEMENT.asphaltDark, 0.34),
@@ -123,10 +134,10 @@ const KEY = (() => { const v = [-0.50, 0.66, 0.56]; const n = Math.hypot(...v); 
 function bakeBands(geo, hex, opt) {
   const pos = geo.attributes.position, nrm = geo.attributes.normal;
   const n = pos.count;
-  const lit = rgbOf(hex);
-  const shd = rgbOf(coolShade(hex, opt.shade ?? 0.72));
-  const bnc = rgbOf(bounceOf(hex));
-  const olc = rgbOf(inkOf(hex));
+  const lit = linOf(hex);
+  const shd = linOf(coolShade(hex, opt.shade ?? 0.72));
+  const bnc = linOf(bounceOf(hex));
+  const olc = linOf(inkOf(hex));
   const col = new Float32Array(n * 3), ocol = new Float32Array(n * 3);
   const term = opt.term ?? 0.05;
   for (let i = 0; i < n; i++) {
@@ -154,7 +165,7 @@ export class Body {
   get empty() { return this.geos.length === 0; }
   /** Dirt is a character trait (§4.4.5): darken vertices inside a sphere. */
   smudge(x, y, z, r, hex = soot(FACADE.brickShade, 0.15), amount = 0.35) {
-    const t = rgbOf(hex), r2 = r * r;
+    const t = linOf(hex), r2 = r * r;
     for (const g of this.geos) {
       const p = g.attributes.position, c = g.attributes.color;
       for (let i = 0; i < p.count; i++) {
@@ -220,17 +231,16 @@ export function outlineOf(geo, width) {
   return out;
 }
 
-const skinMat = () => new THREE.MeshBasicMaterial({ vertexColors: true });
 export function partMesh(body, width, name) {
   const geo = body.merge();
   const g = new THREE.Group();
   g.name = name || 'part';
   const shell = new THREE.Mesh(outlineOf(geo, width), new THREE.MeshBasicMaterial({
-    vertexColors: true, side: THREE.BackSide,
+    vertexColors: true, side: THREE.BackSide, toneMapped: false,
   }));
   shell.renderOrder = -1;
   g.add(shell);
-  g.add(new THREE.Mesh(geo, skinMat()));
+  g.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
   return g;
 }
 
@@ -323,8 +333,11 @@ export function buildCap(body, ctx) {
     sub.add(band, ctx.teamColor, { shade: 0.7 });
   } else {
     const flat = h.kind === 'flat';
-    const rx = hw * 0.585 * h.size, rz = hw * 0.585 * h.size * (flat ? 1.06 : 1.0);
-    const domeH = hh * (flat ? 0.20 : 0.30) * h.size;
+    // 1.15-1.4x the head's PLAN AREA is 1.07-1.18x its plan radius. A cap the wrong size
+    // is the joke on two kids, so size drives width and how far down it drops, not both.
+    const base = hw * 0.555 * (h.size ** 0.85);
+    const rx = base, rz = base * (flat ? 1.08 : 1.02);
+    const domeH = hh * (flat ? 0.38 : 0.44) * (0.88 + 0.12 * h.size);
     // Eight-panel dome: a squashed sphere-cap, drooping forward over the brim.
     const dome = G.sphere(1, 16, 9);
     const dp = dome.attributes.position;
@@ -363,101 +376,104 @@ export function buildCap(body, ctx) {
 export function buildHair(body, ctx) {
   const s = ctx.hair; if (!s || s.style === 'none') return;
   const hw = ctx.hw, hh = ctx.hh, c = s.color;
-  const capped = ctx.hat && ctx.hat.kind !== 'none';
-  if (s.style === 'bowl' || (capped && s.style !== 'pigtails' && s.style !== 'ponytail' && s.style !== 'puff' && s.style !== 'braids')) {
-    // Under a cap only the fringe and the nape show.
-    const fringe = G.tube([[hw * 0.50, 0], [hw * 0.525, -hh * 0.07], [hw * 0.47, -hh * 0.14]], 14);
-    fringe.translate(0, hh * 0.24, 0);
-    body.add(fringe, c);
-    if (!capped) {
-      const bowl = G.sphere(1, 14, 9);
-      const bp = bowl.attributes.position;
-      for (let i = 0; i < bp.count; i++) {
-        const y = bp.getY(i);
-        bp.setXYZ(i, bp.getX(i) * hw * 0.545, Math.max(y, -0.32) * hh * 0.56 + hh * 0.10, bp.getZ(i) * hw * 0.545);
-      }
-      bowl.computeVertexNormals();
-      body.add(bowl, c);
+  const capped = !!(ctx.hat && ctx.hat.kind !== 'none');
+  const tailed = s.style === 'pigtails' || s.style === 'braids' || s.style === 'ponytail';
+
+  const fringe = () => {
+    const f = G.tube([[hw * 0.505, hh * 0.20], [hw * 0.53, hh * 0.09], [hw * 0.47, hh * 0.01]], 16);
+    body.add(f, c);
+    const nape = G.sphere(1, 12, 8);
+    const np = nape.attributes.position;
+    for (let i = 0; i < np.count; i++) {
+      np.setXYZ(i, np.getX(i) * hw * 0.50, Math.max(np.getY(i), -0.5) * hh * 0.16 - hh * 0.06,
+        Math.min(np.getZ(i), -0.1) * hw * 0.54);
     }
-    return;
-  }
-  if (s.style === 'pigtails' || s.style === 'braids') {
-    const base = G.sphere(1, 14, 9);
-    const bp = base.attributes.position;
-    for (let i = 0; i < bp.count; i++) {
-      bp.setXYZ(i, bp.getX(i) * hw * 0.56, Math.max(bp.getY(i), -0.45) * hh * 0.55 + hh * 0.06, bp.getZ(i) * hw * 0.56);
+    nape.computeVertexNormals();
+    body.add(nape, c);
+  };
+  const dome = (top, wide) => {
+    const g = G.sphere(1, 16, 11);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const y = Math.max(p.getY(i), -0.45);
+      p.setXYZ(i, p.getX(i) * hw * wide, y * hh * top + hh * 0.07, p.getZ(i) * hw * wide);
     }
-    base.computeVertexNormals();
-    body.add(base, c);
-    for (const sx of [-1, 1]) {
-      const len = s.style === 'braids' ? hh * 0.55 : hh * 0.34;
-      const tail = G.tube([[hh * 0.11, 0], [hh * 0.135, -len * 0.45], [hh * 0.07, -len]], 10);
-      tail.rotateZ(sx * 0.45);
-      tail.translate(sx * hw * 0.52, hh * 0.04, -hw * 0.06);
-      body.add(tail, c);
+    g.computeVertexNormals();
+    body.add(g, c);
+  };
+  const tails = () => {
+    if (s.style === 'ponytail') {
+      const t = G.tube([[hh * 0.105, 0], [hh * 0.165, -hh * 0.28], [hh * 0.06, -hh * 0.60]], 10);
+      t.rotateX(-0.55);
+      t.translate(0, hh * 0.16, -hw * 0.52);
+      body.add(t, c);
       if (s.ribbon) {
-        const r = G.ring(hh * 0.10, hh * 0.036, 6, 12);
+        const r = G.ring(hh * 0.11, hh * 0.038, 6, 12);
+        r.rotateX(Math.PI / 2 - 0.55);
+        r.translate(0, hh * 0.175, -hw * 0.54);
+        body.add(r, s.ribbon);
+      }
+      return;
+    }
+    const len = s.style === 'braids' ? hh * 0.62 : hh * 0.38;
+    for (const sx of [-1, 1]) {
+      const t = G.tube([[hh * 0.115, 0], [hh * 0.145, -len * 0.45], [hh * 0.07, -len]], 10);
+      t.rotateZ(sx * 0.48);
+      t.translate(sx * hw * 0.50, hh * 0.02, -hw * 0.08);
+      body.add(t, c);
+      if (s.ribbon) {
+        const r = G.ring(hh * 0.105, hh * 0.040, 6, 12);
         r.rotateY(Math.PI / 2);
-        r.rotateZ(sx * 0.45);
-        r.translate(sx * hw * 0.575, hh * 0.10, -hw * 0.06);
+        r.rotateZ(sx * 0.48);
+        r.translate(sx * hw * 0.555, hh * 0.085, -hw * 0.08);
         body.add(r, s.ribbon);
       }
     }
-    return;
-  }
-  if (s.style === 'ponytail') {
-    const base = G.sphere(1, 14, 9);
-    const bp = base.attributes.position;
-    for (let i = 0; i < bp.count; i++) {
-      bp.setXYZ(i, bp.getX(i) * hw * 0.555, Math.max(bp.getY(i), -0.4) * hh * 0.55 + hh * 0.06, bp.getZ(i) * hw * 0.555);
-    }
-    base.computeVertexNormals();
-    body.add(base, c);
-    const tail = G.tube([[hh * 0.10, 0], [hh * 0.155, -hh * 0.28], [hh * 0.06, -hh * 0.58]], 10);
-    tail.rotateX(-0.5);
-    tail.translate(0, hh * 0.14, -hw * 0.52);
-    body.add(tail, c);
-    if (s.ribbon) {
-      const r = G.ring(hh * 0.105, hh * 0.036, 6, 12);
-      r.rotateX(Math.PI / 2 - 0.5);
-      r.translate(0, hh * 0.155, -hw * 0.54);
-      body.add(r, s.ribbon);
-    }
-    return;
-  }
+  };
+  const headband = () => {
+    if (!s.ribbon) return;
+    const band = G.tube([[hw * 0.575, hh * 0.10], [hw * 0.60, hh * 0.20], [hw * 0.55, hh * 0.27]], 16);
+    body.add(band, s.ribbon);
+    const bow = G.sphere(hh * 0.095, 10, 8);
+    bow.scale(1.6, 0.9, 0.7);
+    bow.translate(hw * 0.42, hh * 0.235, hw * 0.30);
+    body.add(bow, s.ribbon);
+  };
+
+  if (capped) { fringe(); if (tailed) tails(); return; }
+
+  if (s.style === 'pigtails' || s.style === 'braids') { dome(0.56, 0.565); tails(); return; }
+  if (s.style === 'ponytail') { dome(0.56, 0.565); tails(); return; }
   if (s.style === 'puff') {
-    for (const [ox, oy, r] of [[0, 0.22, 0.60], [-0.44, 0.06, 0.36], [0.44, 0.06, 0.36], [0, -0.02, 0.30]]) {
+    headband();
+    for (const [ox, oy, r] of [[0, 0.24, 0.62], [-0.46, 0.06, 0.38], [0.46, 0.06, 0.38], [0, -0.02, 0.32]]) {
       const p = G.sphere(hw * r, 12, 9);
-      p.scale(1, 0.86, 0.94);
+      p.scale(1, 0.88, 0.94);
       p.translate(ox * hw, oy * hh + hh * 0.06, -hw * 0.04);
       body.add(p, c);
     }
     return;
   }
   if (s.style === 'pomp') {
-    const base = G.sphere(1, 14, 9);
-    const bp = base.attributes.position;
-    for (let i = 0; i < bp.count; i++) {
-      bp.setXYZ(i, bp.getX(i) * hw * 0.555, Math.max(bp.getY(i), -0.3) * hh * 0.5 + hh * 0.10, bp.getZ(i) * hw * 0.555);
-    }
-    base.computeVertexNormals();
-    body.add(base, c);
-    const bulb = G.sphere(hh * 0.27, 12, 9);
+    dome(0.52, 0.565);
+    const bulb = G.sphere(hh * 0.28, 12, 9);
     bulb.scale(1.05, 0.95, 0.8);
-    bulb.translate(0, hh * 0.40, hw * 0.28);
+    bulb.translate(0, hh * 0.42, hw * 0.28);
     body.add(bulb, c);
     return;
   }
-  // 'crop' / 'bob'
-  const bob = G.sphere(1, 14, 10);
-  const p2 = bob.attributes.position;
-  const low = s.style === 'bob' ? -0.62 : -0.30;
-  for (let i = 0; i < p2.count; i++) {
-    const y = Math.max(p2.getY(i), low);
-    p2.setXYZ(i, p2.getX(i) * hw * 0.56, y * hh * 0.55 + hh * 0.06, p2.getZ(i) * hw * 0.56 * (p2.getZ(i) > 0 ? 0.92 : 1.04));
+  // 'bowl' / 'crop' / 'bob'
+  headband();
+  const low = s.style === 'bob' ? -0.66 : s.style === 'bowl' ? -0.34 : -0.26;
+  const g = G.sphere(1, 16, 11);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const y = Math.max(p.getY(i), low);
+    p.setXYZ(i, p.getX(i) * hw * 0.565, y * hh * 0.56 + hh * 0.06,
+      p.getZ(i) * hw * 0.565 * (p.getZ(i) > 0 ? 0.94 : 1.04));
   }
-  bob.computeVertexNormals();
-  body.add(bob, c);
+  g.computeVertexNormals();
+  body.add(g, c);
 }
 
 /** Ears. Optional and usually under the cap — except on the one kid they define. */
@@ -476,50 +492,53 @@ export function buildEars(body, ctx) {
  * Width at the seat ~1.3x hip width. The buckle break is unmistakable at 96 px.
  */
 export function buildKnicker(body, ctx, side) {
-  const { thighLen, hipR } = ctx;
-  const seat = hipR * 1.30 * ctx.baggy;
+  const { thighLen, legR } = ctx;
+  const seat = legR * 1.34 * ctx.baggy;
   const g = G.tube([
-    [hipR * 1.05, hipR * 0.5], [seat, -thighLen * 0.18], [seat * 0.98, -thighLen * 0.52],
-    [seat * 0.80, -thighLen * 0.86], [hipR * 0.78, -thighLen * 0.96],
+    [legR * 1.02, legR * 0.9], [seat, -thighLen * 0.20], [seat * 0.99, -thighLen * 0.54],
+    [seat * 0.86, -thighLen * 0.88], [legR * 0.86, -thighLen * 0.97],
   ], 12);
   body.add(g, ctx.trouser);
-  // The buckle band: a hard horizontal at the knee.
-  const band = G.cyl(hipR * 0.80, hipR * 0.76, thighLen * 0.10, 12);
-  band.translate(0, -thighLen * 1.0, 0);
-  body.add(band, ctx.trouserDark, { shade: 0.66 });
-  const buckle = G.box(hipR * 0.30, thighLen * 0.075, hipR * 0.18, 0.01, 1);
-  buckle.translate(side * hipR * 0.10, -thighLen * 1.0, hipR * 0.74);
+  // The buckle band: a hard horizontal at the knee, and it is the whole point of knickers.
+  const band = G.cyl(legR * 0.90, legR * 0.86, thighLen * 0.12, 12);
+  band.translate(0, -thighLen * 1.01, 0);
+  body.add(band, ctx.trouserDark, { shade: 0.62 });
+  const buckle = G.box(legR * 0.34, thighLen * 0.085, legR * 0.20, 0.01, 1);
+  buckle.translate(side * legR * 0.12, -thighLen * 1.01, legR * 0.86);
   body.add(buckle, ctx.buckle);
   if (ctx.patched) {
-    const patch = G.box(hipR * 0.85, thighLen * 0.30, hipR * 0.30, hipR * 0.12, 2);
-    patch.translate(0, -thighLen * 0.72, seat * 0.80);
+    const patch = G.box(legR * 0.98, thighLen * 0.34, legR * 0.30, legR * 0.16, 2);
+    patch.translate(0, -thighLen * 0.70, seat * 0.86);
     body.add(patch, ctx.patchColor);
   }
-  body.smudge(0, -thighLen * 0.95, hipR * 0.7, hipR * 1.5, ctx.dirt, 0.34);
+  body.smudge(0, -thighLen * 0.92, legR * 0.9, legR * 2.0, ctx.dirt, 0.34);
 }
 
 /** Long stockings — accordion sag above the boot, three folds, asymmetric L/R. */
-export function buildStocking(body, ctx, side, sock) {
-  const { shinLen, ankleH } = ctx;
-  const r = ctx.hipR * 0.60;
+export function buildStocking(body, ctx, side, sock, bareTop = 0) {
+  const { shinLen } = ctx;
+  const r = ctx.legR * 0.86;
   const sag = sock.sag;
+  const top = -shinLen * bareTop;               // beanpole: four inches of bare shin
+  const span = shinLen * (1 - bareTop);
   const prof = [];
   const N = 9;
   for (let i = 0; i <= N; i++) {
     const t = i / N;
-    const y = -shinLen * t;
-    const wob = 1 + sag * 0.20 * Math.sin(t * Math.PI * 3 + sock.phase) * Math.min(1, t * 2.4);
-    prof.push([r * (1 - 0.28 * t) * wob, y]);
+    const y = top - span * t;
+    const wob = 1 + sag * 0.22 * Math.sin(t * Math.PI * 3 + sock.phase) * Math.min(1, t * 2.4);
+    prof.push([r * (1.06 - 0.30 * t) * wob, y]);
   }
-  const g = G.tube(prof, 12);
-  body.add(g, sock.color);
-  if (ctx.bareLeg) return;
-  body.smudge(0, -shinLen * 0.2, r * 0.6, r * 2.2, ctx.dirt, 0.22);
+  body.add(G.tube(prof, 12), sock.color);
+  // the darned cuff at the top of the stocking, a hard horizontal
+  body.add(G.tube([[r * 1.10, top], [r * 1.14, top - shinLen * 0.05]], 12), soot(sock.color, 0.22));
+  body.smudge(0, top - span * 0.2, r * 0.6, r * 2.2, ctx.dirt, 0.20);
 }
 
 /** Ankle boots — oversized, tongue out, one lace knotted where it broke. */
 export function buildBoot(body, ctx, side) {
   const L = ctx.shoeLen, h = ctx.hh;
+  // shoe LENGTH is 0.7-0.9 head-heights; the width follows the leg, not the length
   const f = ctx.feet;
   if (f.kind === 'bare') {
     const foot = G.box(L * 0.44, h * 0.16, L * 1.0, h * 0.07, 3);
@@ -560,28 +579,27 @@ export function buildBoot(body, ctx, side) {
 export function buildSuspenders(body, ctx) {
   const s = ctx.susp; if (!s || !s.on) return;
   const { torsoH, chestW, chestD } = ctx;
-  const w = ctx.hh * 0.085;
+  const w = ctx.hh * 0.090;
   for (const side of [-1, 1]) {
-    const off = s.offShoulder === (side < 0 ? 'L' : 'R');
-    const x = side * chestW * 0.30;
+    const off = s.offShoulder === (side < 0 ? 'R' : 'L');
     if (off) {
       // Fallen off the shoulder and hanging down the arm — free character, free asymmetry.
-      const strap = G.box(w, torsoH * 0.55, ctx.hh * 0.032, w * 0.30, 2);
-      strap.rotateZ(side * 0.34);
-      strap.translate(side * chestW * 0.52, torsoH * 0.50, chestD * 0.56);
+      const strap = G.box(w, torsoH * 0.56, ctx.hh * 0.034, w * 0.30, 2);
+      strap.rotateZ(side * 0.40);
+      strap.translate(side * chestW * 1.02, torsoH * 0.48, chestD * 0.62);
       body.add(strap, s.color);
     } else {
-      const front = G.box(w, torsoH * 0.98, ctx.hh * 0.03, w * 0.3, 2);
-      front.rotateZ(side * 0.10);
-      front.translate(x, torsoH * 0.50, chestD * 0.72);
+      const front = G.box(w, torsoH * 1.00, ctx.hh * 0.032, w * 0.3, 2);
+      front.rotateZ(side * 0.13);
+      front.translate(side * chestW * 0.50, torsoH * 0.50, chestD * 0.80);
       body.add(front, s.color);
-      const over = G.box(w, ctx.hh * 0.035, chestD * 1.5, w * 0.3, 2);
-      over.translate(side * chestW * 0.34, torsoH * 0.99, 0);
+      const over = G.box(w, ctx.hh * 0.038, chestD * 1.9, w * 0.3, 2);
+      over.translate(side * chestW * 0.60, torsoH * 0.98, 0);
       body.add(over, s.color, { shade: 0.7 });
     }
-    const back = G.box(w, torsoH * 0.85, ctx.hh * 0.03, w * 0.3, 2);
-    back.rotateZ(side * 0.22);
-    back.translate(side * chestW * 0.20, torsoH * 0.52, -chestD * 0.70);
+    const back = G.box(w, torsoH * 0.88, ctx.hh * 0.032, w * 0.3, 2);
+    back.rotateZ(side * 0.26);
+    back.translate(side * chestW * 0.36, torsoH * 0.52, -chestD * 0.80);
     body.add(back, s.color);
   }
 }
@@ -590,67 +608,75 @@ export function buildSuspenders(body, ctx) {
 export function buildProp(body, ctx) {
   const p = ctx.prop; if (!p) return;
   const h = ctx.hh, { torsoH, chestW, chestD } = ctx;
+  const pigeonBody = mix(PAVEMENT.curb, AIR.skyFill, 0.35);
   if (p === 'pigeon') {
-    const bd = G.sphere(h * 0.20, 12, 9);
-    bd.scale(0.78, 0.86, 1.25);
-    bd.translate(chestW * 0.86, torsoH + h * 0.20, -h * 0.03);
-    body.add(bd, mix(PAVEMENT.curb, AIR.skyFill, 0.35));
-    const hd = G.sphere(h * 0.10, 10, 8);
-    hd.translate(chestW * 0.86, torsoH + h * 0.36, h * 0.10);
-    body.add(hd, mix(PAVEMENT.curb, AIR.skyFill, 0.5));
-    const bk = G.cyl(h * 0.005, h * 0.028, h * 0.07, 6);
+    const X = chestW * 1.16, Y = torsoH * 1.00;
+    const bd = G.sphere(h * 0.21, 12, 9);
+    bd.scale(0.76, 0.88, 1.24);
+    bd.translate(X, Y + h * 0.20, -h * 0.02);
+    body.add(bd, pigeonBody);
+    const hd = G.sphere(h * 0.105, 10, 8);
+    hd.translate(X, Y + h * 0.37, h * 0.11);
+    body.add(hd, mix(pigeonBody, CHALK, 0.28));
+    const bk = G.cyl(h * 0.004, h * 0.028, h * 0.08, 6);
     bk.rotateX(Math.PI / 2);
-    bk.translate(chestW * 0.86, torsoH + h * 0.35, h * 0.19);
+    bk.translate(X, Y + h * 0.355, h * 0.20);
     body.add(bk, ACCENTS.mustard);
-    const tl = G.box(h * 0.10, h * 0.02, h * 0.20, h * 0.008, 1);
-    tl.rotateX(-0.30);
-    tl.translate(chestW * 0.86, torsoH + h * 0.20, -h * 0.24);
-    body.add(tl, mix(PAVEMENT.curb, AIR.shadowTint, 0.3));
+    const eye = G.sphere(h * 0.020, 6, 5);
+    eye.translate(X + h * 0.055, Y + h * 0.395, h * 0.10);
+    body.add(eye, INK);
+    const tl = G.box(h * 0.11, h * 0.022, h * 0.22, h * 0.008, 1);
+    tl.rotateX(-0.34);
+    tl.translate(X, Y + h * 0.20, -h * 0.26);
+    body.add(tl, mix(pigeonBody, AIR.shadowTint, 0.35));
   } else if (p === 'newspaper') {
-    const n = G.cyl(h * 0.075, h * 0.075, h * 0.52, 10);
-    n.rotateZ(0.34); n.rotateX(0.18);
-    n.translate(-chestW * 0.72, torsoH * 0.24, -chestD * 0.34);
-    body.add(n, mix(CLOTH[0], PAVEMENT.curb, 0.35));
+    const n = G.cyl(h * 0.070, h * 0.075, h * 0.56, 10);
+    n.rotateZ(0.40); n.rotateX(0.20);
+    n.translate(-chestW * 0.92, torsoH * 0.22, -chestD * 0.86);
+    body.add(n, mix(CLOTH[0], PAVEMENT.curb, 0.30));
   } else if (p === 'slingshot') {
-    const stem = G.cyl(h * 0.026, h * 0.03, h * 0.22, 8);
-    stem.translate(-chestW * 0.42, torsoH * 0.10, -chestD * 0.85);
+    const X = -chestW * 0.70, Z = -chestD * 1.02;
+    const stem = G.cyl(h * 0.026, h * 0.030, h * 0.24, 8);
+    stem.translate(X, torsoH * 0.12, Z);
     body.add(stem, LEATHER[1]);
     for (const sx of [-1, 1]) {
-      const arm = G.cyl(h * 0.020, h * 0.024, h * 0.17, 8);
-      arm.rotateZ(sx * 0.42);
-      arm.translate(-chestW * 0.42 + sx * h * 0.045, torsoH * 0.10 + h * 0.18, -chestD * 0.85);
+      const arm = G.cyl(h * 0.020, h * 0.024, h * 0.19, 8);
+      arm.rotateZ(sx * 0.44);
+      arm.translate(X + sx * h * 0.048, torsoH * 0.12 + h * 0.19, Z);
       body.add(arm, LEATHER[1]);
     }
   } else if (p === 'hanger') {
-    const hook = G.ring(h * 0.07, h * 0.016, 6, 12, Math.PI * 1.4);
+    const X = chestW * 0.94, Z = -chestD * 0.70;
+    const hook = G.ring(h * 0.075, h * 0.016, 6, 12, Math.PI * 1.4);
     hook.rotateY(Math.PI / 2);
-    hook.translate(chestW * 0.55, torsoH * 0.16, -chestD * 0.60);
+    hook.translate(X, torsoH * 0.20, Z);
     body.add(hook, PAVEMENT.manholeHigh);
-    const bar = G.cyl(h * 0.014, h * 0.014, h * 0.30, 6);
+    const bar = G.cyl(h * 0.014, h * 0.014, h * 0.34, 6);
     bar.rotateZ(Math.PI / 2);
-    bar.translate(chestW * 0.55, torsoH * 0.03, -chestD * 0.60);
+    bar.translate(X, torsoH * 0.055, Z);
     body.add(bar, PAVEMENT.manholeHigh);
   } else if (p === 'cards') {
     for (let i = 0; i < 5; i++) {
-      const c = G.box(h * 0.13, h * 0.19, h * 0.008, 0.004, 1);
-      c.rotateZ(-0.34 + i * 0.17);
-      c.translate(-chestW * 0.50 + i * h * 0.028, torsoH * 0.14 + h * 0.03, -chestD * 0.86);
+      const c = G.box(h * 0.14, h * 0.20, h * 0.008, 0.004, 1);
+      c.rotateZ(-0.38 + i * 0.19);
+      c.translate(-chestW * 0.80 + i * h * 0.030, torsoH * 0.16 + h * 0.04, -chestD * 1.02);
       body.add(c, i % 2 ? CLOTH[3] : mix(CLOTH[1], ACCENTS.mustard, 0.35));
     }
   } else if (p === 'jar') {
-    const j = G.cyl(h * 0.11, h * 0.10, h * 0.26, 12);
-    j.translate(chestW * 0.60, torsoH * 0.22, chestD * 0.80);
+    const X = chestW * 0.92;
+    const j = G.cyl(h * 0.115, h * 0.105, h * 0.28, 12);
+    j.translate(X, torsoH * 0.24, chestD * 0.94);
     body.add(j, mix(AIR.skyLower, CLOTH[3], 0.4));
-    const lid = G.cyl(h * 0.115, h * 0.115, h * 0.05, 12);
-    lid.translate(chestW * 0.60, torsoH * 0.35, chestD * 0.80);
+    const lid = G.cyl(h * 0.12, h * 0.12, h * 0.05, 12);
+    lid.translate(X, torsoH * 0.38, chestD * 0.94);
     body.add(lid, PAVEMENT.manholeHigh);
-    const bug = G.sphere(h * 0.05, 8, 6);
-    bug.translate(chestW * 0.60, torsoH * 0.16, chestD * 0.84);
+    const bug = G.sphere(h * 0.055, 8, 6);
+    bug.translate(X, torsoH * 0.18, chestD * 0.99);
     body.add(bug, ACCENTS.olive);
   } else if (p === 'harmonica') {
-    const m = G.box(h * 0.30, h * 0.10, h * 0.06, h * 0.014, 1);
-    m.rotateZ(0.12);
-    m.translate(-chestW * 0.46, torsoH * 0.20, chestD * 0.84);
+    const m = G.box(h * 0.32, h * 0.11, h * 0.06, h * 0.014, 1);
+    m.rotateZ(0.14);
+    m.translate(-chestW * 0.74, torsoH * 0.22, chestD * 1.00);
     body.add(m, PAVEMENT.manholeHigh);
   }
 }
@@ -663,7 +689,7 @@ export function buildProp(body, ctx) {
 export const FAMILIES = {
   melon: {
     label: 'The Melon', heads: 3.10, tall: 4.46,
-    head: { w: 1.10, h: 1.06, d: 1.04, jaw: 0.14, cheek: 0.10, crown: 0.16, chin: 0.02, backFlat: 1.0 },
+    head: { w: 1.24, h: 1.10, d: 1.14, jaw: 0.08, cheek: 0.16, crown: 0.24, chin: 0.0, backFlat: 1.0 },
     build: 0.50, baggy: 1.05,
     hat: { kind: 'newsboy', size: 0.80, tiltX: -0.14, tiltZ: 0.10 },   // a lid perched on a melon
     hair: 'bowl', top: 'shirt', legs: 'knickers', feet: 'boots', susp: true,
@@ -671,7 +697,7 @@ export const FAMILIES = {
   },
   fireplug: {
     label: 'The Fireplug', heads: 2.80, tall: 4.04,
-    head: { w: 1.06, h: 0.94, d: 1.0, jaw: 0.05, cheek: 0.20, crown: 0.0, chin: 0.0, backFlat: 1.0 },
+    head: { w: 1.10, h: 0.94, d: 1.04, jaw: 0.0, cheek: 0.26, crown: 0.0, chin: 0.0, backFlat: 1.0 },
     build: 1.00, baggy: 1.16,
     hat: { kind: 'flat', size: 1.10, tiltX: 0.16, tiltZ: -0.05 },      // jammed to the eyebrows
     hair: 'crop', top: 'shirt', legs: 'knickers', feet: 'boots', susp: true,
@@ -679,7 +705,7 @@ export const FAMILIES = {
   },
   beanpole: {
     label: 'The Beanpole', heads: 3.90, tall: 5.22,
-    head: { w: 0.86, h: 1.10, d: 0.94, jaw: 0.30, cheek: -0.05, crown: 0.05, chin: 0.10, backFlat: 1.0 },
+    head: { w: 0.85, h: 1.14, d: 0.90, jaw: 0.34, cheek: -0.06, crown: 0.04, chin: 0.14, backFlat: 1.0 },
     build: 0.08, baggy: 0.86,
     hat: { kind: 'flat', size: 0.94, tiltX: -0.22, tiltY: 0.30 },
     hair: 'crop', top: 'shirt', legs: 'knickers', feet: 'boots', susp: true,
@@ -687,7 +713,7 @@ export const FAMILIES = {
   },
   sack: {
     label: 'The Sack', heads: 3.02, tall: 4.10,
-    head: { w: 0.98, h: 1.0, d: 0.98, jaw: 0.16, cheek: 0.16, crown: 0.06, chin: 0.0, backFlat: 1.0 },
+    head: { w: 1.02, h: 0.99, d: 1.00, jaw: 0.12, cheek: 0.20, crown: 0.06, chin: 0.0, backFlat: 1.0 },
     build: 0.35, baggy: 1.10,
     hat: { kind: 'newsboy', size: 1.06, tiltX: 0.10, tiltZ: 0.14 },
     hair: 'bowl', top: 'handmedown', legs: 'knickers', feet: 'boots', susp: false,
@@ -695,14 +721,14 @@ export const FAMILIES = {
   },
   ears: {
     label: 'The Ears', heads: 3.32, tall: 4.72,
-    head: { w: 0.96, h: 1.02, d: 0.96, jaw: 0.22, cheek: 0.06, crown: 0.04, chin: 0.04, backFlat: 1.0 },
+    head: { w: 0.93, h: 1.05, d: 0.94, jaw: 0.28, cheek: 0.04, crown: 0.03, chin: 0.06, backFlat: 1.0 },
     build: 0.40, baggy: 1.0, ears: 2.15,
     hat: { kind: 'none' }, hair: 'crop', top: 'vest', legs: 'knickers', feet: 'boots', susp: true,
     note: 'the cap will not stay on over them — the only bare head in the field',
   },
   bandbox: {
     label: 'The Bandbox', heads: 3.22, tall: 4.62,
-    head: { w: 0.94, h: 1.02, d: 0.96, jaw: 0.20, cheek: 0.04, crown: 0.02, chin: 0.0, backFlat: 1.0 },
+    head: { w: 0.89, h: 1.08, d: 0.93, jaw: 0.26, cheek: 0.02, crown: 0.02, chin: 0.02, backFlat: 1.0 },
     build: 0.34, baggy: 0.80,
     hat: { kind: 'flat', size: 0.92, tiltX: 0.0 }, hair: 'crop',
     top: 'shirt', legs: 'knickers', feet: 'keds', susp: false, tidy: true, bowtie: true,
@@ -710,14 +736,14 @@ export const FAMILIES = {
   },
   ribbon: {
     label: 'The Ribbon', heads: 3.42, tall: 4.86,
-    head: { w: 0.95, h: 1.02, d: 0.95, jaw: 0.22, cheek: 0.10, crown: 0.05, chin: 0.0, backFlat: 1.0 },
+    head: { w: 0.92, h: 1.05, d: 0.93, jaw: 0.28, cheek: 0.12, crown: 0.06, chin: 0.0, backFlat: 1.0 },
     build: 0.26, baggy: 0.92,
     hat: { kind: 'none' }, hair: 'ponytail', top: 'dress', legs: 'dress', feet: 'boots', susp: false,
     note: 'plays in a dropped-waist dress with the hem taken up, because she is faster than everybody',
   },
   barefoot: {
     label: 'The Barefoot', heads: 3.00, tall: 4.30,
-    head: { w: 1.0, h: 1.0, d: 1.0, jaw: 0.20, cheek: 0.12, crown: 0.05, chin: 0.02, backFlat: 1.0 },
+    head: { w: 1.07, h: 0.97, d: 1.02, jaw: 0.16, cheek: 0.18, crown: 0.05, chin: 0.0, backFlat: 1.0 },
     build: 0.44, baggy: 1.06,
     hat: { kind: 'newsboy', size: 1.24, tiltX: 0.20, tiltZ: -0.16 },   // two sizes too big
     hair: 'bowl', top: 'shirt', legs: 'knickers', feet: 'bare', susp: true, bareLeg: true,
@@ -725,7 +751,7 @@ export const FAMILIES = {
   },
   brace: {
     label: 'The Brace', heads: 3.30, tall: 4.68,
-    head: { w: 0.97, h: 1.02, d: 0.96, jaw: 0.20, cheek: 0.06, crown: 0.05, chin: 0.02, backFlat: 1.0 },
+    head: { w: 0.96, h: 1.06, d: 0.95, jaw: 0.24, cheek: 0.06, crown: 0.06, chin: 0.04, backFlat: 1.0 },
     build: 0.32, baggy: 0.98,
     hat: { kind: 'flat', size: 1.0, tiltX: -0.10, tiltY: -0.24 },
     hair: 'crop', top: 'shirt', legs: 'knickers', feet: 'boots', susp: true,
@@ -771,7 +797,7 @@ export const KIDS = [
   // --- Ribbons --------------------------------------------------------------
   K('ethel', 'Ethel Randolph', 'Speed', 'g', 'ribbon', { skin: 5, hair: 0, accent: 'mustard', slot: 'ribbon', hairStyle: 'puff', prop: null, pose: 'sprintset', team: 0, ex: 'determined', quirk: { browThick: 1.1 } }),
   K('carmen', 'Carmen Rivera', 'Chick', 'g', 'ribbon', { skin: 3, hair: 0, accent: 'rust', slot: 'ribbon', hairStyle: 'ponytail', prop: null, pose: 'hipsHands', team: 1, ex: 'taunt', dh: -0.05 }),
-  K('maureen', 'Maureen Sheehan', 'Red', 'g', 'ribbon', { skin: 0, hair: 3, accent: 'bottleGreen', slot: 'ribbon', hairStyle: 'pigtails', prop: null, pose: 'point', team: 0, ex: 'yell', dh: 0.04, quirk: { freckles: 3 } }),
+  K('maureen', 'Maureen Sheehan', 'Red', 'g', 'ribbon', { skin: 0, hair: 3, accent: 'bottleGreen', slot: 'ribbon', hairStyle: 'pigtails', prop: null, pose: 'hipsHands', team: 0, ex: 'yell', dh: 0.04, quirk: { freckles: 3 } }),
   K('rose', 'Rose Abramowitz', 'Rosie', 'g', 'ribbon', { skin: 2, hair: 1, accent: 'slateBlue', slot: 'ribbon', hairStyle: 'braids', prop: 'jar', pose: 'ready', team: 1, ex: 'grin', dh: -0.02 }),
   // --- Barefoot -------------------------------------------------------------
   K('cheech', 'Jesús Colón', 'Cheech', 'b', 'barefoot', { skin: 4, hair: 0, accent: 'olive', slot: 'suspenders', prop: 'slingshot', pose: 'scratch', team: 1, ex: 'grin', quirk: { tongue: 'R' } }),

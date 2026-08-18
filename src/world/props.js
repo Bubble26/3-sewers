@@ -204,23 +204,50 @@ export function slabText(g, text, x, y, size, opts = {}) {
 export function chalkStroke(g, pts, width, seed = 3, alpha = 0.85, color = '#f6f0e2') {
   const r = new RNG(seed);
   g.save();
-  g.lineCap = 'round';
+  g.lineCap = 'butt';
+  g.lineJoin = 'round';
   g.strokeStyle = color;
+  // walk the polyline as one continuous length so a dash can run across a
+  // corner; the chalk breaks where the asphalt was rough, not per segment.
+  const seg = [];
+  let total = 0;
   for (let i = 0; i < pts.length - 1; i++) {
-    const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
-    const len = Math.hypot(x1 - x0, y1 - y0);
-    const steps = Math.max(1, Math.round(len / Math.max(3, width * 1.6)));
-    for (let s = 0; s < steps; s++) {
-      if (r.next() < 0.13) continue;                 // a gap: the mark is half scuffed away
-      const t0 = s / steps, t1 = (s + 1) / steps;
-      const jx = (r.next() - 0.5) * width * 0.7, jy = (r.next() - 0.5) * width * 0.7;
-      g.globalAlpha = alpha * r.range(0.42, 1.0);
-      g.lineWidth = width * r.range(0.62, 1.15);
-      g.beginPath();
-      g.moveTo(x0 + (x1 - x0) * t0 + jx, y0 + (y1 - y0) * t0 + jy);
-      g.lineTo(x0 + (x1 - x0) * t1 + jx, y0 + (y1 - y0) * t1 + jy);
-      g.stroke();
+    const d = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    seg.push(d); total += d;
+  }
+  const at = (u) => {                                 // point at arc length u
+    let acc = 0;
+    for (let i = 0; i < seg.length; i++) {
+      if (u <= acc + seg[i] || i === seg.length - 1) {
+        const t = seg[i] ? (u - acc) / seg[i] : 0;
+        return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t,
+          pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t];
+      }
+      acc += seg[i];
     }
+    return pts[pts.length - 1];
+  };
+  let u = 0;
+  const stepMin = Math.max(width * 3.5, 7);
+  while (u < total) {
+    const run = stepMin * r.range(0.7, 2.6);
+    const gap = r.next() < 0.30 ? stepMin * r.range(0.15, 0.85) : 0;
+    const a = at(u), b = at(Math.min(total, u + run));
+    const jx = (r.next() - 0.5) * width * 0.5, jy = (r.next() - 0.5) * width * 0.5;
+    g.globalAlpha = alpha * r.range(0.45, 1.0);
+    g.lineWidth = width * r.range(0.55, 1.1);
+    g.beginPath();
+    g.moveTo(a[0] + jx, a[1] + jy);
+    // follow the intermediate vertices so a corner still turns
+    let acc = 0, seen = 0;
+    for (let i = 0; i < seg.length; i++) {
+      acc += seg[i];
+      if (acc > u && acc < u + run) { g.lineTo(pts[i + 1][0] + jx, pts[i + 1][1] + jy); seen++; }
+    }
+    void seen;
+    g.lineTo(b[0] + jx, b[1] + jy);
+    g.stroke();
+    u += run + gap;
   }
   g.restore();
 }
@@ -268,8 +295,29 @@ export function arcText(g, text, cx, cy, radius, midAngle, size, opts = {}) {
  * Materials, outlines and the drawn contact shadow
  * ------------------------------------------------------------------------ */
 
+/**
+ * Ambient fill is baked into the material, not added as a light.
+ * BYB wants ambient >= 60% of key and nothing below L* 26; the scene's one
+ * directional sun would otherwise crush every prop that stands in a building's
+ * shadow.  So every surface of this piece carries a share of its own colour as
+ * unlit emission.  It costs nothing and it is the only reason the block reads
+ * as flat bright midday rather than as a canyon at dusk.
+ */
+export const LIFT = 0.34;
+
 export function mat(color, opt = {}) {
-  return new THREE.MeshLambertMaterial({ color, ...opt });
+  const m = new THREE.MeshLambertMaterial({ color, ...opt });
+  if (opt.emissive === undefined) m.emissive = new THREE.Color(color).multiplyScalar(LIFT);
+  return m;
+}
+
+/** the same, for a material carrying a canvas texture */
+export function texMat(map, opt = {}) {
+  const { lift = LIFT, ...rest } = opt;
+  const m = new THREE.MeshLambertMaterial({ map, ...rest });
+  m.emissiveMap = map;
+  m.emissive = new THREE.Color(rest.color === undefined ? 0xffffff : rest.color).multiplyScalar(lift);
+  return m;
 }
 
 /** Flat ink, unaffected by light — for outline shells and cast-shadow decals. */
@@ -437,37 +485,53 @@ function put(parent, geo, material, x, y, z, rot) {
  * Builds one InstancedMesh per part of a repeated prop, so ten ash cans cost
  * the same number of draw calls as one.
  */
-class Kit {
-  constructor(scene) { this.scene = scene; this.parts = []; this.placements = []; }
-  part(geo, material, thick = 0) { const p = { geo, material, thick, xf: [] }; this.parts.push(p); return p; }
+export class Kit {
+  constructor(scene) { this.scene = scene; this.parts = []; this.placements = []; this.colors = []; }
+  /** tint: if true this part takes the per-placement colour (paint), else it keeps its own */
+  part(geo, material, thick = 0, tint = false) {
+    const p = { geo, material, thick, tint, xf: [] };
+    this.parts.push(p); return p;
+  }
   /** local transform of a part inside one copy */
   add(part, m) { part.xf.push(m); }
-  place(matrix) { this.placements.push(matrix); }
+  place(matrix, color = null) { this.placements.push(matrix); this.colors.push(color); }
   build() {
-    const d = new THREE.Object3D();
+    const tmp = new THREE.Color();
     for (const p of this.parts) {
       const n = p.xf.length * this.placements.length;
       if (!n) continue;
+      if (p.tint) {
+        // three only forwards instanceColor to the fragment stage when USE_COLOR
+        // is defined, so a tinted part needs vertex colours and a white
+        // per-vertex attribute for the instance tint to multiply against.
+        if (!p.geo.getAttribute('color')) {
+          const cnt = p.geo.getAttribute('position').count;
+          p.geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cnt * 3).fill(1), 3));
+        }
+        p.material.vertexColors = true;
+      }
       const im = new THREE.InstancedMesh(p.geo, p.material, n);
       let sh = null;
       if (p.thick > 0) { sh = new THREE.InstancedMesh(p.geo, outlineMat(p.thick), n); sh.renderOrder = -1; }
       let i = 0;
-      for (const place of this.placements) {
+      for (let k = 0; k < this.placements.length; k++) {
         for (const local of p.xf) {
-          const m = new THREE.Matrix4().multiplyMatrices(place, local);
+          const m = new THREE.Matrix4().multiplyMatrices(this.placements[k], local);
           im.setMatrixAt(i, m);
+          if (p.tint && this.colors[k] != null) im.setColorAt(i, tmp.setHex(this.colors[k]));
           if (sh) sh.setMatrixAt(i, m);
           i++;
         }
       }
       im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
       im.frustumCulled = false;
       this.scene.add(im);
       if (sh) { sh.instanceMatrix.needsUpdate = true; sh.frustumCulled = false; this.scene.add(sh); }
     }
-    void d;
   }
 }
+export { xf as kitXf };
 
 function xf(x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) {
   const o = new THREE.Object3D();
@@ -529,7 +593,7 @@ export function buildProps(app) {
     kit.add(collar, xf(-rad, 15.68, 0));
     // enamel street-name plate
     const plateTex = enamelSignTexture(['E. 95 ST'], 0x22301f, 0xe6e2d4, 256, 96);
-    const plate = kit.part(box(2.5, 0.62, 0.09), new THREE.MeshLambertMaterial({ map: plateTex }), 0);
+    const plate = kit.part(box(2.5, 0.62, 0.09), texMat(plateTex), 0);
     kit.add(plate, xf(0.0, 10.6, 0.28));
 
     const LAMPS = [
@@ -614,7 +678,7 @@ export function buildProps(app) {
       return canvasTexture(c);
     })();
     const bodyMats = [mat(0x8a2a22), mat(0x8a2a22), mat(0x8a2a22), mat(0x8a2a22),
-      new THREE.MeshLambertMaterial({ map: doorTex }), mat(0x8a2a22)];
+      texMat(doorTex), mat(0x8a2a22)];
     const bx = new THREE.Mesh(box(1.2, 1.5, 0.7), bodyMats);
     bx.position.set(0, 3.9, 0); grp.add(bx); outline(bx, 0.045);
     put(grp, box(1.34, 0.16, 0.84), red, 0, 4.72, 0);
@@ -631,12 +695,12 @@ export function buildProps(app) {
     const x = GROUND.curbX + 1.5, z = 74;
     const grp = new THREE.Group();
     grp.position.set(x, GROUND.walkTop, z); grp.rotation.y = -Math.PI * 0.46;
-    const olive = mat(0x5a5b45);
+    const olive = mat(0x6b6c52);
     put(grp, lathe([[0, 0], [0.5, 0], [0.5, 0.16], [0.28, 0.26]], 12), mat(0x3d3e33), 0, 0.04, 0);
     put(grp, cyl(0.2, 0.26, 2.2, 10), olive, 0, 1.2, 0);
     const bodyTex = (() => {
       const { c, g } = makeCanvas(256, 192);
-      g.fillStyle = hex(0x5a5b45); g.fillRect(0, 0, 256, 192);
+      g.fillStyle = hex(0x6b6c52); g.fillRect(0, 0, 256, 192);
       const r2 = new RNG(4);
       for (let i = 0; i < 200; i++) {                        // chalky chipped paint
         g.globalAlpha = r2.range(0.04, 0.16);
@@ -648,7 +712,7 @@ export function buildProps(app) {
       slabText(g, 'LETTERS', 128, 126, 22, { align: 'center', color: '#cdc9ae', weight: 0.2, condense: 0.8, jitter: 0.7, seed: 15 });
       return canvasTexture(c);
     })();
-    const bodyMat = new THREE.MeshLambertMaterial({ map: bodyTex });
+    const bodyMat = texMat(bodyTex);
     const b = put(grp, box(1.5, 1.5, 1.25), [olive, olive, olive, olive, bodyMat, olive], 0, 3.05, 0);
     outline(b, 0.045);
     put(grp, cyl(0.75, 0.75, 1.25, 14, 1, false, 0, Math.PI), olive, 0, 3.8, 0, [Math.PI / 2, 0, 0]);
@@ -664,7 +728,7 @@ export function buildProps(app) {
   {
     const kit = new Kit(root);
     const canTex = ironTexture(0x8e8d86, 17);
-    const canMat = new THREE.MeshLambertMaterial({ map: canTex, color: 0xffffff });
+    const canMat = texMat(canTex);
     const bodyGeo = cyl(0.86, 0.74, 2.16, 14);
     const body = kit.part(bodyGeo, canMat, 0.05);
     kit.add(body, xf(0, 1.08, 0));
@@ -721,9 +785,9 @@ export function buildProps(app) {
       slabText(g, sub, 96, 108, 16, { align: 'center', color: '#4a3a26', weight: 0.2, condense: 0.75, jitter: 0.9, seed: 8 });
       return canvasTexture(c);
     };
-    const m1 = new THREE.MeshLambertMaterial({ map: crateTex('FLORIDA', 'ORANGES') });
-    const m2 = new THREE.MeshLambertMaterial({ map: crateTex('DUGAN', 'BAKERS') });
-    const m3 = new THREE.MeshLambertMaterial({ map: crateTex('SHEFFIELD', 'FARMS') });
+    const m1 = texMat(crateTex('FLORIDA', 'ORANGES'));
+    const m2 = texMat(crateTex('DUGAN', 'BAKERS'));
+    const m3 = texMat(crateTex('SHEFFIELD', 'FARMS'));
     const geo = box(2.0, 1.35, 1.35);
     const CRATES = [
       [GROUND.walkOuter - 5.2, 24.0, 0.15, m1], [GROUND.walkOuter - 5.1, 24.2, -0.1, m2],
@@ -762,7 +826,7 @@ export function buildProps(app) {
       g.globalAlpha = 0.18; g.fillStyle = '#000'; g.fillRect(0, 96, 256, 32); g.globalAlpha = 1;
       return canvasTexture(c);
     })();
-    const aw = put(grp, box(7.0, 0.16, 3.0), new THREE.MeshLambertMaterial({ map: stripeTex, side: THREE.DoubleSide }),
+    const aw = put(grp, box(7.0, 0.16, 3.0), texMat(stripeTex, { side: THREE.DoubleSide }),
       0, 6.9, 2.3, [-0.30, 0, 0]);
     outline(aw, 0.04);
     // the paper rack
@@ -792,7 +856,7 @@ export function buildProps(app) {
       return canvasTexture(c);
     })();
     for (let row = 0; row < 3; row++) {
-      const p = put(grp, box(5.6, 1.9, 0.12), new THREE.MeshLambertMaterial({ map: paperTex }),
+      const p = put(grp, box(5.6, 1.9, 0.12), texMat(paperTex),
         0, 2.2 + row * 1.55, 1.95 + row * 0.34, [-0.5, 0, 0]);
       p.material.map.repeat.set(1, 0.33); p.material.map.offset.set(0, row * 0.33);
       put(grp, cyl(0.07, 0.07, 5.7, 6), galvDark, 0, 2.2 + row * 1.55 - 0.5, 2.2 + row * 0.34, [0, 0, Math.PI / 2]);
@@ -800,7 +864,7 @@ export function buildProps(app) {
     put(grp, box(6.4, 0.9, 0.3), mat(0x6f5a3c), 0, 1.15, 1.75);
     // sign band
     const bandTex = enamelSignTexture(['NEWS · CIGARS · CANDY'], 0x2f2a22, 0xd8b25a, 512, 96);
-    put(grp, box(6.3, 1.0, 0.12), new THREE.MeshLambertMaterial({ map: bandTex }), 0, 5.9, 1.86);
+    put(grp, box(6.3, 1.0, 0.12), texMat(bandTex), 0, 5.9, 1.86);
     root.add(grp);
     shadows.add(x, z, 3.4, 2.6, 6, 1, GROUND.walkTop);
   }
@@ -813,9 +877,11 @@ export function buildProps(app) {
     const grp = new THREE.Group();
     grp.position.set(x, GROUND.walkTop, z); grp.rotation.y = -Math.PI * 0.56;
     const bedY = 2.5;
-    const bed = put(grp, box(6.0, 0.9, 3.0), woodWarm, 0, bedY, 0); outline(bed, 0.05);
-    put(grp, box(6.1, 0.55, 0.16), mat(0x6d5537), 0, bedY + 0.6, 1.5);
-    put(grp, box(6.1, 0.55, 0.16), mat(0x6d5537), 0, bedY + 0.6, -1.5);
+    const body = put(grp, box(6.0, 1.9, 3.0), woodWarm, 0, bedY - 0.5, 0); outline(body, 0.055);
+    const bed = put(grp, box(6.1, 0.28, 3.1), woodPale, 0, bedY + 0.5, 0); outline(bed, 0.04);
+    put(grp, box(6.2, 0.7, 0.18), mat(0x6d5537), 0, bedY + 0.9, 1.55);
+    put(grp, box(6.2, 0.7, 0.18), mat(0x6d5537), 0, bedY + 0.9, -1.55);
+    for (let i = 0; i < 5; i++) put(grp, box(0.14, 1.9, 0.14), mat(0x6d5537), -2.4 + i * 1.2, bedY - 0.5, 1.52);
     for (const s of [1, -1]) {
       const w = put(grp, cyl(1.5, 1.5, 0.18, 16), mat(0x5e4a33), s * 1.65, 1.5, 0, [0, 0, Math.PI / 2]);
       outline(w, 0.045);
@@ -834,8 +900,10 @@ export function buildProps(app) {
     const greens = kit.part(new THREE.SphereGeometry(0.28, 8, 6), mat(0x8fa23c), 0);
     const golds = kit.part(new THREE.SphereGeometry(0.22, 8, 6), mat(0xe3a32b), 0);
     const rr = new RNG(313);
-    for (let i = 0; i < 26; i++) {
-      const px = rr.range(-2.6, 2.6), pz = rr.range(-1.15, 1.15), py = bedY + 0.6 + rr.range(0, 0.45);
+    for (let i = 0; i < 44; i++) {
+      const px = rr.range(-2.5, 2.5), pz = rr.range(-1.1, 1.1);
+      const heap = 0.75 * (1 - (px / 2.9) ** 2) * (1 - (pz / 1.5) ** 2);
+      const py = bedY + 0.85 + rr.range(0, 0.25) + heap;
       kit.add([apples, greens, golds][i % 3], xf(px, py, pz));
     }
     kit.place(xf(0, 0, 0));
@@ -843,7 +911,7 @@ export function buildProps(app) {
     // parasol
     put(grp, cyl(0.07, 0.07, 4.4, 6), woodPale, -1.6, 5.0, 0);
     const par = put(grp, cyl(0.06, 3.3, 0.9, 10, 1, true),
-      new THREE.MeshLambertMaterial({ color: 0xd4694a, side: THREE.DoubleSide }), -1.6, 6.7, 0);
+      mat(0xd4694a, { side: THREE.DoubleSide }), -1.6, 6.7, 0);
     outline(par, 0.04);
     // hanging scales
     put(grp, cyl(0.05, 0.05, 1.2, 5), galvDark, 1.9, 5.4, 0.4);
@@ -885,7 +953,7 @@ export function buildProps(app) {
     const step = put(grp, box(2.4, 0.5, 3.6), mat(PAVEMENT.sidewalk), 1.3, 0.25, -6.6);
     void step;
     const kit2 = new Kit(grp);
-    const glassMat = new THREE.MeshLambertMaterial({ color: 0xd9e2dc, transparent: true, opacity: 0.85 });
+    const glassMat = mat(0xd9e2dc, { transparent: true, opacity: 0.85 });
     const bottle = kit2.part(lathe([[0, 0], [0.2, 0], [0.2, 0.62], [0.11, 0.78], [0.11, 1.0], [0.13, 1.02], [0, 1.02]], 10), glassMat, 0.02);
     const cap = kit2.part(cyl(0.13, 0.13, 0.05, 8), flat(0xe8e2cc), 0);
     const rr = new RNG(77);
@@ -897,7 +965,7 @@ export function buildProps(app) {
     kit2.place(xf(0, 0, 0));
     kit2.build();
     const crate = put(grp, box(1.9, 0.7, 1.4), mat(0x6d5537), 1.3, 0.85, -6.95);
-    crate.material = new THREE.MeshLambertMaterial({ color: 0x6d5537, transparent: true, opacity: 0.55 });
+    crate.material = mat(0x6d5537, { transparent: true, opacity: 0.55 });
     root.add(grp);
     shadows.add(x + 0.6, z, 0.8, 5.0, 2.4, 0.8, GROUND.walkTop);
     shadows.add(x + 1.3, z - 6.8, 1.6, 2.0, 1.0, 0.9, GROUND.walkTop);
@@ -926,9 +994,9 @@ export function buildProps(app) {
     put(grp, box(0.5, 0.16, 0.9), mat(0x3a2f28), 0, 2.15, -0.55);
     put(grp, cyl(0.05, 0.05, 1.5, 6), frame, 0, 2.25, 1.05, [0, 0, Math.PI / 2]);
     const basket = put(grp, cyl(0.62, 0.5, 0.85, 10, 1, true),
-      new THREE.MeshLambertMaterial({ color: 0x9d7a45, side: THREE.DoubleSide }), 0, 1.85, 1.15);
+      mat(0x9d7a45, { side: THREE.DoubleSide }), 0, 1.85, 1.15);
     outline(basket, 0.03);
-    put(grp, box(0.05, 0.5, 0.8), new THREE.MeshLambertMaterial({ map: enamelSignTexture(['GRISTEDE'], 0x2f4030, 0xd8cfae, 200, 90) }),
+    put(grp, box(0.05, 0.5, 0.8), texMat(enamelSignTexture(['GRISTEDE'], 0x2f4030, 0xd8cfae, 200, 90)),
       0.06, 1.28, 0.15);
     root.add(grp);
     shadows.add(x, z, 0.7, 2.0, 1.6, 0.85, GROUND.walkTop);
@@ -953,7 +1021,7 @@ export function buildProps(app) {
       }
       return canvasTexture(c, { repeat: [1, 1] });
     })();
-    const pole = put(grp, cyl(0.32, 0.32, 3.0, 12), new THREE.MeshLambertMaterial({ map: poleTex }), 0.2, 7.4, 1.2);
+    const pole = put(grp, cyl(0.32, 0.32, 3.0, 12), texMat(poleTex), 0.2, 7.4, 1.2);
     outline(pole, 0.035);
     put(grp, lathe([[0, 0.34], [0.24, 0.28], [0.36, 0], [0.3, -0.12]], 12), mat(0xb8a271), 0.2, 8.9, 1.2);
     put(grp, lathe([[0, -0.34], [0.24, -0.28], [0.36, 0], [0.3, 0.12]], 12), mat(0xb8a271), 0.2, 5.9, 1.2);
@@ -1006,11 +1074,11 @@ export function buildProps(app) {
       for (let i = 0; i < 5; i++) {
         const t = 0.16 + i * 0.17;
         const p = a.clone().lerp(b, t); p.y -= Math.sin(Math.PI * t) * 1.1;
-        const w = 1.5 + rr.range(-0.3, 0.5), h = 2.2 + rr.range(-0.5, 1.0);
+        const w = 2.5 + rr.range(-0.4, 0.9), h = 3.4 + rr.range(-0.6, 1.4);
         const g2 = new THREE.Group();
         g2.position.set(p.x, p.y - 0.07, p.z);
         const sheet = new THREE.Mesh(new THREE.PlaneGeometry(w, h, 5, 3),
-          new THREE.MeshLambertMaterial({ map: cloths[(i + (side > 0 ? 2 : 0)) % cloths.length], side: THREE.DoubleSide }));
+          texMat(cloths[(i + (side > 0 ? 2 : 0)) % cloths.length], { side: THREE.DoubleSide, lift: 0.42 }));
         sheet.position.y = -h / 2;
         sheet.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
         g2.add(sheet);
@@ -1075,7 +1143,7 @@ export function buildProps(app) {
       else chalkStroke(g, [[gx, by + 6], [gx - 2, by + 42]], 3.4, 70 + i, 0.85);
     }
     const tex = canvasTexture(c);
-    const m = new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false });
+    const m = texMat(tex, { transparent: true, depthWrite: false });
     const p = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), m);
     p.position.set(-GROUND.facadeX + 0.06, 4.0, 4);
     p.rotation.y = Math.PI / 2;
@@ -1149,7 +1217,7 @@ export function buildProps(app) {
       return canvasTexture(c);
     })();
     const disc = new THREE.CircleGeometry(0.85, 20); disc.rotateX(-Math.PI / 2);
-    const lid = kit.part(disc, new THREE.MeshLambertMaterial({ map: chuteTex }), 0);
+    const lid = kit.part(disc, texMat(chuteTex), 0);
     kit.add(lid, xf(0, 0, 0));
     for (const [x, z] of [[GROUND.walkOuter - 2.4, 36], [-GROUND.walkOuter + 2.4, 70], [GROUND.walkOuter - 2.6, 100]]) {
       kit.place(xf(x, GROUND.walkTop + 0.012, z));
@@ -1220,9 +1288,9 @@ registerScenario('props_tour', {
   seed: 2025,
   setup: ({ app }) => {
     app.sim.reset(2025);
-    app.camera.fov = 40; app.camera.updateProjectionMatrix();
-    app.camera.position.set(-19.5, 8.2, 6.5);
-    app.camera.lookAt(16, 4.2, 52);
+    app.camera.fov = 44; app.camera.updateProjectionMatrix();
+    app.camera.position.set(-7.5, 7.4, 4.0);
+    app.camera.lookAt(23.0, 3.6, 44);
   },
   settle: 0.9,
 });

@@ -156,6 +156,34 @@ class Jiggle {
   }
 }
 
+
+const _qp = new THREE.Quaternion();
+const _qd = new THREE.Quaternion();
+const _qi = new THREE.Quaternion();
+
+/**
+ * Rotational overlap: a joint that arrives a few frames after its parent. This is what stops a
+ * head from being welded to a spine and a cap from being welded to a head.
+ */
+class QLag {
+  constructor(obj, { k = 26, max = 0.22 } = {}) {
+    this.obj = obj; this.k = k; this.max = max;
+    this.s = new THREE.Quaternion(); this.ready = false;
+  }
+  reset() { this.ready = false; }
+  update(dt) {
+    const p = this.obj.parent;
+    if (!p) return;
+    p.getWorldQuaternion(_qp);
+    if (!this.ready) { this.s.copy(_qp); this.ready = true; return; }
+    this.s.slerp(_qp, 1 - Math.exp(-this.k * Math.min(dt, 0.05)));
+    _qd.copy(_qp).invert().multiply(this.s);
+    const ang = 2 * Math.acos(Math.min(1, Math.abs(_qd.w)));
+    if (ang > this.max && ang > 1e-5) { _qi.identity(); _qd.slerp(_qi, 1 - this.max / ang); }
+    this.obj.quaternion.premultiply(_qd);
+  }
+}
+
 /**
  * A ribbon that trails a moving prop — the whip of the broom handle through the swing.
  * Two vertices per sample (a point up the shaft and the tip), faded by age, so the arc reads
@@ -181,8 +209,8 @@ export class Trail {
     }
     this.geo.setIndex(idx);
     this.mat = new THREE.MeshBasicMaterial({
-      vertexColors: true, transparent: true, opacity: 0, depthWrite: false,
-      side: THREE.DoubleSide, blending: THREE.NormalBlending, color,
+      vertexColors: true, transparent: true, opacity: 0, depthWrite: false, toneMapped: false,
+      side: THREE.DoubleSide, blending: THREE.NormalBlending, color, fog: false,
     });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.frustumCulled = false;
@@ -225,17 +253,20 @@ export class Trail {
 
 // ── the rig adapter ─────────────────────────────────────────────────────────
 /**
- * Canonical joint names every clip may address:
+ * Canonical joint names every clip may address. These are OUR names; `bindRig` maps them onto
+ * whatever src/chars/rig.js is publishing today (it publishes `userData.rig` with its own
+ * naming, and `userData.attach` for props), so the character piece can keep rebuilding the
+ * body without touching a single clip.
  *
- *   base                     whole-body offset, spin and squash/stretch
- *   hips chest neck head     spine
- *   armL elbL handL          left arm (rig's -X side)     ... and armR elbR handR
- *   legL kneeL footL         left leg                     ... and legR kneeR footR
- *   brim hair shirt          secondary elements (also driven by springs)
+ *   base                     whole-body handle: lift, spin, squash/stretch
+ *   hips chest neck head     spine  (chest is the waist bend, so a turn there twists the torso)
+ *   armL elbL handL          arms, L = +X side       ... armR elbR handR
+ *   legL kneeL footL         legs                    ... legR kneeR footR
+ *   cap crutch               secondary elements, also spring-driven
  *   grip stick stickTip      the broom handle, when the kid is carrying one
  *
- * Limbs rest pointing down -Y, so a *negative* rx swings a limb forward (+Z) and a positive
- * rz swings it out to +X.
+ * Limbs rest pointing down -Y. A NEGATIVE rx swings a limb forward (+Z) — so elbows bend
+ * negative and knees bend positive — and a POSITIVE rz swings it out toward +X.
  */
 export class Rig {
   constructor(root) {
@@ -243,27 +274,29 @@ export class Rig {
     this.joints = new Map();
     this.jiggles = [];
     this.height = 4.9;
-    this.hipY = 1.8;
+    this.posScale = 1;
     this.acc = {};
   }
   bind(name, obj) {
-    if (!obj) return obj;
+    if (!obj) return null;
     this.joints.set(name, { obj, rp: obj.position.clone(), rr: obj.rotation.clone(), rs: obj.scale.clone() });
     return obj;
   }
   get(name) { const j = this.joints.get(name); return j ? j.obj : null; }
   addJiggle(name, cfg) { const o = this.get(name); if (o) this.jiggles.push(new Jiggle(o, cfg)); }
+  addLag(name, cfg) { const o = this.get(name); if (o) this.jiggles.push(new QLag(o, cfg)); }
   resetSprings() { for (const j of this.jiggles) j.reset(); }
   clearAcc() {
     for (const k in this.acc) { const a = this.acc[k]; for (let i = 0; i < CHN; i++) a[i] = 0; }
     return this.acc;
   }
   apply(acc) {
+    const ps = this.posScale;
     for (const [name, j] of this.joints) {
       const a = acc[name];
       const o = j.obj;
       if (a) {
-        o.position.set(j.rp.x + a[3], j.rp.y + a[4], j.rp.z + a[5]);
+        o.position.set(j.rp.x + a[3] * ps, j.rp.y + a[4] * ps, j.rp.z + a[5] * ps);
         o.rotation.set(j.rr.x + a[0], j.rr.y + a[1], j.rr.z + a[2], j.rr.order);
         o.scale.set(j.rs.x * (1 + a[6]), j.rs.y * (1 + a[7]), j.rs.z * (1 + a[8]));
       } else {
@@ -272,221 +305,219 @@ export class Rig {
     }
   }
   updateSecondary(dt) { for (const j of this.jiggles) j.update(dt); }
+
+  /** Put both mitts on the handle. No-op for a kid who is not carrying one. */
+  solveHands() {
+    const ik = this.handIK;
+    const stick = this.get('stick');
+    if (!ik || !stick || !stick.visible) return;
+    stick.updateWorldMatrix(true, false);
+    for (const side of ['L', 'R']) {
+      const sh = this.get('arm' + side), elb = this.get('elb' + side), hand = this.get('hand' + side);
+      if (!sh || !elb || !hand) continue;
+      const up = side === 'L' ? ik.lo : ik.hi;
+      _t2.set(0, up, 0).applyMatrix4(stick.matrixWorld);
+      const S = side === 'L' ? -1 : 1;
+      _t3.set(S * ik.pole, -ik.pole * 0.8, -ik.pole * 0.55);
+      sh.parent.updateWorldMatrix(true, false);
+      _t3.applyMatrix4(sh.parent.matrixWorld);
+      solveTwoBone(sh, elb, hand, _t2, _t3);
+    }
+  }
 }
-
-const capLen = (m) => { const p = m && m.geometry && m.geometry.parameters; return p ? (p.length || 0) + 2 * (p.radius || 0) : 0; };
-const capRad = (m) => { const p = m && m.geometry && m.geometry.parameters; return p ? (p.radius || 0.19) : 0.19; };
-const isCapsule = (m) => !!(m && m.isMesh && m.geometry && m.geometry.type === 'CapsuleGeometry');
-
-function pivot(parent, name, x, y, z, order) {
-  const g = new THREE.Group();
-  g.name = name;
-  g.position.set(x, y, z);
-  if (order) g.rotation.order = order;
-  parent.add(g);
-  return g;
-}
-
-/** Re-cut a capsule mesh to a given pivot-to-pivot length, hanging from y=0 down -Y. */
-function segment(mesh, len, r) {
-  const g = new THREE.CapsuleGeometry(r, Math.max(0.02, len - 2 * r), 4, 10);
-  if (mesh.geometry) mesh.geometry.dispose();
-  mesh.geometry = g;
-  mesh.position.set(0, -len / 2, 0);
-  mesh.rotation.set(0, 0, 0);
-  mesh.scale.set(1, 1, 1);
-  return mesh;
-}
-
-const matOf = (m, fallback) => (m && m.material ? m.material : new THREE.MeshStandardMaterial({ color: fallback, roughness: 0.85 }));
-const colorOf = (m, fallback) => (m && m.material && m.material.color ? m.material.color.getHex() : fallback);
 
 /**
- * Turn whatever src/chars/rig.js handed us into an articulated skeleton.
- *
- * If a future rig publishes `userData.joints` we adopt it wholesale and touch nothing. The
- * fallback path adapts the flat capsule rig: it splits each limb capsule at the elbow/knee,
- * hangs everything off hip and chest pivots, and adds the four things a run cycle cannot be
- * read without — mitts, boots, a cap brim and a shirttail.
+ * The neutral the clips are authored against — BYB's "ready": arms a little out, elbows soft,
+ * knees soft, feet turned out. The rig ships each kid in a *characterful* rest pose (hands on
+ * hips, arms crossed, scratching), which is exactly right for a still and exactly wrong as a
+ * base for a run cycle, so animated kids get neutralised here. Their per-kid head quirk is
+ * kept at half strength, because that one is character rather than pose.
+ * Names below are OUR names: L is the -X side.
+ */
+const NEUTRAL = {
+  armL: [0.10, 0, -0.26], armR: [0.10, 0, 0.26],
+  elbL: [-0.20, 0, 0.08], elbR: [-0.20, 0, -0.08],
+  handL: [0, 0, 0], handR: [0, 0, 0],
+  legL: [0, -0.20, -0.15], legR: [0, 0.20, 0.15],
+  kneeL: [0, 0, 0], kneeR: [0, 0, 0], footL: [0, 0, 0], footR: [0, 0, 0],
+  chest: [-0.03, 0, 0], neck: [0, 0, 0],
+};
+
+/** Older/other rigs that publish a flat part map instead of `userData.joints`. */
+const FALLBACK = {
+  base: 'root', hips: 'hips', chest: 'torso', neck: 'neck', head: 'head', brim: 'cap', crutch: 'crutch',
+  armL: 'armR', armR: 'armL', elbL: 'foreR', elbR: 'foreL', handL: 'handR', handR: 'handL',
+  legL: 'legR', legR: 'legL', kneeL: 'shinR', kneeR: 'shinL', footL: 'footR', footR: 'footL',
+};
+
+const JOINT_NAMES = ['base', 'hips', 'chest', 'neck', 'head', 'brim', 'hair', 'shirt', 'crutch',
+  'armL', 'armR', 'elbL', 'elbR', 'handL', 'handR',
+  'legL', 'legR', 'kneeL', 'kneeR', 'footL', 'footR'];
+
+/**
+ * Adopt whatever skeleton src/chars/rig.js is publishing today. `userData.joints` is the
+ * contract (canonical names, L = -X); `userData.parts` / `userData.rig` are accepted as a
+ * fallback so this file keeps working if the character piece is mid-rebuild.
  */
 export function bindRig(kid, opts = {}) {
-  if (kid.userData.rig) return kid.userData.rig;
+  if (kid.userData.animRig) return kid.userData.animRig;
   const rig = new Rig(kid);
   const ud = kid.userData;
+  const met = ud.metrics || {};
+  const joints = ud.joints;
+  const parts = ud.parts || ud.rig;
 
-  if (ud.joints) {
-    for (const k in ud.joints) rig.bind(k, ud.joints[k]);
-    if (!rig.get('base')) rig.bind('base', kid);
-    kid.userData.rig = rig;
-    return rig;
+  if (joints) {
+    for (const n of JOINT_NAMES) if (joints[n]) rig.bind(n, joints[n]);
+  } else if (parts) {
+    for (const n of JOINT_NAMES) { const t = FALLBACK[n]; if (t && parts[t]) rig.bind(n, parts[t]); }
   }
-
-  const head = ud.head || null;
-  const armLm = ud.armL || null, armRm = ud.armR || null;
-  const legLm = ud.legL || null, legRm = ud.legR || null;
-  let torso = null;
-  for (const c of kid.children) {
-    if (c.isMesh && c !== head && c !== armLm && c !== armRm && c !== legLm && c !== legRm) { torso = c; break; }
+  if (!rig.get('base')) {
+    // last resort: interpose our own handle so root motion never fights placement
+    const b = new THREE.Group();
+    b.name = 'animBase';
+    while (kid.children.length) b.add(kid.children[0]);
+    kid.add(b);
+    rig.bind('base', b);
   }
-
-  const armLen = armLm ? capLen(armLm) : 1.28;
-  const armR_ = armLm ? capRad(armLm) : 0.19;
-  const legLen0 = legLm ? capLen(legLm) : 1.48;
-  const legR_ = legLm ? capRad(legLm) : 0.19;
-  const shoulderY = armLm ? armLm.position.y + armLen / 2 : 3.04;
-  const shoulderX = armLm ? Math.abs(armLm.position.x) : 0.8;
-  const hipY = legLm ? legLm.position.y + legLen0 / 2 : 1.79;
-  const hipX = legLm ? Math.abs(legLm.position.x) : 0.32;
-  const headY = head ? head.position.y : 3.9;
-  const headR = (head && head.geometry && head.geometry.parameters && head.geometry.parameters.radius) || 1.05;
-  const bootH = 0.24;
-  const legLen = Math.max(0.8, hipY - bootH);           // long enough that the boots reach the road
-
-  rig.hipY = hipY;
-  rig.height = headY + headR;
-
-  const skin = colorOf(head, 0xe8b48c);
-  const shirtCol = colorOf(torso, 0xc94f3d);
-  const capMesh = head ? head.children.find((c) => c.isMesh) : null;
-  const capCol = colorOf(capMesh, 0x2b3a55);
-
-  // --- spine -----------------------------------------------------------------
-  const base = pivot(kid, 'base', 0, 0, 0, 'YXZ');
-  const hips = pivot(base, 'hips', 0, hipY, 0, 'YXZ');
-  const chest = pivot(hips, 'chest', 0, 0, 0, 'YXZ');
-  const neck = pivot(chest, 'neck', 0, shoulderY - hipY + 0.08, 0, 'YXZ');
-  rig.bind('base', base); rig.bind('hips', hips); rig.bind('chest', chest); rig.bind('neck', neck);
-
-  if (torso) { chest.add(torso); torso.position.set(0, torso.position.y - hipY, 0); }
-
-  const headPivot = pivot(neck, 'head', 0, 0, 0, 'YXZ');
-  rig.bind('head', headPivot);
-  if (head) { headPivot.add(head); head.position.set(0, headY - hipY - (shoulderY - hipY + 0.08), 0); }
-
-  // --- cap brim: the primary overlap element -------------------------------
-  let brim = null;
-  if (head) {
-    brim = pivot(head, 'brim', 0, 0.16, 0.46, 'YXZ');
-    const bm = new THREE.Mesh(
-      new THREE.BoxGeometry(headR * 1.42, 0.13, headR * 0.86),
-      matOf(capMesh, capCol),
-    );
-    bm.position.set(0, 0, headR * 0.42);
-    bm.castShadow = true;
-    brim.add(bm);
-    rig.bind('brim', brim);
-
-    const hair = pivot(head, 'hair', 0, -0.05, -headR * 0.62, 'YXZ');
-    const hm = new THREE.Mesh(new THREE.SphereGeometry(headR * 0.34, 10, 8), new THREE.MeshStandardMaterial({ color: opts.hair || 0x4a3226, roughness: 0.95 }));
-    hm.scale.set(1.25, 0.72, 0.75);
-    hm.position.set(0, -0.12, -0.1);
-    hm.castShadow = true;
-    hair.add(hm);
-    rig.bind('hair', hair);
+  // neutralise the rest pose, then re-capture rest so clips read as authored
+  for (const n in NEUTRAL) {
+    const j = rig.joints.get(n);
+    if (!j) continue;
+    const v = NEUTRAL[n];
+    j.obj.rotation.set(v[0], v[1], v[2]);
+    j.rr.copy(j.obj.rotation);
   }
+  const hd = rig.joints.get('head');
+  if (hd) { hd.obj.rotation.set(hd.rr.x * 0.5, hd.rr.y * 0.5, hd.rr.z * 0.5); hd.rr.copy(hd.obj.rotation); }
 
-  // --- shirttail: the second overlap element -------------------------------
-  const shirt = pivot(hips, 'shirt', 0, 0.34, -0.34, 'YXZ');
-  const sm = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.66, 0.14), matOf(torso, shirtCol));
-  sm.position.set(0, -0.3, 0);
-  sm.castShadow = true;
-  shirt.add(sm);
-  rig.bind('shirt', shirt);
+  rig.height = met.tall || 4.9;
+  rig.headH = met.headH || rig.height / 3.2;
+  rig.posScale = rig.height / 4.9;
+  rig.spec = ud.spec || null;
 
-  // --- arms ------------------------------------------------------------------
-  const handMat = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.88 });
-  const bootMat = new THREE.MeshStandardMaterial({ color: opts.boot || 0x3b2a20, roughness: 0.75 });
-  const buildArm = (side, mesh) => {
-    const S = side === 'L' ? -1 : 1;
-    const sh = pivot(chest, 'arm' + side, S * shoulderX, shoulderY - hipY, 0);
-    const half = armLen / 2;
-    let upper = mesh;
-    if (isCapsule(mesh)) { sh.add(mesh); segment(mesh, half, armR_); }
-    else { upper = new THREE.Mesh(new THREE.CapsuleGeometry(armR_, half - 2 * armR_, 4, 10), new THREE.MeshStandardMaterial({ color: skin, roughness: 0.88 })); upper.position.y = -half / 2; upper.castShadow = true; sh.add(upper); }
-    const elb = pivot(sh, 'elb' + side, 0, -half, 0);
-    const fore = new THREE.Mesh(upper.geometry, upper.material);
-    fore.position.set(0, -half / 2, 0);
-    fore.castShadow = true;
-    elb.add(fore);
-    const hand = pivot(elb, 'hand' + side, 0, -half, 0);
-    const mitt = new THREE.Mesh(new THREE.SphereGeometry(armR_ * 1.75, 10, 8), handMat);
-    mitt.scale.set(1, 1.12, 0.82);
-    mitt.position.y = -armR_ * 0.9;
-    mitt.castShadow = true;
-    hand.add(mitt);
-    rig.bind('arm' + side, sh); rig.bind('elb' + side, elb); rig.bind('hand' + side, hand);
-  };
-  buildArm('L', armLm);
-  buildArm('R', armRm);
+  // ── overlap: every kid carries at least one element that arrives late ──
+  rig.addLag('brim', { k: 14, max: 0.34 });
+  rig.addLag('head', { k: 25, max: 0.18 });
+  rig.addLag('chest', { k: 34, max: 0.10 });
+  rig.addJiggle('hair', { k: 130, damp: 11, gain: 2.2, max: 0.8 });
+  rig.addJiggle('shirt', { k: 105, damp: 10, gain: 2.0, max: 0.7 });
+  if (rig.get('crutch')) rig.addJiggle('crutch', { k: 150, damp: 13, gain: 1.1, max: 0.4 });
 
-  // --- legs ------------------------------------------------------------------
-  const buildLeg = (side, mesh) => {
-    const S = side === 'L' ? -1 : 1;
-    const hp = pivot(hips, 'leg' + side, S * hipX, 0, 0);
-    const half = legLen / 2;
-    let thigh = mesh;
-    if (isCapsule(mesh)) { hp.add(mesh); segment(mesh, half, legR_); }
-    else { thigh = new THREE.Mesh(new THREE.CapsuleGeometry(legR_, half - 2 * legR_, 4, 10), new THREE.MeshStandardMaterial({ color: 0xd2c3a6, roughness: 0.9 })); thigh.position.y = -half / 2; thigh.castShadow = true; hp.add(thigh); }
-    const kn = pivot(hp, 'knee' + side, 0, -half, 0);
-    const shin = new THREE.Mesh(thigh.geometry, thigh.material);
-    shin.position.set(0, -half / 2, 0);
-    shin.castShadow = true;
-    kn.add(shin);
-    const ft = pivot(kn, 'foot' + side, 0, -half, 0);
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.5, bootH, 1.02), bootMat);
-    boot.position.set(0, -bootH / 2, 0.24);
-    boot.castShadow = true;
-    ft.add(boot);
-    const toe = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), bootMat);
-    toe.scale.set(1, 0.52, 0.7);
-    toe.position.set(0, -bootH / 2, 0.7);
-    ft.add(toe);
-    rig.bind('leg' + side, hp); rig.bind('knee' + side, kn); rig.bind('foot' + side, ft);
-  };
-  buildLeg('L', legLm);
-  buildLeg('R', legRm);
-
-  // springs: brim, hair and shirttail lag the body by two to four frames
-  rig.addJiggle('brim', { k: 190, damp: 15, gain: 1.5, max: 0.5, sign: -1 });
-  rig.addJiggle('hair', { k: 130, damp: 11, gain: 2.4, max: 0.85 });
-  rig.addJiggle('shirt', { k: 110, damp: 10, gain: 2.0, max: 0.7 });
-
-  kid.userData.rig = rig;
+  kid.userData.animRig = rig;
   return rig;
 }
 
+function inkShell(geo, mat) {
+  const m = new THREE.Mesh(geo, mat);
+  m.renderOrder = -1;
+  return m;
+}
+
+const _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _t3 = new THREE.Vector3();
+const _t4 = new THREE.Vector3(), _t5 = new THREE.Vector3(), _t6 = new THREE.Vector3();
+const _m1 = new THREE.Matrix4();
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+const clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
+
 /**
- * Hang a broom handle off a kid's back hand. The shaft is two pieces so the tip can lag the
- * grip — that lag is the bat's whip, and it is the difference between a swing and a
- * rotating stick.
+ * Analytic two-bone IK. The broom handle is authored in body space — which is the only way to
+ * get a swing arc that actually reads — and the hands are then solved onto it, so the kid is
+ * genuinely holding the stick in every frame instead of approximately holding it in most.
  */
-export function attachStick(rig, { length = 3.35, color = 0xc9a469, tape = 0x2f2a26 } = {}) {
+function solveTwoBone(sh, elb, hand, targetWorld, poleWorld) {
+  const parent = sh.parent;
+  if (!parent) return;
+  parent.updateWorldMatrix(true, false);
+  _m1.copy(parent.matrixWorld).invert();
+  const P = _t1.copy(sh.position);
+  const T = _t2.copy(targetWorld).applyMatrix4(_m1);
+  const pole = _t3.copy(poleWorld).applyMatrix4(_m1).sub(P);
+  const l1 = Math.abs(elb.position.y) || 1;
+  const l2 = Math.abs(hand.position.y) || 1;
+  const v = _t4.copy(T).sub(P);
+  let d = v.length();
+  if (d < 1e-5) { v.set(0, -1, 0); d = 1; }
+  d = clampN(d, Math.abs(l1 - l2) + 1e-3, l1 + l2 - 1e-3);
+  v.setLength(d);
+  const phi = Math.acos(clampN((d * d - l1 * l1 - l2 * l2) / (2 * l1 * l2), -1, 1));
+  const hy = -l1 - l2 * Math.cos(phi), hz = l2 * Math.sin(phi);
+  const hn = _t5.set(0, hy, hz).normalize();
+  const vn = _t6.copy(v).normalize();
+  _qa.setFromUnitVectors(hn, vn);
+  // twist about the target direction so the elbow ends up on the pole side
+  _t5.set(0, -l1, 0).applyQuaternion(_qa);
+  _t5.addScaledVector(vn, -_t5.dot(vn));
+  _t3.addScaledVector(vn, -_t3.dot(vn));
+  if (_t5.lengthSq() > 1e-7 && _t3.lengthSq() > 1e-7) {
+    _t5.normalize(); _t3.normalize();
+    const ang = Math.atan2(_t1.crossVectors(_t5, _t3).dot(vn), _t5.dot(_t3));
+    _qb.setFromAxisAngle(vn, ang);
+    _qa.premultiply(_qb);
+  }
+  sh.quaternion.copy(_qa);
+  elb.rotation.set(-phi, 0, 0);
+}
+
+/**
+ * Hang a broom handle in front of the kid's chest, in two pieces so the tip can lag the grip.
+ * That lag is the whip. The shaft angle is a clip channel (`grip`), and both hands are IK'd
+ * onto the handle every frame by `Rig.solveHands()`.
+ */
+export function attachStick(rig, o = {}) {
   if (rig.get('stick')) return rig.get('stick');
-  const hand = rig.get('handL') || rig.get('handR') || rig.get('chest');
-  if (!hand) return null;
-  const grip = pivot(hand, 'grip', 0, -0.28, 0.06);
-  const stick = pivot(grip, 'stick', 0, 0, 0);
-  const woodMat = new THREE.MeshStandardMaterial({ color, roughness: 0.78 });
-  const halfL = length * 0.5;
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.1, halfL, 8), woodMat);
-  lower.position.y = -halfL / 2 + halfL;             // grows up +Y from the grip
-  lower.castShadow = true;
-  stick.add(lower);
-  const tip = pivot(stick, 'stickTip', 0, halfL, 0);
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, halfL, 8), woodMat);
-  upper.position.y = halfL / 2;
-  upper.castShadow = true;
-  tip.add(upper);
-  const gripWrap = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.5, 8), new THREE.MeshStandardMaterial({ color: tape, roughness: 0.95 }));
-  gripWrap.position.y = 0.06;
-  stick.add(gripWrap);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshStandardMaterial({ color: tape, roughness: 0.95 }));
-  knob.position.y = -0.2;
-  knob.scale.set(1, 0.7, 1);
-  stick.add(knob);
+  const armL = rig.get('armL');
+  const girdle = (armL && armL.parent) || rig.get('chest');
+  if (!girdle) return null;
+  const shX = armL ? Math.abs(armL.position.x) : rig.headH * 0.45;
+  const shY = armL ? armL.position.y : rig.headH * 0.9;
+  const length = o.length || rig.height * 0.78;
+  const wood = o.color === undefined ? 0xb09468 : o.color;
+  const tape = o.tape === undefined ? 0x4a4038 : o.tape;
+  const ink = o.ink === undefined ? 0x2a1d1a : o.ink;
+  const woodMat = new THREE.MeshBasicMaterial({ color: wood, toneMapped: false });
+  const tapeMat = new THREE.MeshBasicMaterial({ color: tape, toneMapped: false });
+  const inkMat = new THREE.MeshBasicMaterial({ color: ink, side: THREE.BackSide, toneMapped: false });
+
+  const grip = new THREE.Group();
+  grip.name = 'grip';
+  grip.position.set(-shX * 0.62, shY * 0.30, shX * 1.25);
+  girdle.add(grip);
+  const stick = new THREE.Group(); stick.name = 'stick'; grip.add(stick);
+  const half = length * 0.5;
+  const r0 = length * 0.028, r1 = length * 0.022, ow = length * 0.012;
+
+  const seg = (parent, rBot, rTop, len, y) => {
+    const g = new THREE.CylinderGeometry(rTop, rBot, len, 9);
+    g.translate(0, y, 0);
+    parent.add(new THREE.Mesh(g, woodMat));
+    const gs = new THREE.CylinderGeometry(rTop + ow, rBot + ow, len + ow * 2, 9);
+    gs.translate(0, y, 0);
+    parent.add(inkShell(gs, inkMat));
+  };
+  seg(stick, r0, r1 * 1.05, half, half * 0.5);
+  const tip = new THREE.Group(); tip.name = 'stickTip'; tip.position.y = half; stick.add(tip);
+  seg(tip, r1 * 1.05, r1 * 0.88, half, half * 0.5);
+
+  const wrapG = new THREE.CylinderGeometry(r0 * 1.3, r0 * 1.3, length * 0.26, 9);
+  wrapG.translate(0, length * 0.09, 0);
+  stick.add(new THREE.Mesh(wrapG, tapeMat));
+  const wrapS = new THREE.CylinderGeometry(r0 * 1.3 + ow, r0 * 1.3 + ow, length * 0.26 + ow, 9);
+  wrapS.translate(0, length * 0.09, 0);
+  stick.add(inkShell(wrapS, inkMat));
+  const knobG = new THREE.SphereGeometry(r0 * 1.6, 9, 7);
+  knobG.scale(1, 0.7, 1);
+  knobG.translate(0, -length * 0.05, 0);
+  stick.add(new THREE.Mesh(knobG, tapeMat));
+  const knobS = new THREE.SphereGeometry(r0 * 1.6 + ow, 9, 7);
+  knobS.scale(1, 0.7, 1);
+  knobS.translate(0, -length * 0.05, 0);
+  stick.add(inkShell(knobS, inkMat));
+
   rig.bind('grip', grip); rig.bind('stick', stick); rig.bind('stickTip', tip);
-  rig.addJiggle('stickTip', { k: 260, damp: 17, gain: 0.85, max: 0.42 });
+  rig.addJiggle('stickTip', { k: 300, damp: 19, gain: 0.62, max: 0.34 });
   rig.stickLength = length;
+  rig.handIK = { lo: length * 0.09, hi: length * 0.3, pole: shX * 2.2 };
   return stick;
 }
 

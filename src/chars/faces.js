@@ -236,79 +236,83 @@ function drawMouth(ctx, kind, p) {
 function paint(ctx, F, exName) {
   const ex = EXPRESSIONS[exName] || EXPRESSIONS.neutral;
   ctx.clearRect(0, 0, S, S);
-  ctx.imageSmoothingEnabled = true;
 
-  /* --- the three bands, painted (§4.1) ---------------------------------- */
-  ctx.fillStyle = F.skin;
-  ctx.fillRect(0, 0, S, S);
+  /* The decal carries NO skin base. The head mesh underneath is already banded, so
+     painting an opaque face on top of it puts a visible mask edge round the jaw. What
+     goes on here is only what a painter would add on top of the skin: the brim's cast
+     shadow, a little form down the shade side, blush, freckles, the afternoon's dirt,
+     and the features. Everything soft-edged, so nothing can seam. */
 
   ctx.save();
-  ctx.filter = 'blur(3px)';                       // 2-3 px soft edge, and no more
-  ctx.fillStyle = F.skinShade;
-  ctx.beginPath();                                 // key from upper-left: shade the right cheek
-  ctx.moveTo(S * 1.06, -S * 0.06);
-  ctx.quadraticCurveTo(S * 0.70, S * 0.34, S * 0.78, S * 0.72);
-  ctx.quadraticCurveTo(S * 0.84, S * 1.02, S * 1.06, S * 1.10);
+  ctx.filter = 'blur(9px)';
+  ctx.globalAlpha = 0.30;                          // form down the shade side (key upper-left)
+  ctx.fillStyle = F.formShade;
+  ctx.beginPath();
+  ctx.moveTo(S * 1.10, -S * 0.10);
+  ctx.quadraticCurveTo(S * 0.74, S * 0.40, S * 0.84, S * 0.80);
+  ctx.quadraticCurveTo(S * 0.92, S * 1.06, S * 1.10, S * 1.14);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = F.bounce;                        // warm kick off the roadway, under the jaw
-  ctx.beginPath();
-  ctx.ellipse(S * 0.5, S * 1.06, S * 0.46, S * 0.20, 0, 0, TAU);
-  ctx.fill();
+  ctx.restore();
+
   if (F.brim) {                                    // the brim's own shadow across the brow
-    ctx.fillStyle = F.skinShade;
-    ctx.globalAlpha = 0.85;
+    ctx.save();
+    ctx.filter = 'blur(5px)';
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = F.formShade;
     ctx.beginPath();
-    ctx.moveTo(-S * 0.05, -S * 0.05);
-    ctx.lineTo(S * 1.05, -S * 0.05);
-    ctx.lineTo(S * 1.05, S * (F.brim - 0.03));
-    ctx.quadraticCurveTo(S * 0.5, S * (F.brim + 0.07), -S * 0.05, S * (F.brim - 0.03));
+    ctx.moveTo(-S * 0.10, -S * 0.10);
+    ctx.lineTo(S * 1.10, -S * 0.10);
+    ctx.lineTo(S * 1.10, S * (F.brim - 0.03));
+    ctx.quadraticCurveTo(S * 0.5, S * (F.brim + 0.09), -S * 0.10, S * (F.brim - 0.03));
     ctx.closePath();
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
-  ctx.restore();
 
   /* --- blush, freckles, and the afternoon's dirt ------------------------ */
   ctx.save();
-  ctx.filter = 'blur(5px)';
-  ctx.globalAlpha = 0.34;
+  ctx.filter = 'blur(6px)';
+  ctx.globalAlpha = 0.40;
   ctx.fillStyle = F.blush;
-  ell(ctx, 0.255, 0.615, 0.105, 0.070); ctx.fill();
-  ell(ctx, 0.745, 0.615, 0.105, 0.070); ctx.fill();
+  ell(ctx, 0.250, 0.660, 0.112, 0.074); ctx.fill();
+  ell(ctx, 0.750, 0.660, 0.112, 0.074); ctx.fill();
   ctx.restore();
   if (F.freckles) {
+    ctx.save();
+    ctx.globalAlpha = 0.85;
     ctx.fillStyle = F.freckle;
     for (let i = 0; i < F.freckles * 5; i++) {
       const a = (i * 2.39996) % TAU, rr = 0.055 + (i % 5) * 0.021;
       const sx = i % 2 ? 0.29 : 0.71;
-      ell(ctx, sx + Math.cos(a) * rr, 0.585 + Math.sin(a) * rr * 0.62, 0.0135, 0.0135);
+      ell(ctx, sx + Math.cos(a) * rr, 0.630 + Math.sin(a) * rr * 0.62, 0.0135, 0.0135);
       ctx.fill();
     }
+    ctx.restore();
   }
   ctx.save();                                       // cheek streak: dirt shape #1 of three
-  ctx.filter = 'blur(2px)';
-  ctx.globalAlpha = 0.35;
+  ctx.filter = 'blur(3px)';
+  ctx.globalAlpha = 0.40;
   ctx.strokeStyle = F.dirt;
-  ctx.lineWidth = S * 0.026;
+  ctx.lineWidth = S * 0.030;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(S * (F.smudgeSide > 0 ? 0.80 : 0.20), S * 0.52);
-  ctx.quadraticCurveTo(S * (F.smudgeSide > 0 ? 0.86 : 0.14), S * 0.62, S * (F.smudgeSide > 0 ? 0.78 : 0.22), S * 0.72);
+  ctx.moveTo(S * (F.smudgeSide > 0 ? 0.80 : 0.20), S * 0.565);
+  ctx.quadraticCurveTo(S * (F.smudgeSide > 0 ? 0.87 : 0.13), S * 0.665, S * (F.smudgeSide > 0 ? 0.77 : 0.23), S * 0.770);
   ctx.stroke();
   ctx.restore();
 
   /* --- eyes -------------------------------------------------------------- */
   const ew = F.eyeW, eh = ew * 1.22;
-  const ey = 0.500;                                 // at the head's horizontal midline
+  const ey = 0.545;                                 // sits on the head's horizontal midline
   const cx = [0.5 - ew, 0.5 + ew];                  // gap between them = one eye width
   const gz = [ex.gaze[0] + F.gaze[0], ex.gaze[1] + F.gaze[1]];
   for (let i = 0; i < 2; i++) {
-    let open = ex.open[i] * F.lidBias[i];
+    const open = ex.open[i] * F.lidBias[i];
     drawEye(ctx, {
       x: cx[i], y: ey, ew, eh, open,
       lid: (i ? -1 : 1) * (ex.brow === 'angry' ? 0.30 : ex.brow === 'cocky' ? 0.16 : 0.0) + F.lidTilt[i],
-      gaze: gz, ink: F.ink, white: F.white, skinShade: F.skinShade,
+      gaze: gz, ink: F.ink, white: F.white, skinShade: F.lidSkin,
     });
   }
 
@@ -317,9 +321,9 @@ function paint(ctx, F, exName) {
   for (let i = 0; i < 2; i++) {
     const [dy, tilt, arch] = bp[i];
     drawBrow(ctx, {
-      x: cx[i] + (i ? 0.006 : -0.006),
-      y: ey - eh * 0.58 - eh * 0.30 + dy * eh + F.browBias[i] * eh,
-      len: ew * F.browLen, thick: 0.030 * F.browThick, arch,
+      x: cx[i] + (i ? 0.010 : -0.010),
+      y: ey - eh * 0.62 - eh * 0.32 + dy * eh + F.browBias[i] * eh,
+      len: ew * F.browLen, thick: 0.040 * F.browThick, arch,
       tilt: tilt + F.browTilt[i], color: F.brow,
     });
   }
@@ -327,19 +331,19 @@ function paint(ctx, F, exName) {
   /* --- nose: a bump, a dot or a comma. Nothing else. -------------------- */
   ctx.save();
   ctx.strokeStyle = F.noseInk;
-  ctx.lineWidth = S * 0.017;
+  ctx.lineWidth = S * 0.018;
   ctx.lineCap = 'round';
   if (F.nose === 'dot') {
     ctx.fillStyle = F.noseInk;
-    ell(ctx, 0.5, 0.632, 0.020, 0.017); ctx.fill();
+    ell(ctx, 0.5, 0.672, 0.021, 0.018); ctx.fill();
   } else if (F.nose === 'comma') {
     ctx.beginPath();
-    ctx.moveTo(S * 0.492, S * 0.578);
-    ctx.quadraticCurveTo(S * 0.470, S * 0.640, S * 0.520, S * 0.642);
+    ctx.moveTo(S * 0.492, S * 0.620);
+    ctx.quadraticCurveTo(S * 0.468, S * 0.682, S * 0.522, S * 0.684);
     ctx.stroke();
   } else {
     ctx.beginPath();
-    ctx.arc(S * 0.5, S * 0.610, S * 0.036, 0.35 * Math.PI, 0.75 * Math.PI);
+    ctx.arc(S * 0.5, S * 0.652, S * 0.038, 0.32 * Math.PI, 0.78 * Math.PI);
     ctx.stroke();
   }
   ctx.restore();
@@ -348,27 +352,27 @@ function paint(ctx, F, exName) {
   if (F.specs) {
     ctx.save();
     ctx.strokeStyle = F.ink;
-    ctx.lineWidth = S * 0.014;
-    for (let i = 0; i < 2; i++) { ell(ctx, cx[i], ey, ew * 0.78, eh * 0.66); ctx.stroke(); }
+    ctx.lineWidth = S * 0.015;
+    for (let i = 0; i < 2; i++) { ell(ctx, cx[i], ey, ew * 0.80, eh * 0.68); ctx.stroke(); }
     ctx.beginPath();
-    ctx.moveTo((cx[0] + ew * 0.78) * S, ey * S);
-    ctx.lineTo((cx[1] - ew * 0.78) * S, ey * S);
+    ctx.moveTo((cx[0] + ew * 0.80) * S, ey * S);
+    ctx.lineTo((cx[1] - ew * 0.80) * S, ey * S);
     ctx.stroke();
     ctx.restore();
   }
 
   /* --- mouth ------------------------------------------------------------- */
   drawMouth(ctx, ex.mouth, {
-    x: 0.5, y: 0.735, w: 0.30 * F.mouthW, ink: F.mouthInk, teeth: F.teeth, tongue: F.tongue,
+    x: 0.5, y: 0.762, w: 0.31 * F.mouthW, ink: F.mouthInk, teeth: F.teeth, tongue: F.tongue,
     corner: F.tongueCorner,
   });
 
-  /* --- feather the decal edge into the head mesh underneath ------------- */
+  /* --- feather the decal edge so nothing can ever seam ------------------- */
   ctx.save();
   ctx.globalCompositeOperation = 'destination-in';
-  const g = ctx.createRadialGradient(S * 0.5, S * 0.5, S * 0.30, S * 0.5, S * 0.5, S * 0.70);
+  const g = ctx.createRadialGradient(S * 0.5, S * 0.5, S * 0.30, S * 0.5, S * 0.5, S * 0.74);
   g.addColorStop(0, 'rgba(0,0,0,1)');
-  g.addColorStop(0.72, 'rgba(0,0,0,1)');
+  g.addColorStop(0.70, 'rgba(0,0,0,1)');
   g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, S, S);
@@ -391,19 +395,19 @@ export function makeFace(spec, opts = {}) {
 
   const F = {
     skin: hexCSS(skinHex),
-    skinShade: hexCSS(coolShade(skinHex)),
-    bounce: hexCSS(bounceOf(skinHex)),
+    formShade: hexCSS(mix(coolShade(skinHex, 0.52), AIR.shadowTint, 0.18)),
+    lidSkin: hexCSS(coolShade(skinHex, 0.86)),
     blush: hexCSS(BLUSH),
     freckle: hexCSS(mix(soot(skinHex, 0.34), ACCENTS.rust, 0.4)),
     dirt: hexCSS(soot(FACADE.brickShade, 0.20)),
     ink: hexCSS(inkOf(mix(skinHex, hairHex, 0.85))),
     noseInk: hexCSS(mix(coolShade(skinHex, 0.55), hairHex, 0.25)),
-    brow: hexCSS(soot(hairHex, 0.18)),
+    brow: hexCSS(mix(soot(hairHex, 0.34), INK, 0.30)),
     mouthInk: hexCSS(inkOf(mix(BLUSH, hairHex, 0.55))),
     teeth: hexCSS(mix(CHALK, SKIN[0], 0.18)),
     tongue: hexCSS(soot(BLUSH, 0.10)),
     white: hexCSS(mix(CHALK, AIR.skyFill, 0.10)),
-    eyeW: 0.150 * (q.eyeSize || 1),            // 15% of head width, inside BYB's 12-16%
+    eyeW: 0.152 * (q.eyeSize || 1),            // 15% of head width, inside BYB's 12-16%
     browLen: 1.22,                              // 1.0-1.4x eye width
     browThick: q.browThick || 1,
     mouthW: q.mouthW || 1,
@@ -414,11 +418,11 @@ export function makeFace(spec, opts = {}) {
     brim: opts.brim || 0,
     gaze: [0, 0],
     // deliberate, per-kid, on a named side
-    lidBias: [q.droopy === 'L' ? 0.62 : 1, q.droopy === 'R' ? 0.62 : 1],
+    lidBias: [q.droopy === 'R' ? 0.58 : 1, q.droopy === 'L' ? 0.58 : 1],
     lidTilt: [0, 0],
-    browBias: [q.browUp === 'L' ? -0.30 : 0, q.browUp === 'R' ? -0.30 : 0],
+    browBias: [q.browUp === 'R' ? -0.34 : 0, q.browUp === 'L' ? -0.34 : 0],
     browTilt: [q.browSkew || 0, -(q.browSkew || 0) * 0.4],
-    tongueCorner: q.tongue === 'L' ? -1 : q.tongue === 'R' ? 1 : 0,
+    tongueCorner: q.tongue === 'L' ? 1 : q.tongue === 'R' ? -1 : 0,
   };
 
   const texture = new THREE.CanvasTexture(canvas);
