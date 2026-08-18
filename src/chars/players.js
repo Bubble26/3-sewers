@@ -29,7 +29,7 @@ const BASES = [
   { x: -18, z: T.street.plateZ + 28 },
 ];
 const HOME = { x: 0, z: T.street.plateZ };
-const PLATE_BOX = { x: -2.7, z: T.street.plateZ - 0.5 };
+const PLATE_BOX = { x: 2.7, z: T.street.plateZ - 0.5 };
 
 /**
  * Every heading in this file goes through the rig's own detected facing (anim.js `headingTo`)
@@ -454,6 +454,8 @@ export default registerSystem({
   homePose() {
     for (const f of this.fielders) { f.at(f.post.x, f.post.z, f.post.face === undefined ? YAW(0, -1) : f.post.face); f.lock = 0; f.cycle = null; f.state = 'idle'; f.anim.stopLayers(); f.anim.play(f.restClip, { at: arng.range(0, 2), fade: 0 }); }
     for (const f of this.fielders.slice(2)) { f.lookAt(HOME.x, HOME.z); f.snapFacing(); }
+    this.catcher.lookAt(0, T.street.moundZ).snapFacing();
+    this.pitcher.lookAt(HOME.x, HOME.z).snapFacing();
     this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW());
     this.batter.cycle = null; this.batter.lock = 0; this.batter.anim.stopLayers();
     this.batter.showStick(true);
@@ -598,7 +600,7 @@ registerScenario('anim_swing', {
       k.setCycle(P, [
         { t: 0.0, do: (y) => { y.anim.play('stance', { fade: 0.1 }); y.flavour('waggle', { life: 0.2 }); } },
         { t: 0.16, do: (y) => y.anim.play('swing', { restart: true, fade: 0.05 }) },
-      ], (P / 4) * (3 - i) + 0.26);
+      ], (P / 4) * i + 0.26);
     });
   },
   settle: 0.05,
@@ -645,13 +647,16 @@ registerScenario('anim_celebrate', {
   seed: 24,
   setup: () => {
     const a = cast(7);
-    cam([0, 3.3, 10.0], { dist: 17, elev: 10, yaw: -18, fov: 52, aim: 0.4 });
+    cam([0, 3.4, 11.0], { dist: 19, elev: 13, yaw: -18, fov: 52, aim: 0.4 });
     const star = a[0];
     star.showStick(false);
     star.at(0, 9.5, faceCam(0, 9.5));
-    star.setCycle(9, [{ t: 0, do: (x) => x.anim.play('mobbed', { fade: 0.2 }) }], 0.4);
+    star.setCycle(2.7, [
+      { t: 0, do: (x) => x.anim.play('mobbed', { fade: 0.2 }) },
+      { t: 1.35, do: (x) => x.anim.play('cheer_arms', { fade: 0.18 }) },
+    ], 1.55);
     // four kids piling on, offset so no two are airborne on the same frame
-    const ring = [[-3.9, 6.9], [4.1, 7.2], [-2.9, 12.4], [3.3, 12.6]];
+    const ring = [[-5.2, 6.4], [5.4, 6.8], [-4.0, 13.4], [4.6, 13.6]];
     ring.forEach((p, i) => {
       const k = a[1 + i];
       k.showStick(false);
@@ -661,11 +666,11 @@ registerScenario('anim_celebrate', {
     // one thumbing his nose at the other bench, one who lost taking it hard
     const t = a[5];
     t.showStick(false);
-    t.at(-9.6, 14.6, faceCam(-9.6, 14.6, 0.35));
+    t.at(-11.6, 16.6, faceCam(-11.6, 16.6, 0.35));
     t.setCycle(9, [{ t: 0, do: (x) => x.anim.play('taunt', { fade: 0.2 }) }], 0.4);
     const s = a[6];
     s.showStick(false);
-    s.at(9.4, 15.4, faceCam(9.4, 15.4, -0.4));
+    s.at(11.4, 17.4, faceCam(11.4, 17.4, -0.4));
     s.setCycle(9, [{ t: 0, do: (x) => x.anim.play('sulk', { fade: 0.2 }) }], 1.4);
   },
   settle: 0.6,
