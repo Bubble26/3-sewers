@@ -130,6 +130,9 @@ Judge this piece specifically: ${p.brief}
 Procedure:
 1. \`node tools/shoot.mjs --out shots/critic-${p.key}-r${round}\`. Non-zero exit or any console
    error in report.json ⇒ build_broken=true and the piece fails this round regardless of looks.
+   One exception: other pieces are being built in the same tree right now, so if the failure is
+   inside a file this piece does not own, wait 30 seconds and retry once. If it clears, judge
+   normally. If it persists, set build_broken=true and name the offending file in evidence.
 2. **Read every PNG yourself.** These scenarios matter most: ${(p.scenarios || ['pitch', 'contact', 'deep_fly', 'wide']).join(', ')}.
 3. For anything involving motion or timing, run \`node tools/film.mjs <scenario> --frames 12
    --step 0.05 --out shots/critic-${p.key}-r${round}\` and read the contact sheet.
