@@ -800,18 +800,26 @@ _IDLE = {
     # planted: the big kids. Weight never leaves the middle; the motion is a
     # slow chest fill and one shoulder rolling out a crick.
     "planted": dict(
-        bob=[-1.5, -3.0, -3.6, -2.2, -0.4, -0.6],
-        stretch=[0.006, 0.017, 0.020, 0.009, -0.008, -0.005],
-        squat=[0, 0, 0, 1.5, 3.0, 1.5],
-        sh_tilt=[0.0, -1.6, -2.6, -1.0, 1.6, 1.0],
-        hip_tilt=[1.0, 1.6, 1.2, 0.0, -1.2, -0.6],
-        look=[0.10, 0.10, -0.05, -0.30, -0.30, 0.0],
-        head_dx=[0.6, 0.6, 0.0, -1.6, -1.6, -0.2],
-        hat_dy=[0.6, 0.9, 0.5, 0.0, -0.7, -0.4],
-        hat_rot=[0.5, 1.0, 1.2, 0.4, -1.0, -0.6],
-        arm_far=[(105, 10)], arm_near=[(75, -10)],
-        leg_far=[(100, 5)], leg_near=[(80, -5)],
-        face=["calm"]),
+        # weight never leaves the middle, but a big kid still breathes, rolls
+        # a shoulder and hitches his belt — hold everything TOO still and the
+        # drawing reads as broken rather than as calm
+        bob=[-1.5, -4.0, -5.0, -2.6, 0.4, -0.4],
+        stretch=[0.008, 0.026, 0.030, 0.010, -0.014, -0.006],
+        squat=[0, -1.0, -1.5, 1.5, 4.5, 2.0],
+        sh_tilt=[0.0, -2.4, -3.6, -1.2, 2.6, 1.4],
+        hip_tilt=[1.4, 2.2, 1.6, 0.0, -1.8, -0.8],
+        look=[0.10, 0.14, -0.10, -0.45, -0.42, 0.0],
+        head_dx=[0.8, 1.0, -0.2, -2.8, -2.6, -0.4],
+        head_dy=[0.0, -1.2, -1.6, 0.4, 1.8, 0.6],
+        hat_dy=[0.8, 1.4, 0.8, 0.0, -1.2, -0.6],
+        hat_rot=[0.6, 1.4, 1.8, 0.6, -1.8, -1.0],
+        hem_dx=[0.4, 0.8, 0.4, -0.8, -1.4, -0.6],
+        arm_far=[(105, 10), (107, 13), (108, 15), (104, 9), (101, 5), (103, 7)],
+        hand_near=[(0.50, 1.00, -1), (0.50, 0.98, -1), (0.48, 0.96, -1),
+                   (0.44, 0.86, -1), (0.42, 0.82, -1), (0.48, 0.94, -1)],
+        leg_far=[(100, 5), (100, 3), (100, 2), (101, 6), (102, 9), (101, 7)],
+        leg_near=[(80, -5), (80, -3), (80, -2), (79, -6), (78, -9), (79, -7)],
+        face=["calm", "calm", "calm", "blink", "calm", "calm"]),
     # bounce: scrappy kids who cannot stand still. Heels never settle.
     "bounce": dict(
         bob=[0.5, -5.5, -9.5, -6.5, -1.0, 2.0],
@@ -1241,12 +1249,12 @@ def draw_cop_extras(c, cfg, pose=None):
     pose = pose or {}
     cx, head_cy, hr = _head_at(cfg, pose)
     col = CLOTH["navy"]
-    hy = head_cy - hr * 0.86 + pose.get("hat_dy", 0.0)
+    hy = head_cy - hr * 0.78 + pose.get("hat_dy", 0.0)
     # tall custodian helmet
-    ipoly(c, [(cx - hr * 0.74, hy + hr * 0.42), (cx - hr * 0.56, hy - hr * 0.52),
-              (cx, hy - hr * 0.78), (cx + hr * 0.56, hy - hr * 0.52),
+    ipoly(c, [(cx - hr * 0.74, hy + hr * 0.42), (cx - hr * 0.56, hy - hr * 0.42),
+              (cx, hy - hr * 0.64), (cx + hr * 0.56, hy - hr * 0.42),
               (cx + hr * 0.74, hy + hr * 0.42)], shade(col, 0.86), ink=4)
-    c.circle(cx, hy - hr * 0.80, hr * 0.13, fill=A.GOLD)
+    c.circle(cx, hy - hr * 0.66, hr * 0.11, fill=A.GOLD)
     c.rrect([cx - hr * 0.86, hy + hr * 0.34, cx + hr * 0.86, hy + hr * 0.56],
             hr * 0.10, fill=INK)
     # badge

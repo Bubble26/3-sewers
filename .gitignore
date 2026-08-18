@@ -7,3 +7,7 @@ threesewers/.godot/
 __pycache__/
 *.pyc
 node_modules/
+
+# Captured frames staged for critics — derived data, regenerate with
+# threesewers/tools/capture.sh rather than storing it
+workbench/critique/
