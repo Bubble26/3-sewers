@@ -304,6 +304,8 @@ var _seed := 0
 var _contact_t := -1.0
 var _contact_from := Vector2.ZERO
 var _contact_from_h := 0.0
+var _prev_bh := 0.0
+var _rolled := false
 
 # Under --write-movie the engine runs a fixed timestep, so the frame counter
 # IS the movie frame index. Printing it here is what lets the capture tool
@@ -649,8 +651,12 @@ func _field_kids() -> Array:
 # ---------------------------------------------------------------- match flow
 func run_match() -> void:
 	_update_hud(core.snapshot())
+	Audio.sting("playball")
 	await _card("PLAY BALL!", "", 0.9)
+	Audio.music("game")
+	Audio.crowd(true)
 	ticker(Announcer.line("pregame", core.kid_name(core.batter_id())))
+	Audio.announce("pregame")
 	while not core.game_over:
 		_setup_sides()
 		_sync_runners()
@@ -661,10 +667,12 @@ func run_match() -> void:
 			plan = core.cpu_swing(pitch)
 		if randf() < PITCH_PATTER_CHANCE:
 			ticker(Announcer.line("pitch", core.kid_name(core.pitcher_id())))
+			Audio.announce("pitch")
 		var pk: Kid = fielders.get("P")
 		if pk != null and is_instance_valid(pk):
 			pk.play("pitch", 10.0, false)
 		await _beat(PITCH_WINDUP_T)
+		Audio.sfx("pitch_release")
 		_start_pitch(pitch, plan)
 		var ev: Dictionary = await pitch_resolved
 		await _choreo(ev)
@@ -998,6 +1006,7 @@ func _process_ball(delta: float) -> void:
 			if not _bounced:
 				_bounced = true
 				mark("bounce")
+				Audio.sfx_world("ball_bounce", _pB.x)
 				_fx_dust(_pB, 14)
 				shake(6.5, Vector2(0, 1))
 			bw = _pB.lerp(_pC, tau / _tb)
@@ -1032,6 +1041,9 @@ func _process_ball(delta: float) -> void:
 		else:
 			var rt := _bt - _h_dur
 			if rt < _h_roll_t:
+				if not _rolled:
+					_rolled = true
+					Audio.sfx_world("ball_roll", _h_land.x, -4.0)
 				var ru := rt / _h_roll_t
 				var k := 1.0 - (1.0 - ru) * (1.0 - ru)
 				pos = _h_land + _h_roll_dir * _h_roll_px * k
@@ -1051,10 +1063,14 @@ func _process_ball(delta: float) -> void:
 				var sy: float = Tuning.SEWERS_Y[i]
 				if _sewer_prev_y > sy and pos.y <= sy:
 					_fx_label(SEWER_TEXTS[i], Vector2(pos.x, sy))
+					Audio.sfx_at("sewer_ping", 0.0, 0.0, i + 1)
 			_sewer_prev_y = pos.y
 			pass
 		bw = pos
 		_apply_ball()
+		if _prev_bh > 6.0 and bh <= 6.0:
+			Audio.sfx_world("ball_bounce", bw.x, -5.0)
+		_prev_bh = bh
 		_push_trail()
 
 # A grounder is a chain of hops, each losing energy to the cobbles:
@@ -1113,10 +1129,13 @@ func _resolve_pitch() -> void:
 	if String(ev.get("kind", "")) == "in_play":
 		var q := float(ev.get("quality", 0.5))
 		mark("contact q=%.2f" % q)
+		Audio.sfx_world("bat_crack" if q > 0.55 else "bat_thud",
+			bw.x, -7.0 + 8.0 * q)
 		_fx_contact(bw, bh, clampf(q, 0.15, 1.0))
 		shake(5.0 + 15.0 * q, Vector2(-1.0, 0.3))
 		_view_kick(0.05 + 0.10 * q)
 	elif String(ev.get("kind", "")) == "foul":
+		Audio.sfx_world("bat_thud", bw.x, -4.0)
 		_fx_contact(bw, bh, 0.25)
 		shake(3.5, Vector2(-1.0, 0.3))
 	pitch_resolved.emit(ev)
@@ -1176,6 +1195,8 @@ func _launch_hit(play: Dictionary) -> void:
 		_h_roll_px = HR_ROLL_PX
 		_h_roll_dir = Vector2(0, -1)
 	_sewer_prev_y = _h_from.y
+	_prev_bh = 0.0
+	_rolled = false
 	_clear_trail()
 	if _h_carry > 0.5:
 		_view_punch(0.04, 0.7)
@@ -1215,23 +1236,32 @@ func _choreo(ev: Dictionary) -> void:
 	match kind:
 		"ball":
 			ticker(Announcer.line("ball"))
+			Audio.announce("ball")
 			_catcher_take()
 			await _beat(0.35)
 		"strike":
 			ticker(Announcer.line("strike"))
+			Audio.announce("strike")
 			_catcher_take()
 			await _beat(0.35)
 		"foul":
 			_foul_pop()
 			ticker(Announcer.line("foul"))
+			Audio.announce("foul")
+			Audio.sfx("crowd_ooh", -4.0)
 			await _card("FOUL!", "", 0.5)
 		"whiff":
+			Audio.sfx("bat_whiff")
 			ticker(Announcer.line("whiff"))
+			Audio.announce("whiff")
+			Audio.sfx("crowd_ooh", -6.0)
 			_ball_to_mitt()
 			_catcher_take()
 			await _beat(0.4)
 		"strikeout":
 			ticker(Announcer.line("strikeout"))
+			Audio.announce("strikeout")
+			Audio.sfx("crowd_groan")
 			_ball_to_mitt()
 			_catcher_take()
 			await _card("STRUCK OUT!", "", 0.8)
@@ -1244,6 +1274,7 @@ func _choreo(ev: Dictionary) -> void:
 		"walk":
 			var walker := _move_id_from(ev.get("moves", []))
 			ticker(Announcer.line("walk", core.kid_name(walker)))
+			Audio.announce("walk")
 			await _beat(_apply_moves(ev.get("moves", [])) + 0.1)
 		"in_play":
 			await _choreo_in_play(ev)
@@ -1285,11 +1316,16 @@ func _choreo_in_play(play: Dictionary) -> void:
 			_batter_jog(0.45)
 			await _await_ball()
 			_fielder_catch(fpos)
+			Audio.sfx("catch")
 			if res == "out_fly":
 				ticker(Announcer.line("out_fly", _fielder_name(fpos)))
+				Audio.announce("out_fly")
+				Audio.sfx("crowd_ooh", -3.0)
 				await _card("OUT!", "", 0.7)
 			else:
 				ticker(Announcer.line("out_line"))
+				Audio.announce("out_line")
+				Audio.sfx("crowd_ooh", -3.0)
 				await _card("SPEARED!", "", 0.7)
 			await _batter_fizzle()
 		"out_ground":
@@ -1297,7 +1333,9 @@ func _choreo_in_play(play: Dictionary) -> void:
 			await _await_ball()
 			_fielder_throw(fpos)
 			await _ball_throw_to(Tuning.BASE_1 + Vector2(0, -8), THROW_T)
+			Audio.sfx("catch")
 			ticker(Announcer.line("out_ground"))
+			Audio.announce("out_ground")
 			await _card("OUT!", "", 0.7)
 			await _batter_out_at_first()
 		"hr":
@@ -1307,17 +1345,23 @@ func _choreo_in_play(play: Dictionary) -> void:
 				if Game.smoke:
 					print("smoke: window smash")
 				mark("window")
+				Audio.sfx("glass_smash")
 				_fx_glass(Tuning.WINDOW_POS, 520.0)
 				shake(26.0, Vector2(0.15, -1.0))
 				await hit_stop(0.10)
 				window_spr.texture = Game.prop("window_broken")
 				ticker(Announcer.line("window"))
+				Audio.announce("window")
 				_scatter_fielders()
+				Audio.sfx("scatter")
+				Audio.sfx("crowd_bigcheer")
 				await _card("SMASH!", "", 0.7)
 				await _card("GO! GO! GO!", core.kid_name(play["batter"]), 1.1, true)
 			else:
 				var s := int(play["sewers"])
 				ticker(Announcer.line("hr%d" % s))
+				Audio.announce("hr%d" % s)
+				Audio.sfx("crowd_bigcheer")
 				var sub := core.kid_name(play["batter"]) if s >= 3 else ""
 				await _card("%d SEWER%s!" % [s, "" if s == 1 else "S"], sub, 1.1, true)
 			await _beat(SETTLE_PAD)
@@ -1326,12 +1370,20 @@ func _choreo_in_play(play: Dictionary) -> void:
 			_apply_moves(play.get("moves", []))
 			await _await_ball()
 			if bool(play["flivver"]):
+				Audio.sfx_world("ball_flivver", Tuning.CAR_POS.x)
 				ticker(Announcer.line("flivver"))
+				Audio.announce("flivver")
 			elif bool(play["fire_escape"]):
+				var fex: float = Tuning.FE_L.x if float(play["lane"]) < 0.0 \
+					else Tuning.FE_R.x
+				Audio.sfx_world("ball_brick", fex)
 				ticker(Announcer.line("fire_escape"))
+				Audio.announce("fire_escape")
 			else:
 				ticker(Announcer.line(res, core.kid_name(play["batter"])))
+				Audio.announce(res)
 			if int(play["runs"]) >= 1:
+				Audio.sfx("crowd_cheer")
 				await _card("ATTA BOY!", "", 0.7)
 			await _beat(SETTLE_PAD)
 
@@ -1369,6 +1421,7 @@ func _choreo_throw_play(play: Dictionary, nt: Dictionary) -> void:
 	if res == "out_ground":
 		await _batter_out_at_first()
 	if int(play["runs"]) >= 1 and res != "hr":
+		Audio.sfx("crowd_cheer")
 		await _card("ATTA BOY!", "", 0.7)
 	await _beat(maxf(mdur, 0.5))
 	_return_fielders()
@@ -1406,7 +1459,8 @@ func _move_runner(m: Dictionary) -> float:
 		var dx := dest.x - prev.x
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(node):
-				node.face(dx, RUN_LEAN))
+				node.face(dx, RUN_LEAN)
+				Audio.sfx_world("step", dest.x, -6.0))
 		tw.tween_property(node, "wpos", dest, RUN_LEG_T)
 		prev = dest
 		legs += 1
@@ -1414,7 +1468,8 @@ func _move_runner(m: Dictionary) -> float:
 	if was_out:
 		tw.tween_callback(func() -> void:
 			if is_instance_valid(node):
-				node.play("slide", 10.0, false))
+				node.play("slide", 10.0, false)
+				Audio.sfx_world("slide", _base_pos[mini(to_i, 3)].x))
 		tw.tween_interval(SLIDE_HOLD)
 		tw.tween_callback(func() -> void: _free_runner(id))
 		total += SLIDE_HOLD
@@ -1481,7 +1536,8 @@ func _batter_out_at_first() -> void:
 	tw.tween_property(node, "wpos", Tuning.BASE_1, 0.16)
 	tw.tween_callback(func() -> void:
 		if is_instance_valid(node):
-			node.play("slide", 10.0, false))
+			node.play("slide", 10.0, false)
+			Audio.sfx_world("slide", Tuning.BASE_1.x))
 	tw.tween_interval(SLIDE_HOLD)
 	tw.tween_callback(func() -> void:
 		if is_instance_valid(node):
@@ -1506,6 +1562,8 @@ func _fielder_chase(fpos: String) -> void:
 	var to := _h_land + (k.wpos - _h_land).normalized() * 26.0
 	var dur := clampf(k.wpos.distance_to(to) / 650.0, 0.2, 0.6)
 	k.play("run", 11.0)
+	Audio.sfx_world("step", k.wpos.x, -8.0)
+	Audio.sfx("hup")
 	k.face(to.x - k.wpos.x, RUN_LEAN)
 	var tw := create_tween()
 	tw.tween_property(k, "wpos", to, dur)
@@ -1547,7 +1605,8 @@ func _return_fielders() -> void:
 				k.play("idle", 6.0))
 
 func _catcher_take() -> void:
-	pass                                  # the catcher is off-camera here
+	# ball, strike, whiff and strikeout all land here
+	Audio.sfx_at("ball_mitt", 0.0, -2.0)
 
 func _scatter_fielders() -> void:
 	for pos_key in fielders:
@@ -1565,6 +1624,7 @@ func _scatter_fielders() -> void:
 
 # ---------------------------------------------------------------- side change / finale
 func _side_away(hc: Dictionary) -> void:
+	Audio.sfx("sting_side")
 	await _card("SIDE AWAY", "", 0.8)
 	for id in runner_nodes.keys():
 		if is_instance_valid(runner_nodes[id]):
@@ -1583,8 +1643,11 @@ func _side_away(hc: Dictionary) -> void:
 func _cheese_beat(cheese_len: float) -> void:
 	if Game.smoke:
 		print("smoke: cheese it")
+	Audio.sfx("cop_whistle")
+	Audio.sting("cheese")
 	_card("CHEESE IT!!", "", CHEESE_CARD_T, true)
 	ticker(Announcer.line("cheese"))
+	Audio.announce("cheese")
 	var cop := Kid.new("cop")
 	cop.rest_anim = "walk"
 	cop.wpos = Vector2(Tuning.WALL_L - 120.0, 1800.0)
@@ -1597,6 +1660,7 @@ func _cheese_beat(cheese_len: float) -> void:
 	cop_tw.tween_callback(func() -> void:
 		if is_instance_valid(cop):
 			cop.queue_free())
+	Audio.sfx("scatter")
 	for k0 in _field_kids():
 		var k: Kid = k0
 		var here := k.wpos
@@ -1640,7 +1704,11 @@ func _finale() -> void:
 		print("SMOKE_OK")
 		get_tree().quit(0)
 		return
+	Audio.music("")
+	Audio.crowd(false)
+	Audio.sting("gameover")
 	ticker(Announcer.line("final"))
+	Audio.announce("final")
 	var sub := core.winner_text()
 	if core.final_note != "":
 		sub += " — " + core.final_note
@@ -1696,6 +1764,7 @@ func _card(text: String, sub := "", hold := 0.9, slam := false) -> void:
 	while _card_busy:
 		await _beat(0.05)
 	_card_busy = true
+	Audio.sfx("card_slam" if slam else "iris_in")
 	await cards.flash(text, sub, hold, slam)
 	_card_busy = false
 

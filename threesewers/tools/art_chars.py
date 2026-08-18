@@ -1167,9 +1167,9 @@ def pose_for(anim, i, n, cfg):
         # crouch, launch, apex, land. It loops, so the landing squash rolls
         # straight into the next crouch and the hop never stops.
         j = min(i, 3)
-        return dict(dy=[0, -14, -25, -2][j], squat=[16, -2, 0, 13][j],
+        return dict(dy=[0, -12, -21, -2][j], squat=[16, -2, 0, 13][j],
                     bob=[2, -2, -4, 1][j],
-                    stretch=[-0.080, 0.080, 0.025, -0.100][j],
+                    stretch=[-0.080, 0.045, 0.025, -0.100][j],
                     hand_near=[(0.36, 0.96, -1), (1.06, -0.62, -1),
                                (1.16, -0.40, -1), (1.02, 0.16, -1)][j],
                     hand_far=[(-0.44, 0.92, 1), (-1.02, -0.58, 1),
@@ -1177,7 +1177,7 @@ def pose_for(anim, i, n, cfg):
                     face=["grin", "yell", "yell", "grin"][j],
                     look=[0.0, 0.0, 0.1, 0.0][j],
                     look_y=[0.15, -0.30, -0.35, 0.10][j],
-                    hat_dy=[1.6, -4.0, -6.5, 3.2][j],
+                    hat_dy=[1.6, -4.0, -5.0, 3.2][j],
                     hat_rot=[2, -9, 7, 3][j], hat_dx=[0, 1.5, -2.0, 0.5][j],
                     hair_dy=[1.0, -3.0, -4.5, 1.6][j],
                     hair_swing=[-3, 9, -7, 4][j],
