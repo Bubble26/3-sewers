@@ -600,6 +600,11 @@ func _apply_ball() -> void:
 	ball_shadow.position = Vector2(gr.x, gr.y) - ball.position
 	ball_shadow.scale = Vector2(1.55 + 1.15 * climb, 0.60 + 0.42 * climb) * sc
 	ball_shadow.modulate = Color(0, 0, 0, lerpf(0.52, 0.13, climb))
+	# The shadow is a child of the ball, so it inherited the lift that puts the
+	# pitch in front of the batter — and a ground shadow floating on the
+	# batter's hair is worse than the occlusion it was fixing. Push it back
+	# behind them; it still sits well above the street.
+	ball_shadow.z_index = -3
 
 # ---------------------------------------------------------------- kids on the field
 func _spawn_kid(id: String, pos: Vector2, kid_scale := 1.0) -> Kid:
