@@ -1,0 +1,62 @@
+{
+ "corny": {
+  "frame": 3,
+  "height": 80.0,
+  "reach": 75.8
+ },
+ "ezra": {
+  "frame": 3,
+  "height": 72.5,
+  "reach": 68.9
+ },
+ "gus": {
+  "frame": 3,
+  "height": 87.5,
+  "reach": 78.3
+ },
+ "mabel": {
+  "frame": 3,
+  "height": 80.0,
+  "reach": 75.8
+ },
+ "nellie": {
+  "frame": 3,
+  "height": 80.0,
+  "reach": 75.8
+ },
+ "patsy": {
+  "frame": 3,
+  "height": 72.5,
+  "reach": 68.9
+ },
+ "pearl": {
+  "frame": 3,
+  "height": 72.5,
+  "reach": 68.9
+ },
+ "sadie": {
+  "frame": 3,
+  "height": 72.5,
+  "reach": 68.9
+ },
+ "sal": {
+  "frame": 3,
+  "height": 80.0,
+  "reach": 75.8
+ },
+ "tommy": {
+  "frame": 3,
+  "height": 80.0,
+  "reach": -76.3
+ },
+ "vito": {
+  "frame": 3,
+  "height": 87.5,
+  "reach": 78.3
+ },
+ "whistles": {
+  "frame": 3,
+  "height": 72.5,
+  "reach": 68.9
+ }
+}

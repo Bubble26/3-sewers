@@ -11,24 +11,25 @@ signal ui_pitch(p: Dictionary)
 # ---------------------------------------------------------------- view constants
 # (world layout + feel constants come from Tuning; these are presentation-only)
 const FIELDER_SCALE := 0.8
-# The batter stands one bat-reach to the right of the plate, so the barrel's
-# sweet spot sweeps THROUGH the plate rather than past it. This used to be
-# 662 — 22px from the plate — while the barrel reaches 74px, which meant the
-# bat swept to x=569 and the ball crossed at 585..695. They could never meet.
-const BATTER_POS := Vector2(714, 2352)
+# The batter stands to one side of the plate and the bat sweeps across it, so
+# where they stand depends on which way they bat. This used to be a fixed
+# (662, 2352) — 22px from the plate — while the barrel reaches ~76px to the
+# batter's bat side, so the barrel swept clean past the ball every time.
+const BATTER_STANCE := 20.0     # world px the batter stands off the plate
+const BATTER_Y := 2352.0
 
-# Contact geometry, measured off the swing_back art (tools/measure_bat.py):
-# at the contact frame the barrel's sweet spot is CONTACT_REACH world px to
-# the batter's left, CONTACT_H above the cobbles. Re-measure if that art is
-# re-drawn — the whole moment of contact hangs off these two numbers.
-const CONTACT_REACH := 74.0
+# Where the barrel is at the contact frame is a fact about the ART, not a
+# constant to guess: some kids bat left-handed, and the numbers move whenever
+# the swing is redrawn. tools/bat_geometry.py measures the rendered frames and
+# writes data/bat_geometry.json; this is just the fallback when it is missing.
+const CONTACT_REACH := 76.0
 const CONTACT_H := 80.0
 const SWING_FPS := 20.0
-const SWING_CONTACT_FRAME := 3.0
 # A swing is not instant: the bat needs this long to reach the ball, so the
 # player must press BEFORE the crossing, and the timing window is centred on
 # the press moment rather than on the crossing itself.
-const SWING_LEAD := SWING_CONTACT_FRAME / SWING_FPS
+const SWING_LEAD_FRAMES := 3.0
+const SWING_LEAD := SWING_LEAD_FRAMES / SWING_FPS
 const PITCH_HAND_OFF := Vector2(0, -40)     # release point above pitcher origin
 const PITCH_BOUNCE_Y := 2278.0              # one-bounce point short of the plate
 const PITCH_BOUNCE_LANE_X := 46.0
@@ -328,6 +329,7 @@ func _ready() -> void:
 			func() -> void:
 				_report_perf()
 				get_tree().quit(0))
+	_load_bat_geometry()
 	_base_pos = [Tuning.BASE_1, Tuning.BASE_2, Tuning.BASE_3, Tuning.PLATE]
 	core.setup(Game.cpu_team, Game.player_team, Game.roster, 1, Tuning.INNINGS, _seed)
 	_build_layers()
@@ -599,7 +601,8 @@ func _ensure_batter() -> void:
 		return
 	if batter_node != null and is_instance_valid(batter_node):
 		batter_node.queue_free()
-	batter_node = _spawn_kid(bid, BATTER_POS)
+	_set_batter_geometry(bid)
+	batter_node = _spawn_kid(bid, _batter_pos)
 	# the camera is over his shoulder, so the batter wears the back-view art
 	batter_node.rest_anim = "bat_back"
 	batter_node.play("bat_back", 4.0)
@@ -704,7 +707,10 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	var spin := float(Tuning.SPIN_KICK[ptype])
 	if ptype == "spinner" and randf() < 0.5:
 		spin = -spin
-	_pC = Vector2(Tuning.PLATE.x + lane * PITCH_CROSS_LANE_X + spin, Tuning.PLATE.y)
+	# The ball crosses where the barrel sweeps, which is off to the batter's
+	# bat side — not over the middle of the manhole.
+	_pC = Vector2(contact_point().x + lane * PITCH_CROSS_LANE_X + spin,
+		Tuning.PLATE.y)
 	var cpos: Vector2 = Tuning.FIELD_POS["C"]
 	_mitt = cpos + MITT_OFF
 	# Ballistics. Phase A: a real toss — launch velocity chosen so the ball
@@ -739,11 +745,35 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # The moment the player should press: the bat needs SWING_LEAD to arrive, so
 # aiming at the crossing itself would always be late.
-# Where the barrel's sweet spot passes through. The batter is placed so this
-# lands on the plate, so it is the plate — but named, because everything about
-# the moment of contact is measured from here.
+# --- where the bat is, per batter -----------------------------------------
+var _bat_geom: Dictionary = {}
+var _reach := CONTACT_REACH     # signed: + means the bat sweeps to screen right
+var _contact_h := CONTACT_H
+var _batter_pos := Vector2(640.0 - BATTER_STANCE, BATTER_Y)
+
+func _load_bat_geometry() -> void:
+	var f := FileAccess.open("res://data/bat_geometry.json", FileAccess.READ)
+	if f == null:
+		return
+	var d = JSON.parse_string(f.get_as_text())
+	if d is Dictionary:
+		_bat_geom = d
+
+# Called as each batter steps up: a lefty stands on the other side of the plate
+# and swings the other way, so both the stance and the contact point flip.
+func _set_batter_geometry(id: String) -> void:
+	_reach = CONTACT_REACH
+	_contact_h = CONTACT_H
+	if _bat_geom.has(id):
+		var g: Dictionary = _bat_geom[id]
+		_reach = float(g.get("reach", CONTACT_REACH))
+		_contact_h = float(g.get("height", CONTACT_H))
+	_batter_pos = Vector2(Tuning.PLATE.x - signf(_reach) * BATTER_STANCE, BATTER_Y)
+
+# Where the barrel's sweet spot passes through — everything about the moment of
+# contact is measured from here.
 func contact_point() -> Vector2:
-	return Vector2(BATTER_POS.x - CONTACT_REACH, Tuning.PLATE.y)
+	return Vector2(_batter_pos.x + _reach, Tuning.PLATE.y)
 
 func _swing_aim() -> float:
 	return _cross_t - SWING_LEAD
@@ -864,44 +894,79 @@ func _burst(world: Vector2, height: float, cfg: Dictionary) -> void:
 		if is_instance_valid(p):
 			p.queue_free())
 
+# Play an authored effect sprite at a world point. These are drawn in the
+# game's own hand — thick ink line, flat fills, hollow middles — so they are
+# composited NORMALLY. Additive blending washes the ink out and puts the
+# airbrushed look straight back, which is what the reused lamp prop did.
+func _fx_sprite(world: Vector2, height: float, base: String, n: int,
+		cfg: Dictionary = {}) -> void:
+	var frames: Array = []
+	for i in n:
+		var t: Texture2D = Game.prop("%s_%d" % [base, i]) if n > 1 \
+			else Game.prop(base)
+		if t != null:
+			frames.append(t)
+	if frames.is_empty():
+		return
+	var pr := Tuning.project(world, height)
+	var sp := Sprite2D.new()
+	sp.texture = frames[0]
+	sp.position = Vector2(pr.x, pr.y)
+	sp.rotation = float(cfg.get("rot", 0.0))
+	# Above the ball for the burst (it is hollow, so the ball still reads
+	# through it), below for ground effects that the ball rolls over.
+	var zb := int(clampf(pr.z * 4096.0, 0.0, 4000.0))
+	sp.z_index = zb + int(cfg.get("dz", 2))
+	var sc: float = Tuning.sprite_scale(pr.z) * float(cfg.get("scale", 1.0))
+	sp.scale = Vector2(sc, sc * float(cfg.get("squash", 1.0)))
+	if cfg.has("offset"):
+		sp.offset = cfg["offset"]
+	sp.modulate = cfg.get("tint", Color(1, 1, 1, 1))
+	fx.add_child(sp)
+	var hold := float(cfg.get("hold", 0.045))
+	var tw := create_tween()
+	for i in range(1, frames.size()):
+		tw.tween_interval(hold)
+		tw.tween_callback(func() -> void:
+			if is_instance_valid(sp):
+				sp.texture = frames[i])
+	tw.tween_interval(hold)
+	tw.tween_property(sp, "modulate:a", 0.0, float(cfg.get("fade", 0.10)))
+	tw.tween_callback(sp.queue_free)
+
+# The hop off the cobbles is the whole game — the batter reads it or loses.
+# Nine brown particles on brown cobbles were invisible; this is an authored
+# puff that separates from the street by hue, plus a scuff left behind.
 func _fx_dust(world: Vector2, amount := 10) -> void:
-	_burst(world, 0.0, {"amount": amount, "life": 0.42, "dir": Vector2(0, -1),
-		"spread": 78.0, "vmin": 30.0, "vmax": 90.0, "grav": 300.0,
-		"smin": 1.2, "smax": 2.8,
-		"c0": Color(0.82, 0.72, 0.56, 0.55), "c1": Color(0.6, 0.52, 0.42, 0.0)})
+	var big: float = clampf(amount / 14.0, 0.6, 1.4)
+	_fx_sprite(world, 0.0, "fx_scuff", 1,
+		{"scale": 1.05 * big, "squash": 0.55, "dz": -1, "hold": 0.10,
+		 "fade": 0.45, "tint": Color(1, 1, 1, 0.75)})
+	_fx_sprite(world, 0.0, "fx_dust", 4,
+		{"scale": 1.15 * big, "hold": 0.055, "fade": 0.12,
+		 "offset": Vector2(0, -22)})
 
 func _fx_contact(world: Vector2, height: float, power: float) -> void:
-	# a hard hit throws chalk-bright sparks; a weak one barely puffs
-	_burst(world, height, {"amount": int(8 + 20 * power), "life": 0.34,
-		"dir": Vector2(0, -1), "spread": 180.0,
-		"vmin": 90.0 * power, "vmax": 320.0 * power, "grav": 700.0,
-		"smin": 1.0, "smax": 2.6 + 2.0 * power,
-		"c0": Color(1.0, 0.94, 0.78, 0.95), "c1": Color(0.95, 0.7, 0.35, 0.0)})
-	var pr := Tuning.project(world, height)
-	var flash_tex: Texture2D = Game.prop("lightpool")
-	if flash_tex == null:
-		return
-	var fl := Sprite2D.new()
-	fl.texture = flash_tex
-	fl.position = Vector2(pr.x, pr.y)
-	# Under the ball, never over it. On a fixed high layer this bleached the
-	# spaldeen out of the frame for seven frames at the exact moment the
-	# player needed to see it leave the bat.
-	fl.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0))
-	var mat := CanvasItemMaterial.new()
-	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
-	fl.material = mat
-	var s0: float = Tuning.sprite_scale(pr.z) * (0.9 + 1.6 * power)
-	fl.scale = Vector2(s0, s0) * 0.35
-	fl.modulate = Color(1, 0.92, 0.74, 0.85 * (0.4 + 0.6 * power))
-	fx.add_child(fl)
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(fl, "scale", Vector2(s0, s0) * 1.5, 0.22)
-	tw.tween_property(fl, "modulate:a", 0.0, 0.22)
-	tw.chain().tween_callback(fl.queue_free)
+	# The burst is authored hollow, so the spaldeen keeps its own ink line and
+	# its pink right through the hit instead of being bleached out of frame.
+	_fx_sprite(world, height, "fx_sock", 3,
+		{"scale": 0.55 + 0.85 * power, "hold": 0.05, "fade": 0.09,
+		 "rot": randf_range(-0.22, 0.22)})
+	if power > 0.55:
+		_fx_sprite(world, height, "fx_ring", 1,
+			{"scale": 0.25, "hold": 0.02, "fade": 0.16, "dz": 1,
+			 "tint": Color(1, 1, 1, 0.7)})
+	# a little grit still flies, but it is now seasoning, not the whole effect
+	_burst(world, height, {"amount": int(4 + 12 * power), "life": 0.30,
+		"dir": Vector2(0, -1), "spread": 170.0,
+		"vmin": 90.0 * power, "vmax": 300.0 * power, "grav": 700.0,
+		"smin": 0.9, "smax": 2.0 + 1.6 * power,
+		"c0": Color(1.0, 0.94, 0.78, 0.9), "c1": Color(0.95, 0.7, 0.35, 0.0)})
 
 func _fx_glass(world: Vector2, height: float) -> void:
-	_burst(world, height, {"amount": 30, "life": 0.9, "dir": Vector2(0, 1),
+	_fx_sprite(world, height, "fx_glass", 3,
+		{"scale": 1.5, "hold": 0.07, "fade": 0.30})
+	_burst(world, height, {"amount": 26, "life": 0.9, "dir": Vector2(0, 1),
 		"spread": 120.0, "vmin": 60.0, "vmax": 260.0, "grav": 900.0,
 		"smin": 1.0, "smax": 2.4,
 		"c0": Color(0.86, 0.93, 0.98, 0.95), "c1": Color(0.6, 0.72, 0.8, 0.0)})
@@ -950,7 +1015,7 @@ func _process_ball(delta: float) -> void:
 			var u := clampf(1.0 - (_contact_t - _bt) / span, 0.0, 1.0)
 			var e := u * u * (3.0 - 2.0 * u)
 			bw = _contact_from.lerp(contact_point(), e)
-			bh = lerpf(_contact_from_h, CONTACT_H, e)
+			bh = lerpf(_contact_from_h, _contact_h, e)
 		_apply_ball()
 		if _contact_t > 0.0:
 			if _bt >= _contact_t:
@@ -1402,10 +1467,10 @@ func _batter_jog(frac: float) -> void:
 		return
 	batter_node.rest_anim = "idle"
 	batter_node.play("run", 11.0)
-	batter_node.face(Tuning.BASE_1.x - BATTER_POS.x, RUN_LEAN)
+	batter_node.face(Tuning.BASE_1.x - _batter_pos.x, RUN_LEAN)
 	var tw := create_tween()
 	tw.tween_property(batter_node, "wpos",
-		BATTER_POS.lerp(Tuning.BASE_1, frac), 0.32)
+		_batter_pos.lerp(Tuning.BASE_1, frac), 0.32)
 
 func _batter_out_at_first() -> void:
 	if batter_node == null or not is_instance_valid(batter_node):

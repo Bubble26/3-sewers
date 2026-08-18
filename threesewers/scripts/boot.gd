@@ -480,9 +480,9 @@ func _build_rack(vp: Vector2, u: float, land: bool, top: float, h: float) -> voi
 			var id: String = ids[idx]
 			var cell := Rect2(x0 + k * (card_w + gap), lift + r * row_h, card_w, card_h)
 			card_rects[id] = cell
-			rack_content.add_child(_make_card(id, cell, u, idx))
+			rack_content.add_child(_make_card(id, cell, idx))
 
-func _make_card(id: String, cell: Rect2, u: float, idx: int) -> Control:
+func _make_card(id: String, cell: Rect2, idx: int) -> Control:
 	# the cell is the layout box; the card inside it is free to lift and tilt
 	var slot := Control.new()
 	slot.position = cell.position
@@ -492,7 +492,8 @@ func _make_card(id: String, cell: Rect2, u: float, idx: int) -> Control:
 	card.size = cell.size
 	card.pivot_offset = cell.size * 0.5
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.rotation_degrees = (-1.0 if idx % 2 == 0 else 1.0) * 0.7
+	var tilt: float = (-0.7 if idx % 2 == 0 else 0.7)
+	card.rotation_degrees = tilt
 	slot.add_child(card)
 
 	var art := TextureRect.new()
@@ -508,13 +509,13 @@ func _make_card(id: String, cell: Rect2, u: float, idx: int) -> Control:
 	var kid: Dictionary = Game.roster[id]
 	var rib := NinePatchRect.new()
 	rib.texture = load("res://assets/ui/ui_ribbon.png")
-	rib.patch_margin_left = 44
-	rib.patch_margin_right = 44
-	rib.patch_margin_top = 26
-	rib.patch_margin_bottom = 26
+	rib.patch_margin_left = 24
+	rib.patch_margin_right = 24
+	rib.patch_margin_top = 12
+	rib.patch_margin_bottom = 12
 	var rib_h: float = cell.size.y * RIBBON_H
-	rib.size = Vector2(cell.size.x * 1.10, rib_h)
-	rib.position = Vector2(-cell.size.x * 0.05, cell.size.y * RIBBON_AT - rib_h * 0.5)
+	rib.size = Vector2(cell.size.x * 1.08, rib_h)
+	rib.position = Vector2(-cell.size.x * 0.04, cell.size.y * RIBBON_AT - rib_h * 0.5)
 	rib.modulate = RIB_COLD
 	rib.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(rib)
@@ -553,6 +554,7 @@ func _make_card(id: String, cell: Rect2, u: float, idx: int) -> Control:
 	card.set_meta("stamp", stamp)
 	card.set_meta("edge", sb)
 	card.set_meta("rib", rib)
+	card.set_meta("tilt", tilt)
 	cards[id] = card
 	return slot
 
@@ -699,7 +701,7 @@ func _restyle(id: String, animate := true) -> void:
 	edge.border_color = Tuning.PINK if on else (
 		Color(Tuning.GOLD, 0.55) if hot else Color(0, 0, 0, 0))
 	var lift: float = -card.size.y * (0.055 if on else (0.028 if hot else 0.0))
-	var tilt: float = 0.7 * (-1.0 if card_rects.keys().find(id) % 2 == 0 else 1.0)
+	var tilt: float = card.get_meta("tilt")
 	var sc: float = 1.032 if on else (1.022 if hot else 1.0)
 	var rib: NinePatchRect = card.get_meta("rib")
 	rib.modulate = RIB_HOT if on else RIB_COLD

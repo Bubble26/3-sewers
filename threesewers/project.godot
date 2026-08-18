@@ -12,6 +12,11 @@ config/icon="res://assets/icon/icon.png"
 Tuning="*res://scripts/tuning.gd"
 Game="*res://scripts/game_state.gd"
 Announcer="*res://scripts/announcer.gd"
+Audio="*res://scripts/audio.gd"
+
+[audio]
+
+buses/default_bus_layout="res://default_bus_layout.tres"
 
 [display]
 
