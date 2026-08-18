@@ -36,8 +36,13 @@ func _load_run(prefix: String, id: String, anim: String) -> Array:
 func card(id: String) -> Texture2D:
 	return load("res://assets/characters/chr_%s_card.png" % id)
 
+# Most props are prp_<name>.png, but the effect sprites are fx_<name>.png.
+# Guessing one prefix meant every impact effect silently loaded nothing and
+# every burst was a no-op with no error anywhere — try the bare name too.
 func prop(name_s: String) -> Texture2D:
 	var p := "res://assets/props/prp_%s.png" % name_s
+	if not ResourceLoader.exists(p):
+		p = "res://assets/props/%s.png" % name_s
 	if not ResourceLoader.exists(p):
 		return null
 	if _tex_cache.has(p): return _tex_cache[p]
