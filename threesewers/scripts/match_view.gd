@@ -635,7 +635,11 @@ func _apply_ball() -> void:
 	# pitch in front of the batter — and a ground shadow floating on the
 	# batter's hair is worse than the occlusion it was fixing. Push it back
 	# behind them; it still sits well above the street.
-	ball_shadow.z_index = -3
+	# Relative to the ball. The ball is lifted past the batter, so the shadow
+	# sits one step under the ball and still clears them: burying it three
+	# layers back hid the only height cue for 70-270ms after every bounce,
+	# which is precisely the window the player is reading.
+	ball_shadow.z_index = -1
 
 # ---------------------------------------------------------------- kids on the field
 func _spawn_kid(id: String, pos: Vector2, kid_scale := 1.0) -> Kid:
@@ -988,7 +992,7 @@ func _burst(world: Vector2, height: float, cfg: Dictionary) -> void:
 	var s: float = Tuning.sprite_scale(pr.z)
 	var p := CPUParticles2D.new()
 	p.position = Vector2(pr.x, pr.y)
-	p.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + 2
+	p.z_index = _above_batter(int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + 2)
 	p.emitting = true
 	p.one_shot = true
 	p.explosiveness = float(cfg.get("explosive", 0.95))
@@ -1017,6 +1021,14 @@ func _burst(world: Vector2, height: float, cfg: Dictionary) -> void:
 # game's own hand — thick ink line, flat fills, hollow middles — so they are
 # composited NORMALLY. Additive blending washes the ink out and puts the
 # airbrushed look straight back, which is what the reused lamp prop did.
+# The batter is nearer the camera than anything else on the street, so
+# anything that has to be READ — the ball, its shadow, the dust off the
+# stones — has to be lifted past them or it is simply not in the game.
+func _above_batter(z: int) -> int:
+	if batter_node != null and is_instance_valid(batter_node):
+		return maxi(z, batter_node.z_index + 1)
+	return z
+
 func _fx_sprite(world: Vector2, height: float, base: String, n: int,
 		cfg: Dictionary = {}) -> void:
 	var frames: Array = []
@@ -1034,8 +1046,8 @@ func _fx_sprite(world: Vector2, height: float, base: String, n: int,
 	sp.rotation = float(cfg.get("rot", 0.0))
 	# Above the ball for the burst (it is hollow, so the ball still reads
 	# through it), below for ground effects that the ball rolls over.
-	var zb := int(clampf(pr.z * 4096.0, 0.0, 4000.0))
-	sp.z_index = zb + int(cfg.get("dz", 2))
+	var zb := int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + int(cfg.get("dz", 2))
+	sp.z_index = _above_batter(zb) if bool(cfg.get("lift", false)) else zb
 	var sc: float = Tuning.sprite_scale(pr.z) * float(cfg.get("scale", 1.0))
 	sp.scale = Vector2(sc, sc * float(cfg.get("squash", 1.0)))
 	if cfg.has("offset"):
@@ -1060,10 +1072,10 @@ func _fx_dust(world: Vector2, amount := 10) -> void:
 	var big: float = clampf(amount / 14.0, 0.6, 1.4)
 	_fx_sprite(world, 0.0, "fx_scuff", 1,
 		{"scale": 1.05 * big, "squash": 0.55, "dz": -1, "hold": 0.10,
-		 "fade": 0.45, "tint": Color(1, 1, 1, 0.75)})
+		 "fade": 0.45, "tint": Color(1, 1, 1, 0.75), "lift": true})
 	_fx_sprite(world, 0.0, "fx_dust", 4,
 		{"scale": 1.15 * big, "hold": 0.055, "fade": 0.12,
-		 "offset": Vector2(0, -22)})
+		 "offset": Vector2(0, -22), "lift": true})
 
 func _fx_contact(world: Vector2, height: float, power: float) -> void:
 	# The burst is authored hollow, so the spaldeen keeps its own ink line and
@@ -1103,8 +1115,7 @@ func _process_ball(delta: float) -> void:
 			var window_open := not _committed \
 				and _bt >= aim - Tuning.SWING_EARLY and _bt <= aim + Tuning.SWING_LATE
 			hint_lbl.visible = window_open
-			swing_btn.visible = not autopilot and not _committed
-			swing_btn.modulate = Color(1, 1, 1, 1.0) if window_open else Color(1, 1, 1, 0.55)
+			swing_btn.visible = not autopilot and not _committed and window_open
 		# ball along its timeline
 		if _bt < _ta:
 			var u := _bt / _ta
@@ -1112,6 +1123,7 @@ func _process_ball(delta: float) -> void:
 			bw.x += _spin_bow * 4.0 * u * (1.0 - u)
 			bh = maxf(0.0, Tuning.PITCH_ARC_H + _v0a * _bt
 				- 0.5 * Tuning.BALL_G * _bt * _bt)
+			_push_trail(true)
 		elif _bt < _cross_t:
 			var tau := _bt - _ta
 			if not _bounced:

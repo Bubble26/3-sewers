@@ -4,30 +4,39 @@ extends Node
 const INNINGS := 3
 # The pitch, and the whole batting game with it.
 #
-# Measured against the Punch-Out!! bar, the old numbers failed the premise:
-# fast and spinner rebounded at 388.8 vs 383.4 px/s — 1.4% apart, four pixels
-# on a hundred-pixel ball — so the hop the game is NAMED for carried no
-# information at all. Worse, bounce->plate was 220ms for both, which after the
-# swing lead left MINUS seventeen milliseconds to react: a player who did what
-# the game asks and watched the hop was guaranteed to be late.
+# Two separate failures have been measured here and both are addressed by
+# these numbers.
 #
-# Now the three hops are genuinely different events, and every one of them
-# leaves at least 250ms to act:
+# The first was that the hop carried no information: fast and spinner
+# rebounded 1.4% apart. Retuning moved that defect rather than removing it —
+# fast and drop then sat within 0.045-0.14 of a ball diameter of each other
+# for the whole 200ms after the bounce, because their rebound speeds had
+# ended up nearly identical. These are searched, not guessed: the worst pair
+# is now 0.76 ball diameters apart 100ms after the bounce and 0.98 at 133ms,
+# which is the threshold at which a difference is a tell rather than a
+# rounding error.
 #
-#   type     bounce->plate   crosses at   doing
-#   fast        300ms           71px      rising, at its apex — flat and hard
-#   spinner     380ms          110px      rising high, plus the lateral kick
-#   drop        400ms           38px      FALLING — it dies off the stones
+# The second was worse and less obvious. A player who never looked at the
+# ball and simply tapped a fixed 310ms after every bounce scored 56.6%
+# perfect contact, against 71.5% for reading the pitch flawlessly. Reading
+# the hop bought 2.4 points of whiff rate — the mechanic the game is named
+# for was decorative. The cause was that the three ideal presses spanned
+# 100ms while the perfect-contact window is 108ms wide, so one fixed delay
+# sat inside all three. The gaps are now 120ms and 160ms, both wider than
+# that window, so a single blind rhythm cannot be right about more than one
+# pitch.
 #
-# release times differ too (see PITCH_WINDUP in match_view), so the wind-up
-# itself is a tell before the ball is even out of the hand.
-const PITCH_TIMES := {"fast": 0.52, "spinner": 0.62, "drop": 0.74}
-const PITCH_TB := {"fast": 0.30, "spinner": 0.38, "drop": 0.40}
-const BOUNCE_REST := {"fast": 0.55, "spinner": 0.85, "drop": 0.40}
+#   type     bounce->plate   crosses at   press after bounce   doing
+#   fast        300ms           67px           250ms           low, flat, first
+#   spinner     420ms           99px           370ms           mid hop + kick
+#   drop        580ms          142px           530ms           lobs high, falling
+const PITCH_TIMES := {"fast": 0.52, "spinner": 0.58, "drop": 0.62}
+const PITCH_TB := {"fast": 0.30, "spinner": 0.42, "drop": 0.58}
+const BOUNCE_REST := {"fast": 0.24, "spinner": 0.36, "drop": 0.55}
+# The pitcher's hand, in world px off the cobbles. A low release caps every
+# rebound, and it is the rebound spread that carries the read.
+const PITCH_ARC_H := 280.0
 const SPIN_KICK := {"fast": 0.0, "spinner": 34.0, "drop": 8.0}
-# The pitcher's hand, in world px off the cobbles. Was 70 — barely knee high,
-# which capped every rebound too low to tell apart.
-const PITCH_ARC_H := 130.0
 # ballistics — one gravity for the whole game, in world px/s^2 (a kid is
 # ~160 world px ≈ 1.4 m, so ~1500 reads just a touch snappier than earth)
 const BALL_G := 1500.0
@@ -37,7 +46,10 @@ const GROUND_REST := 0.55        # cobble restitution for grounder hops
 # connect — 51% of the window it invited you to swing in was a guaranteed
 # whiff. The window now matches roughly what contact actually tolerates.
 const SWING_EARLY := 0.18   # seconds before the aim point the tap window opens
-const SWING_LATE := 0.18    # seconds after
+# 0.13, not 0.18: the ball leaves the bottom of the screen 43ms after it
+# crosses the plate, and the window used to stay open 129ms past that — up to
+# 100ms per pitch of being invited to swing at a ball that is gone.
+const SWING_LATE := 0.13
 const CAM_ZOOM := 0.9
 # Sprites are authored at 2x world size so they stay crisp on a retina phone.
 const ART := 0.5
