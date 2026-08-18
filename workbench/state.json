@@ -1,7 +1,7 @@
 {
  "run_started": "2026-08-17",
  "round": 2,
- "headline": "Round 2 \u2014 two independent critics scored the two things the game rests on at 3/10 each, with pixel measurements. Contact was a lie (23px between bat and ball); the hop the game is NAMED for gave minus seventeen milliseconds to react. Both rebuilt at the source. Audio, front-end and impact art all landed and are wired in.",
+ "headline": "Round 2 \u2014 both core loops rebuilt after two 3/10 critiques, then a capture caught something worse: every impact effect had been wired, committed and NEVER DRAWN A PIXEL. The loader guessed a prp_ prefix, the art was named fx_, and the lookup returned null in silence. Fixed, guarded by a test, and swept for others of the same class.",
  "bars": [
   {
    "sys": "Audio",
@@ -72,9 +72,9 @@
   {
    "name": "Visual composition",
    "status": "work",
-   "score": 6,
+   "score": 7,
    "bar": "Owner's gaslit reference",
-   "note": "Landscape camera rebuilt: it had z_far=10.3 against portrait's 74.0, flattening the street until the batter (16.6% of frame) barely out-sized the pitcher (7.5%). Both views now measure a 5.0x depth ratio. Also fixed a bug putting every kerb spectator inside a dark rectangle \u2014 Image.blend mixes alpha, so tinting toward an opaque colour painted a box over each sprite's bounds.",
+   "note": "Both views share one lens (5.0x depth ratio). The one-saturated-colour rule is measured and now passes: a stat pip in gold measured C* 41.9 and a pink rosette 32.8, both louder than the spaldeen's 31.1 \u2014 the loudest thing on screen was a card decoration. Pip is brass, rosette is paper with a small pink centre. Street rebaked so the painted bystanders match the rebuilt kids.",
    "gap": "Vanishing point reads empty; gaslight contrast could be stronger",
    "shots": [
     {
@@ -101,11 +101,17 @@
   {
    "name": "Roster & animation",
    "status": "work",
-   "score": 6,
+   "score": 7,
    "bar": "Backyard Baseball charm",
-   "note": "12 kids, 13 anims, 642 frames, back-view batter, facing+lean.",
-   "gap": "No secondary motion; idle is static bob",
-   "shots": []
+   "note": "666 frames rebuilt with two-link IK, whole-figure squash and stretch, secondary motion on hats/hair/hems, motion smears and dust at every plant. Six idle personalities keyed per kid with phase offsets so the block never breathes in unison. Twelve kids are distinguishable by hat, build, costume and skin at true game size.",
+   "gap": "Faces share one construction \u2014 less caricature range than the Backyard Baseball bar",
+   "shots": [
+    {
+     "f": "anim_roster.png",
+     "w": 520,
+     "c": "All twelve at true game size: near fielder ~190px, far ~95px, hero batter ~430px"
+    }
+   ]
   },
   {
    "name": "Front-end",
@@ -138,11 +144,7 @@
  "gaps": [
   {
    "pri": "P0",
-   "t": "Both core loops rebuilt but neither re-graded \u2014 critics needed on the new build"
-  },
-  {
-   "pri": "P1",
-   "t": "Batter has no contact reaction; swing reads stiff"
+   "t": "Round-2 critics still running \u2014 neither rebuilt loop has been re-graded"
   },
   {
    "pri": "P1",
@@ -150,11 +152,15 @@
   },
   {
    "pri": "P1",
-   "t": "Roster cards static \u2014 no idle animation on the select screen"
+   "t": "Roster faces share one construction; less caricature range than the bar"
+  },
+  {
+   "pri": "P1",
+   "t": "Nothing has verified the game is FUN \u2014 only that it is correct and readable"
   },
   {
    "pri": "P2",
-   "t": "Lanes add lateral noise but are not a player input"
+   "t": "Roster cards static \u2014 no idle animation on the select screen"
   },
   {
    "pri": "P2",
@@ -162,6 +168,22 @@
   }
  ],
  "log": [
+  {
+   "t": "R2",
+   "m": "LEARNED: a lookup that returns nothing looks exactly like a frame where nothing was meant to happen. Every impact effect was wired, committed, and had never drawn a pixel. Now guarded by tests/fx_check.gd, and the whole asset surface swept for the same class."
+  },
+  {
+   "t": "R2",
+   "m": "palette_check was failing on the rule the art direction rests on \u2014 a gold stat pip and a pink rosette were both louder than the spaldeen. Fixed as design decisions, not by nudging thresholds."
+  },
+  {
+   "t": "R2",
+   "m": "Animation builder delivered 666 frames; street rebaked so the painted bystanders match."
+  },
+  {
+   "t": "R2",
+   "m": "Bat geometry is now measured inside gen_assets.py, so art and aim cannot drift apart again \u2014 they already had, once."
+  },
   {
    "t": "R2",
    "m": "Batting rebuilt: read time after the bounce goes from -17ms to 250/330/350ms; the three hops are now genuinely different events."
