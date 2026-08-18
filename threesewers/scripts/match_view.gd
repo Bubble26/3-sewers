@@ -92,12 +92,17 @@ const CHEESE_CARD_T := 1.2
 const SETTLE_PAD := 0.35
 const PIP_DIM := Color(0.28, 0.26, 0.27, 0.4)
 const SHAKE_DECAY := 0.36
-const SHAKE_FREQ := 9.0     # oscillations per second of the springback
+# 3.5Hz, not 9. At 9Hz a full cycle takes 3.3 frames at 30fps, so the
+# oscillation was faster than the frame rate could show it and every sample
+# landed near a zero crossing: an amplitude of 5.35 rendered as 1.65 visible
+# pixels. A shake nobody can see is the same as no shake.
+const SHAKE_FREQ := 3.5
+const SQUASH_T := 0.13      # how long the ball wears an impact
 const SOCK_CARD_DELAY := 0.22   # let the struck ball clear the card's footprint
 const HIT_SPEED_GAIN := 1.15    # how much carry compresses the flight time
 const HITSTOP_MIN := 0.035
 const HITSTOP_GAIN := 0.075
-const TRAIL_MAX := 16
+const TRAIL_MAX := 7        # a smear a few ball-widths long, not a string
 
 # ---------------------------------------------------------------- kid sprite node
 class Kid extends Node2D:
@@ -303,6 +308,19 @@ var _root_home := Vector2.ZERO      # world_root rest position; shake offsets fr
 var _shake_amt := 0.0
 var _shake_t := 0.0
 var _shake_dir := Vector2(0.35, 1.0).normalized()
+var _wall_usec := 0
+var _sq_t := 0.0
+var _sq_amt := 0.0
+var _sq_ang := 0.0
+var _sq_usec := 0
+
+# Squash the spaldeen along an impact direction for a beat. Real time again,
+# so the deformation survives the freeze that follows the hit.
+func squash_ball(amount: float, along: Vector2) -> void:
+	_sq_amt = amount
+	_sq_t = SQUASH_T
+	_sq_usec = Time.get_ticks_usec()
+	_sq_ang = along.angle() if along.length_squared() > 0.0001 else 0.0
 var _base_scale := 1.0
 var trail: Line2D
 var _trail: Array[Vector2] = []
@@ -355,6 +373,7 @@ func _ready() -> void:
 			func() -> void:
 				_report_perf()
 				get_tree().quit(0))
+	_wall_usec = Time.get_ticks_usec()
 	_load_bat_geometry()
 	_base_pos = [Tuning.BASE_1, Tuning.BASE_2, Tuning.BASE_3, Tuning.PLATE]
 	core.setup(Game.cpu_team, Game.player_team, Game.roster, 1, Tuning.INNINGS, _seed)
@@ -483,7 +502,7 @@ func _view_kick(amount: float) -> void:
 		_cam_tw.kill()
 	var base: float = maxf(get_viewport_rect().size.x / Tuning.vw,
 		get_viewport_rect().size.y / Tuning.vh)
-	_cam_tw = create_tween()
+	_cam_tw = create_tween().set_ignore_time_scale(true)
 	_cam_tw.tween_property(world_root, "scale",
 		Vector2(base, base) * (1.0 + amount), 0.05).set_trans(Tween.TRANS_QUAD)
 	_cam_tw.tween_property(world_root, "scale",
@@ -578,7 +597,15 @@ func _apply_ball() -> void:
 	var pr := Tuning.project(bw, bh)
 	ball.position = Vector2(pr.x, pr.y)
 	var sc := Tuning.sprite_scale(pr.z)
-	ball_spr.scale = Vector2(BALL_SCALE, BALL_SCALE) * sc
+	# A rubber ball that stays a perfect circle through a bat AND through a
+	# cobblestone is the tell that nothing really happened.
+	var nows := Time.get_ticks_usec()
+	if _sq_t > 0.0:
+		_sq_t = maxf(0.0, _sq_t - clampf(float(nows - _sq_usec) / 1000000.0, 0.0, 0.1))
+	_sq_usec = nows
+	var k: float = (_sq_t / SQUASH_T) * _sq_amt
+	ball_spr.rotation = _sq_ang
+	ball_spr.scale = Vector2(BALL_SCALE * (1.0 + k), BALL_SCALE * (1.0 - k * 0.8)) * sc
 	ball.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + 1
 	# The batter is the one thing between the camera and the pitch, and their
 	# head sat squarely in the ball's descent: measured, the ball vanished for
@@ -587,8 +614,12 @@ func _apply_ball() -> void:
 	# world y 2350 against the batter's 2352, so the two are the same depth
 	# and their draw order is an arbitrary tie anyway; the incoming pitch wins
 	# it. Scale still sells the distance.
-	if _ball_mode == "pitch" and batter_node != null \
-			and is_instance_valid(batter_node):
+	# ...and on the way out too: a mistimed hit dribbles back toward the
+	# batter's own feet, where the ball vanished behind them for two frames
+	# and reappeared elsewhere, which reads as a bug rather than a play.
+	if batter_node != null and is_instance_valid(batter_node) \
+			and absf(bw.x - _batter_pos.x) < 260.0 \
+			and absf(bw.y - _batter_pos.y) < 320.0:
 		ball.z_index = maxi(ball.z_index, batter_node.z_index + 1)
 	# The shadow stays on the ground, so it is projected without the height.
 	# It is the only cue for how high the ball is, and it used to vanish
@@ -906,7 +937,15 @@ func _process(delta: float) -> void:
 # nervous camera operator; a real impact shoves the frame one way and springs
 # back. So: a damped oscillation along a fixed direction, with only a little
 # noise across it to keep the springback from looking mechanical.
-func _process_shake(delta: float) -> void:
+# On REAL time, not scaled time. Hit-stop drives Engine.time_scale to almost
+# zero, so a shake advanced by the scaled delta simply stops: the frame sits
+# at a constant offset for the whole freeze and only starts oscillating after
+# it — a jolt that happens invisibly, between frames nobody is looking at.
+# The world holding still while the camera rings is the point of a hit-stop.
+func _process_shake(_scaled: float) -> void:
+	var now := Time.get_ticks_usec()
+	var delta: float = clampf(float(now - _wall_usec) / 1000000.0, 0.0, 0.1)
+	_wall_usec = now
 	if _shake_t <= 0.0:
 		return
 	_shake_t = maxf(0.0, _shake_t - delta)
@@ -1079,6 +1118,8 @@ func _process_ball(delta: float) -> void:
 				_bounced = true
 				mark("bounce")
 				Audio.sfx_world("ball_bounce", _pB.x)
+				squash_ball(0.34, Vector2(1, 0))    # flattened on the stones
+				_view_kick(0.022)                   # the stones register
 				_fx_dust(_pB, 14)
 				shake(6.5, Vector2(0, 1))
 			bw = _pB.lerp(_pC, tau / _tb)
@@ -1170,7 +1211,7 @@ func _push_trail(force := false) -> void:
 	while _trail.size() > TRAIL_MAX:
 		_trail.remove_at(0)
 	trail.points = PackedVector2Array(_trail)
-	trail.width = 9.5 * maxf(0.35, Tuning.proj_s(bw.y) * Tuning.v_xk * 0.5)
+	trail.width = 13.0 * maxf(0.60, Tuning.proj_s(bw.y) * Tuning.v_xk * 0.5)
 
 func _clear_trail() -> void:
 	_trail.clear()
@@ -1206,6 +1247,7 @@ func _resolve_pitch() -> void:
 		var q := float(ev.get("quality", 0.5))
 		mark("contact q=%.2f" % q)
 		_batter_react(q)
+		squash_ball(0.20 + 0.30 * q, Vector2(1.0, -0.3))
 		Audio.sfx_world("bat_crack" if q > 0.55 else "bat_thud",
 			bw.x, -7.0 + 8.0 * q)
 		_fx_contact(bw, bh, clampf(q, 0.15, 1.0))
