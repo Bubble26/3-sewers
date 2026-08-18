@@ -193,29 +193,27 @@ SPOKE = mix(WOOD, LACQUER, 0.40)   # artillery wheel, dulled so the car stays da
 
 # ================================================================== the ball
 def build_spaldeen():
-    """24x24 world. The only saturated object in the game."""
+    """24x24 world. The only saturated object in the game.
+
+    Deliberately FLAT. It used to be five nested circles fading into each
+    other with a soft white airbrushed specular — the only smoothly-shaded,
+    pure-white thing in a game where everything else is two flat tones inside
+    an ink line, which made the hero object read as a party balloon dropped
+    into a woodcut. Three hard steps and one hard chalk glint instead: still
+    unmistakably round, now unmistakably the same drawing as everything else.
+    """
     w, h = W(24, 24)
     c = Canvas(w, h)
     cx, cy, r = w * 0.5, h * 0.5, w * 0.38
-    # A spaldeen is PINK, not crimson: keep the lit two-thirds high and rosy and
-    # let the terminator stay chromatic instead of sliding to maroon.
-    deep = mix(PINK, (128, 54, 72), 0.30)
+    deep = mix(PINK, (128, 54, 72), 0.34)
     c.circle(cx, cy, r, fill=deep)
-    c.circle(cx - r * 0.08, cy - r * 0.09, r * 0.95, fill=PINK)
-    c.circle(cx - r * 0.17, cy - r * 0.18, r * 0.84,
-             fill=mix(PINK, PINK_L, 0.34))
-    c.circle(cx - r * 0.27, cy - r * 0.29, r * 0.62,
-             fill=mix(PINK, PINK_L, 0.72))
-    # kick highlight
-    c.ellipse([cx - r * 0.70, cy - r * 0.74, cx - r * 0.14, cy - r * 0.26],
-              fill=mix(PINK_L, (255, 250, 248), 0.55))
-    c.ellipse([cx - r * 0.60, cy - r * 0.64, cx - r * 0.30, cy - r * 0.42],
-              fill=(255, 252, 250))
-    # bounce light on the shadow rim keeps the ball round, not flat
-    for a in range(20, 110, 6):
-        p = epoint(cx, cy, r * 0.90, r * 0.90, a)
-        c.circle(p[0], p[1], r * 0.075, fill=mix(deep, PINK_L, 0.40))
-    img = ak.finish(c, ink=3, light=True, light_strength=0.42, grain_amt=3, seed=7)
+    # the lit mass, offset up-left to agree with the one sun the kit uses
+    c.circle(cx - r * 0.13, cy - r * 0.15, r * 0.88, fill=PINK)
+    c.circle(cx - r * 0.26, cy - r * 0.29, r * 0.58,
+             fill=mix(PINK, PINK_L, 0.55))
+    # one hard glint, chalk not white, sized so it survives at 20px on screen
+    c.circle(cx - r * 0.42, cy - r * 0.46, r * 0.20, fill=CHALK)
+    img = ak.finish(c, ink=3, light=False, grain_amt=3, seed=7)
     return img
 
 
