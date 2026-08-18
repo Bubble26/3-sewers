@@ -708,7 +708,6 @@ func run_match() -> void:
 			ticker(Announcer.line("pitch", core.kid_name(core.pitcher_id())))
 			Audio.announce("pitch")
 		var pfps: float = float(PITCH_ANIM_FPS.get(String(pitch["type"]), 10.0))
-		mark("windup-%s-lane%d" % [String(pitch["type"]), int(pitch["lane"])])
 		var pk: Kid = fielders.get("P")
 		if pk != null and is_instance_valid(pk):
 			pk.play("pitch", pfps, false)
@@ -783,12 +782,6 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	_bounced = false
 	_clear_trail()
 	_ball_mode = "pitch"
-	mark("release-%s" % ptype)
-	if _film:
-		print("PMETA %d type=%s lane=%d ta=%.4f tb=%.4f cross=%.4f aim=%.4f v2=%.2f resth=%.3f vpx=%.1f vpy=%.1f wsx=%.1f wsy=%.1f" % [
-			Engine.get_frames_drawn(), ptype, int(pitch["lane"]), _ta, _tb, _cross_t, _swing_aim(), _v2, _rest_h,
-			get_viewport_rect().size.x, get_viewport_rect().size.y,
-			float(DisplayServer.window_get_size().x), float(DisplayServer.window_get_size().y)])
 
 func _unhandled_input(event: InputEvent) -> void:
 	var pressed := false
@@ -1084,7 +1077,7 @@ func _process_ball(delta: float) -> void:
 			var tau := _bt - _ta
 			if not _bounced:
 				_bounced = true
-				mark("bounce-%s" % String(_pd.get("type","?")))
+				mark("bounce")
 				Audio.sfx_world("ball_bounce", _pB.x)
 				_fx_dust(_pB, 14)
 				shake(6.5, Vector2(0, 1))
@@ -1106,22 +1099,6 @@ func _process_ball(delta: float) -> void:
 			bw = _contact_from.lerp(contact_point(), e)
 			bh = lerpf(_contact_from_h, _contact_h, e)
 		_apply_ball()
-		if _film:
-			var _gp := ball.get_global_transform_with_canvas().origin
-			var _vps := get_viewport_rect().size
-			var _ws := DisplayServer.window_get_size()
-			var _kx: float = float(_ws.x) / maxf(_vps.x, 1.0)
-			var _ky: float = float(_ws.y) / maxf(_vps.y, 1.0)
-			var _dia: float = 48.0 * absf(ball_spr.global_scale.x) * _kx
-			var _aimd := _swing_aim()
-			var _wopen := _bt >= _aimd - Tuning.SWING_EARLY and _bt <= _aimd + Tuning.SWING_LATE
-			var _bz := 0
-			if batter_node != null and is_instance_valid(batter_node):
-				_bz = batter_node.z_index
-			print("PBALL %d %s bt=%.4f wx=%.2f wy=%.2f h=%.2f sx=%.2f sy=%.2f dia=%.2f win=%d bz=%d bballz=%d hint=%d" % [
-				Engine.get_frames_drawn(), String(_pd.get("type","?")), _bt, bw.x, bw.y, bh,
-				_gp.x * _kx, _gp.y * _ky, _dia, 1 if _wopen else 0, _bz, ball.z_index,
-				1 if hint_lbl.visible else 0])
 		if _contact_t > 0.0:
 			if _bt >= _contact_t:
 				_resolve_pitch()
