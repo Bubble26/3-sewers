@@ -3,71 +3,105 @@ import { T } from '../core/tuning.js';
 import { bus } from '../core/bus.js';
 import { rng } from '../core/rng.js';
 import { newGame } from './state.js';
+import { gameplay, slot } from './plugins.js';
+import { defaults } from './defaults.js';
 
-// Minimal but complete at-bat loop: pitch -> swing window -> ball physics -> result.
+/**
+ * The at-bat state machine. It owns phases, the count, outs and innings, and it owns nothing
+ * else: every gameplay decision is delegated to a slot in src/game/plugins.js so each piece
+ * of the game can be built and judged on its own.
+ *
+ * Phases: idle -> wind_up -> pitch -> in_play -> (resolve) -> wind_up ... -> over
+ */
 export class Sim {
   constructor() {
     this.state = newGame();
-    this.ball = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), live: false, inFlight: false };
+    this.ball = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), spin: new THREE.Vector3(), live: false, inFlight: false };
     this.timer = 0;
     this.swingAt = -1;
     this.pitchT = 0;
+    this.playT = 0;
+    this.pitchTarget = new THREE.Vector3();
+    this.pitchKind = 'straight';
+    this.lastContact = null;
   }
-  reset(seed = 1920) { rng.reset(seed); this.state = newGame(); this.timer = 0; this.beginAtBat(); }
 
+  reset(seed = 1920) {
+    rng.reset(seed);
+    this.state = newGame();
+    this.timer = 0; this.pitchT = 0; this.playT = 0; this.swingAt = -1;
+    this.lastContact = null;
+    this.ball.live = false; this.ball.inFlight = false;
+    this.ball.pos.set(0, T.pitch.releaseHeight, T.street.moundZ);
+    this.ball.vel.set(0, 0, 0);
+    this.beginAtBat();
+  }
+
+  get timeToPlate() { return (T.street.moundZ - T.street.plateZ) / T.pitch.speed; }
+  get batter() { return this.state.batterIdx; }
+
+  // ── flow ──────────────────────────────────────────────────────────────────
   beginAtBat() {
     this.state.phase = 'wind_up';
-    this.timer = 0.9;
+    this.swingAt = -1;
+    this.pitchT = 0;
     this.ball.live = false; this.ball.inFlight = false;
-    bus.emit('atbat:begin', { batter: this.state.batterIdx });
+    slot('pitching', 'beginWindup', defaults.beginWindup)(this);
+    bus.emit('atbat:begin', { batter: this.state.batterIdx, count: { balls: this.state.balls, strikes: this.state.strikes } });
   }
+
   throwPitch() {
-    const s = this.state;
-    s.phase = 'pitch';
+    this.state.phase = 'pitch';
     this.pitchT = 0;
     this.ball.live = true; this.ball.inFlight = false;
-    this.ball.pos.set(rng.range(-0.7, 0.7), T.pitch.releaseHeight, T.street.moundZ);
-    const target = new THREE.Vector3(rng.range(-1.4, 1.4), rng.range(1.8, 3.4), T.street.plateZ);
-    this.ball.vel.copy(target).sub(this.ball.pos).normalize().multiplyScalar(T.pitch.speed);
-    this.pitchTarget = target;
-    bus.emit('pitch:thrown', { speed: T.pitch.speed });
+    slot('pitching', 'release', defaults.release)(this);
+    bus.emit('pitch:thrown', { kind: this.pitchKind, target: this.pitchTarget.clone() });
   }
-  swing() {
-    const s = this.state;
-    if (s.phase !== 'pitch' || this.swingAt >= 0) return;
-    this.swingAt = this.pitchT;
-    bus.emit('bat:swing', {});
+
+  swing(kind = 'normal') {
+    if (this.state.phase !== 'pitch') return;
+    slot('batting', 'onSwingInput', defaults.onSwingInput)(this, kind);
+    bus.emit('bat:swing', { kind });
   }
+
   contact() {
-    const s = this.state;
-    // Timing error -> launch angle + power falloff.
-    const err = Math.abs(this.swingAt - this.timeToPlate);
-    const quality = Math.max(0, 1 - err / T.bat.contactWindow);
-    if (quality <= 0) return this.strike('swinging');
-    const power = 52 + quality * 62 + rng.range(-6, 6);
-    const angle = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(52, 24, quality) + rng.range(-6, 6));
-    const spray = rng.range(-0.45, 0.45) * (1.2 - quality);
+    const hit = slot('batting', 'evaluateContact', defaults.evaluateContact)(this);
+    if (!hit) return this.strike('swinging');
+
+    const angle = THREE.MathUtils.degToRad(hit.angleDeg);
+    const spray = hit.sprayRad;
     this.ball.pos.set(0, 3.0, T.street.plateZ + 1);
-    this.ball.vel.set(Math.sin(spray) * power * Math.cos(angle), Math.sin(angle) * power, Math.cos(spray) * power * Math.cos(angle));
+    this.ball.vel.set(
+      Math.sin(spray) * hit.power * Math.cos(angle),
+      Math.sin(angle) * hit.power,
+      Math.cos(spray) * hit.power * Math.cos(angle),
+    );
     this.ball.inFlight = true;
-    s.phase = 'in_play';
+    this.lastContact = hit;
+    this.state.phase = 'in_play';
     this.playT = 0;
-    bus.emit('bat:contact', { quality, power });
+    bus.emit('bat:contact', hit);
+    gameplay.fielding?.onBallInPlay?.(this, hit);
+    gameplay.baserunning?.onContact?.(this);
   }
+
+  // ── outcomes ──────────────────────────────────────────────────────────────
   strike(kind) {
     const s = this.state;
     s.strikes++;
     bus.emit('strike', { kind, count: s.strikes });
     if (s.strikes >= T.game.strikes) return this.out('strikeout');
-    this.afterPitch();
+    this.beginAtBat();
   }
-  ball4() {
+
+  ballCalled() {
     const s = this.state;
     s.balls++;
     bus.emit('ball', { count: s.balls });
-    if (s.balls >= T.game.balls) { this.advanceRunners(1); s.balls = 0; s.strikes = 0; this.nextBatter(); return; }
-    this.afterPitch();
+    if (s.balls >= T.game.balls) { bus.emit('walk', {}); return this.reachBase(1, 'walk'); }
+    this.beginAtBat();
   }
+
   out(kind) {
     const s = this.state;
     s.outs++; s.balls = 0; s.strikes = 0;
@@ -75,14 +109,16 @@ export class Sim {
     if (s.outs >= T.game.outsPerInning) return this.endHalf();
     this.nextBatter();
   }
-  hit(basesGained) {
+
+  reachBase(bases, kind) {
     const s = this.state;
     s.balls = 0; s.strikes = 0;
-    this.advanceRunners(basesGained);
-    bus.emit('hit', { bases: basesGained });
+    (gameplay.baserunning?.advance ?? this.advanceRunners.bind(this))(this, bases);
+    bus.emit('hit', { bases, kind });
     this.nextBatter();
   }
-  advanceRunners(n) {
+
+  advanceRunners(_sim, n) {
     const s = this.state;
     for (let i = 2; i >= 0; i--) {
       if (s.bases[i]) {
@@ -93,12 +129,14 @@ export class Sim {
     }
     if (n >= 4) this.scoreRun(); else s.bases[n - 1] = true;
   }
+
   scoreRun() {
     const s = this.state;
-    const t = s.half === 'top' ? 'away' : 'home';
-    s.score[t]++;
-    bus.emit('run', { team: t, score: { ...s.score } });
+    const team = s.half === 'top' ? 'away' : 'home';
+    s.score[team]++;
+    bus.emit('run', { team, score: { ...s.score } });
   }
+
   endHalf() {
     const s = this.state;
     s.outs = 0; s.balls = 0; s.strikes = 0; s.bases = [null, null, null];
@@ -107,54 +145,56 @@ export class Sim {
     if (s.inning > T.game.innings) { s.phase = 'over'; bus.emit('game:over', { score: { ...s.score } }); return; }
     this.beginAtBat();
   }
-  nextBatter() { this.state.batterIdx = (this.state.batterIdx + 1) % 4; this.beginAtBat(); }
-  afterPitch() { this.swingAt = -1; this.beginAtBat(); }
 
-  get timeToPlate() {
-    return (T.street.moundZ - T.street.plateZ) / T.pitch.speed;
+  nextBatter() {
+    (gameplay.rules?.nextBatter ?? ((sim) => { sim.state.batterIdx = (sim.state.batterIdx + 1) % 9; }))(this);
+    this.beginAtBat();
   }
 
+  resolvePlay(result) {
+    gameplay.rules?.onResult?.(this, result);
+    this.ball.inFlight = false;
+    this.state.lastEvent = result.detail || result.kind;
+    if (result.kind === 'out') this.out(result.detail || 'fielded');
+    else if (result.kind === 'foul') this.strike('foul');
+    else if (result.kind === 'do_over') this.beginAtBat();
+    else this.reachBase(result.bases, result.detail);
+  }
+
+  // ── tick ──────────────────────────────────────────────────────────────────
   update(dt) {
     const s = this.state;
-    if (s.phase === 'over') return;
+    if (s.phase === 'over' || s.phase === 'idle') return;
+
     if (s.phase === 'wind_up') {
-      this.timer -= dt;
-      if (this.timer <= 0) { this.swingAt = -1; this.throwPitch(); }
+      if (slot('pitching', 'updateWindup', defaults.updateWindup)(dt, this)) this.throwPitch();
       return;
     }
+
     if (s.phase === 'pitch') {
       this.pitchT += dt;
-      this.ball.pos.addScaledVector(this.ball.vel, dt);
-      this.ball.vel.y -= T.pitch.arcGravity * dt * 0.35;
+      slot('pitching', 'updatePitch', defaults.updatePitch)(dt, this);
+      gameplay.batting?.updateSwing?.(dt, this);
       if (this.ball.pos.z <= T.street.plateZ + 0.4) {
         if (this.swingAt >= 0) this.contact();
-        else {
-          const inZone = Math.abs(this.pitchTarget.x) < 1.1 && this.pitchTarget.y > 1.9 && this.pitchTarget.y < 3.3;
-          inZone ? this.strike('looking') : this.ball4();
-        }
+        else if (slot('rules', 'isStrike', defaults.isStrike)(this, this.pitchTarget)) this.strike('looking');
+        else this.ballCalled();
       }
       return;
     }
+
     if (s.phase === 'in_play') {
       this.playT += dt;
-      this.ball.vel.y -= T.ball.gravity * dt;
-      this.ball.vel.multiplyScalar(1 - T.ball.drag * dt * 60 * 0.016);
-      this.ball.pos.addScaledVector(this.ball.vel, dt);
-      if (this.ball.pos.y <= T.ball.radius) {
-        this.ball.pos.y = T.ball.radius;
-        this.ball.vel.y = Math.abs(this.ball.vel.y) * T.ball.bounce;
-        this.ball.vel.x *= 0.7; this.ball.vel.z *= 0.7;
-        bus.emit('ball:bounce', { pos: this.ball.pos.clone() });
-      }
-      if (this.playT > 2.4) {
-        const dist = this.ball.pos.length();
-        if (dist > 210) this.hit(4);
-        else if (dist > 150) this.hit(3);
-        else if (dist > 110) this.hit(2);
-        else if (dist > 62 && rng.chance(0.55)) this.hit(1);
-        else this.out('fielded');
-        this.ball.inFlight = false;
-      }
+      const step = slot('ballphysics', 'step', defaults.stepBall);
+      const ev = step(dt, this.ball, this);
+      if (ev?.bounced) bus.emit('ball:bounce', { pos: this.ball.pos.clone(), surface: ev.surface || 'street' });
+      if (ev?.carom) bus.emit('ball:carom', { pos: this.ball.pos.clone(), surface: ev.carom });
+
+      const fielded = gameplay.fielding?.update?.(dt, this);
+      if (fielded) return this.resolvePlay(fielded);
+
+      const settled = gameplay.ballphysics?.settled?.(this.ball, this) ?? this.playT > 2.4;
+      if (settled) return this.resolvePlay(defaults.resolvePlay(this));
     }
   }
 }

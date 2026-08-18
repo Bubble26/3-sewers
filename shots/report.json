@@ -11,7 +11,5 @@
     "shots/wide.png"
   ],
   "errors": [],
-  "console": [
-    "[error] Failed to load resource: the server responded with a status of 404 (Not Found)"
-  ]
+  "console": []
 }
