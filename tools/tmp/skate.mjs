@@ -6,8 +6,10 @@ const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-an
 const page = await browser.newPage({ viewport: { width: 320, height: 200 } });
 await page.goto(`http://127.0.0.1:${port}/index.html?harness=1`, { waitUntil: 'load' });
 await page.waitForFunction(() => globalThis.__SB?.ready, null, { timeout: 30000 });
-const out = await page.evaluate(async () => {
+const run = async (stride) => await page.evaluate(async (STRIDE) => {
   const SB = globalThis.__SB, THREE = SB.app.THREE;
+  const m = await import('/src/chars/clips.js');
+  m.CLIPS.run.meta.stride = STRIDE;
   await SB.scenario('anim_run');
   const p = SB.app.get('players');
   const k = p.kids.filter(x => x.group.visible)[0];
@@ -22,14 +24,15 @@ const out = await page.evaluate(async () => {
     prevL = L; prevR = R;
   }
   return rows;
-});
-// planted foot = the lower one; its per-frame world dx should be ~0
-let worst = 0, n = 0, sum = 0;
-for (const r of out) {
-  const planted = r.ly <= r.ry ? r.ldx : r.rdx;
-  const y = Math.min(r.ly, r.ry);
-  if (y < 0.35) { n++; sum += Math.abs(planted); worst = Math.max(worst, Math.abs(planted)); }
+}, stride);
+for (const stride of [4.2, 4.8, 5.4, 6.0, 6.8, 7.6]) {
+  const out = await run(stride);
+  let worst = 0, n = 0, sum = 0, signed = 0;
+  for (const r of out) {
+    const planted = r.ly <= r.ry ? r.ldx : r.rdx;
+    const y = Math.min(r.ly, r.ry);
+    if (y < 0.22) { n++; sum += Math.abs(planted); signed += planted; worst = Math.max(worst, Math.abs(planted)); }
+  }
+  console.log('stride', stride, 'n', n, 'mean|dx|', (sum/Math.max(1,n)).toFixed(3), 'signed', (signed/Math.max(1,n)).toFixed(3), 'worst', worst.toFixed(3));
 }
-console.log(JSON.stringify(out.slice(0, 16)));
-console.log('planted frames', n, 'mean |dx| per frame (ft)', (sum/Math.max(1,n)).toFixed(3), 'worst', worst.toFixed(3), 'travel/frame at 17.5ft/s =', (17.5/60).toFixed(3));
 await browser.close(); srv.close();

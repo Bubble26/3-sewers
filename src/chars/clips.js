@@ -384,7 +384,7 @@ C('pitch_recover', {
 const THIGH_F = 47, THIGH_B = -34;
 C('run', {
   dur: 1.0, loop: true, ease: 'inout',
-  meta: { stride: 5.4, cadence: 3.25 },
+  meta: { stride: 6.8, cadence: 2.6 },
   keys: [
     // contact, left foot down
     { t: 0.0, ease: 'out', pose: { base: { py: -0.13, sy: -0.05, sx: 0.03, sz: 0.03 }, hips: { ry: 9, rx: -4 }, chest: { rx: -15, ry: -9 }, neck: { rx: 12, ry: 8 }, legL: { rx: THIGH_F }, kneeL: [-10, 0, 0], footL: [-24, 0, 0], legR: { rx: THIGH_B }, kneeR: [-30, 0, 0], footR: [16, 0, 0], armL: { rx: -54, rz: 12 }, elbL: [62, 0, 0], armR: { rx: 58, rz: -20 }, elbR: [86, 0, 0] } },
@@ -545,7 +545,7 @@ C('cheer_jump', {
 /** The home-run trot: slow, bouncy, chest out, one hand up to the fourth-floor windows. */
 C('trot', {
   dur: 1.6, loop: true, ease: 'inout',
-  meta: { stride: 4.2 },
+  meta: { stride: 5.2 },
   keys: [
     { t: 0.0, ease: 'out', pose: { base: { py: -0.06, sy: -0.04, sx: 0.02, sz: 0.02 }, hips: { ry: 7 }, chest: { rx: 8, ry: -7 }, neck: { rx: 14, ry: 6 }, legL: { rx: 34 }, kneeL: [-22, 0, 0], footL: [-16, 0, 0], legR: { rx: -24 }, kneeR: [-48, 0, 0], armL: { rx: -26, rz: 14 }, elbL: [48, 0, 0], armR: { rx: 150, rz: -22 }, elbR: [30, 0, 0] } },
     { t: 0.24, ease: 'out', pose: { base: { py: 0.22, sy: 0.06, sx: -0.03, sz: -0.03 }, hips: { ry: -4 }, chest: { rx: 12, ry: 4 }, neck: { rx: 18, ry: -5 }, legL: { rx: -20 }, kneeL: [-40, 0, 0], legR: { rx: 30 }, kneeR: [-70, 0, 0], armL: { rx: 14, rz: 18 }, elbL: [56, 0, 0], armR: { rx: 158, rz: -16 }, elbR: [22, 0, 0] } },
