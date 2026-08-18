@@ -1351,8 +1351,8 @@ registerScenario('props_tour', {
   setup: ({ app }) => {
     app.sim.reset(2025);
     app.camera.fov = 46; app.camera.updateProjectionMatrix();
-    app.camera.position.set(13.2, 6.0, -8.6);
-    app.camera.lookAt(25.5, 3.2, 42);
+    app.camera.position.set(10.6, 6.6, -10.2);
+    app.camera.lookAt(24.5, 2.7, 34);
   },
   settle: 0.9,
 });

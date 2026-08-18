@@ -304,7 +304,7 @@ export class Rig {
       }
     }
   }
-  updateSecondary(dt) { for (const j of this.jiggles) j.update(dt); }
+  updateSecondary(dt) { if (Rig.SECONDARY_OFF) return; for (const j of this.jiggles) j.update(dt); }
 
   /** Put both mitts on the handle. No-op for a kid who is not carrying one. */
   solveHands() {

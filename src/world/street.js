@@ -31,24 +31,24 @@ const SEWER = 95;                 // §1.3 — sewers 95ft apart, and every boas
 // ─── the lot plan ─────────────────────────────────────────────────────────────
 // Hand-authored, because composition is not something you seed a random number generator for.
 const NORTH = [
-  { st: 5, brick: 'red', shop: 'grocer' },
-  { st: 6, brick: 'ochre', shop: 'cigar', fe: 1 },
-  { st: 4, brick: 'red', stoop: 1, fe: 1, basement: 'shoe' },
+  { st: 1, brick: 'red', shop: 'grocer', roofsign: 1 },   // the north corner taxpayer
+  { st: 6, brick: 'ochre', shop: 'cigar', fe: 1, ghost: 'goldDust' },
+  { st: 4, brick: 'brown', stoop: 1, fe: 1, basement: 'shoe' },
   { st: 6, brick: 'red', stoop: 1, fe: 1, ghost: 'castoria', tank: 1 },
-  { st: 5, brick: 'ochre', shop: 'barber', fe: 1 },
+  { st: 5, brick: 'brown', shop: 'barber', fe: 1 },
   { st: 6, brick: 'red', shop: 'fivedime', fe: 1, coop: 1 },
-  { st: 4, brick: 'ochre', stoop: 1, alley: 1, bills: 'bills' },
+  { st: 4, brick: 'brown', stoop: 1, alley: 1, bills: 'bills' },
   { st: 6, brick: 'red', shop: 'lunch', fe: 1, ghost: 'uneeda', tank: 1 },
 ];
 const SOUTH = [
-  { st: 6, brick: 'red', shop: 'deli', fe: 1, ghost: 'goldDust', tank: 1 },
-  { st: 5, brick: 'ochre', stoop: 1, fe: 1, basement: 'tailor' },
+  { st: 6, brick: 'red', shop: 'deli', fe: 1, ghost: 'castoria', tank: 1 },
+  { st: 5, brick: 'brown', stoop: 1, fe: 1, basement: 'tailor' },
   { st: 4, brick: 'red', shop: 'tailor' },
-  { st: 6, brick: 'red', stoop: 1, fe: 1, ghost: 'uneeda', coop: 1 },
+  { st: 6, brick: 'brown', stoop: 1, fe: 1, ghost: 'uneeda', coop: 1 },
   { st: 5, brick: 'ochre', shop: 'laundry', fe: 1 },
   { st: 6, brick: 'red', stoop: 1, fe: 1, tank: 1 },
-  { st: 4, brick: 'ochre', shop: 'shoe' },
-  { st: 6, brick: 'red', shop: 'ice', fe: 1, ghost: 'castoria', tank: 1 },
+  { st: 4, brick: 'red', shop: 'shoe' },
+  { st: 6, brick: 'brown', shop: 'ice', fe: 1, ghost: 'goldDust', tank: 1 },
 ];
 const NORTH_Z0 = -15, SOUTH_Z0 = 5;
 const TAX = { z0: -46, z1: 5, h: 16 };     // the corner taxpayer, DESIGN-BIBLE §3.2
@@ -56,7 +56,7 @@ const TAX = { z0: -46, z1: 5, h: 16 };     // the corner taxpayer, DESIGN-BIBLE 
 const CORNICE = FACADE.cornice;            // three paints
 const SASH = FACADE.sash;                  // dark green, oxblood, near-black — never white
 const IRON = FACADE.iron;
-const BRICKS = { red: FACADE.brick, ochre: FACADE.ochre, brown: 0x8a5a46 };
+const BRICKS = { red: FACADE.brick, ochre: FACADE.ochre, brown: FACADE.brickSoot };
 const SPRITES = ['win:sash', 'win:shade', 'win:open', 'win:cat', 'win:sash', 'win:lean', 'win:pot', 'win:shade', 'win:sash', 'win:open', 'win:board', 'win:sash'];
 
 function makeLots() {
@@ -77,7 +77,7 @@ function makeLots() {
         side, i, xf: side * M.facadeX, out: -side, front: side > 0 ? 'nx' : 'px',
         z0: z0base + i * M.lot, storeys: spec.st,
         brickName: spec.brick,
-        brickKey: spec.brick === 'ochre' ? 'wallOchre' : 'wallRed',
+        brickKey: spec.brick === 'ochre' ? 'wallOchre' : spec.brick === 'brown' ? 'wallBrown' : 'wallRed',
         brickHex: BRICKS[spec.brick],
         ci, si, ii,
         corniceHex: soot(CORNICE[ci], 0.22), sashHex: SASH[si], ironHex: IRON[ii],
@@ -89,7 +89,7 @@ function makeLots() {
         shop: spec.shop || null,
         basement: spec.basement || null,
         fireEscape: !!spec.fe,
-        stoopAt: 0.5 + r.range(-0.06, 0.06),
+        stoopAt: r.chance(0.5) ? 0.30 + r.range(0, 0.05) : 0.66 + r.range(0, 0.05),
         brackets: r.int(6, 9),
         grime: 0.88 + r.range(0, 0.18),
         chimneys: [0.05, 0.95], chimneyH: 2.6 + r.range(0, 2.6), pots: r.int(3, 6),
@@ -99,6 +99,7 @@ function makeLots() {
         ghost: spec.ghost || null,
         bills: spec.bills || null,
         alley: !!spec.alley,
+        roofsign: !!spec.roofsign,
         sprites: SPRITES.slice(r.int(0, 6)).concat(SPRITES),
         escapeProps: { level: r.int(0, 2), crate: r.int(0, 2) },
         lod: 0,
@@ -242,6 +243,7 @@ export default registerSystem({
     const mats = {
       wallRed: new THREE.MeshBasicMaterial({ map: brickTexture(FACADE.brick, FACADE.mortar, 11), vertexColors: true }),
       wallOchre: new THREE.MeshBasicMaterial({ map: brickTexture(FACADE.ochre, 0xbaa88c, 29), vertexColors: true }),
+      wallBrown: new THREE.MeshBasicMaterial({ map: brickTexture(FACADE.brickSoot, 0x9c8a74, 47), vertexColors: true }),
       wallStone: new THREE.MeshBasicMaterial({ map: washTexture(FACADE.partyWall, 5), vertexColors: true }),
       trim: new THREE.MeshBasicMaterial({ vertexColors: true }),
       sign: new THREE.MeshBasicMaterial({ map: atlasTex, vertexColors: true, alphaTest: 0.5 }),

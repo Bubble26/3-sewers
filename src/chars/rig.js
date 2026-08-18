@@ -218,7 +218,7 @@ export function buildKidFromSpec(specRef, opts = {}) {
     ];
     const t = G.tube(prof, 14);
     t.scale(1, 1, chestD / chestW);
-    tb.add(t, shirt);
+    tb.add(t, shirt, { term: -0.24 });
     // open collar, shirttail out on one side
     const col = G.tube([[chestW * 0.60, torsoH * 0.94], [chestW * 0.74, torsoH * 1.04], [chestW * 0.66, torsoH * 1.10]], 20);
     col.scale(1, 1, chestD / chestW * 1.06);
@@ -226,40 +226,42 @@ export function buildKidFromSpec(specRef, opts = {}) {
   }
   if (topKind === 'vest') {
     const v = G.tube([
-      [chestW * 1.04, -hh * 0.03], [chestW * 1.10, torsoH * 0.30],
-      [chestW * 1.06, torsoH * 0.66], [chestW * 0.98, torsoH * 0.90],
+      [chestW * 1.10, -hh * 0.03], [chestW * 1.18, torsoH * 0.30],
+      [chestW * 1.16, torsoH * 0.66], [chestW * 1.08, torsoH * 0.92],
     ], 20);
     v.scale(1, 1, chestD / chestW);
-    tb.add(v, accent);
+    tb.add(v, accent, { term: -0.24 });
     for (let i = 0; i < 3; i++) {
-      const b = G.sphere(hh * 0.035, 8, 6);
-      b.translate(0, torsoH * (0.28 + i * 0.20), chestD * 1.09);
+      const b = G.sphere(hh * 0.042, 8, 6);
+      b.translate(0, torsoH * (0.28 + i * 0.20), chestD * 1.22);
       tb.add(b, PAVEMENT.manholeHigh);
     }
   } else if (topKind === 'sweater') {
     const s = G.tube([
-      [hipR * 1.20, -hh * 0.30], [hipR * 1.22, -hh * 0.10], [chestW * 1.12, torsoH * 0.42],
-      [chestW * 1.10, torsoH * 0.80], [chestW * 0.96, torsoH * 0.98],
+      [hipR * 1.26, -hh * 0.32], [hipR * 1.30, -hh * 0.10], [chestW * 1.24, torsoH * 0.42],
+      [chestW * 1.22, torsoH * 0.80], [chestW * 1.14, torsoH * 0.94],
+      [chestW * 1.00, torsoH * 1.03],
     ], 20);
     s.scale(1, 1, chestD / chestW);
-    tb.add(s, accent);
+    tb.add(s, accent, { term: -0.24 });
   } else if (topKind === 'handmedown') {
     // A small kid entirely inside an adult's wool sweater: the silhouette is a bell.
     const s = G.tube([
       [hipR * 1.92, -thighLen * 0.98], [hipR * 1.86, -thighLen * 0.74],
       [hipR * 1.44, -hh * 0.05], [chestW * 1.34, torsoH * 0.52],
-      [chestW * 1.20, torsoH * 0.86], [chestW * 0.98, torsoH * 1.00],
+      [chestW * 1.24, torsoH * 0.86], [chestW * 1.14, torsoH * 0.96],
+      [chestW * 1.00, torsoH * 1.04],
     ], 20);
     s.scale(1, 1, chestD / chestW * 1.06);
-    tb.add(s, accent);
+    tb.add(s, accent, { term: -0.24 });
     tb.smudge(0, -thighLen * 0.5, hipR, hipR * 1.6, dirt, 0.30);
   } else if (topKind === 'dress') {
     const s = G.tube([
-      [hipR * 1.16, -hh * 0.16], [hipR * 1.10, hh * 0.02], [chestW * 1.04, torsoH * 0.50],
-      [chestW * 1.02, torsoH * 0.86], [chestW * 0.92, torsoH * 1.00],
+      [hipR * 1.16, -hh * 0.16], [hipR * 1.10, hh * 0.02], [chestW * 1.10, torsoH * 0.50],
+      [chestW * 1.08, torsoH * 0.86], [chestW * 1.00, torsoH * 1.02],
     ], 20);
     s.scale(1, 1, chestD / chestW);
-    tb.add(s, mix(shirt, accent, 0.52));
+    tb.add(s, mix(shirt, accent, 0.52), { term: -0.24 });
     const sash = G.tube([[hipR * 1.20, -hh * 0.16], [hipR * 1.22, -hh * 0.04]], 14);
     sash.scale(1, 1, chestD / chestW);
     tb.add(sash, accent);
@@ -301,7 +303,7 @@ export function buildKidFromSpec(specRef, opts = {}) {
       [hipR * 1.18, hh * 0.02], [hipR * 1.34, -thighLen * 0.40],
       [hipR * 1.62, hem + hh * 0.06], [hipR * 1.66, hem],
     ], 16);
-    sb.add(s, mix(shirt, accent, 0.52));
+    sb.add(s, mix(shirt, accent, 0.52), { term: -0.20 });
     const trim = G.tube([[hipR * 1.66, hem], [hipR * 1.68, hem + hh * 0.05]], 16);
     sb.add(trim, accent);
     sb.smudge(0, hem + hh * 0.1, hipR, hipR * 1.4, dirt, 0.24);

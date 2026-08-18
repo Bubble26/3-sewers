@@ -1057,8 +1057,8 @@ registerScenario('surface_detail', {
     app.sim.reset(1925);
     app.camera.fov = 40;
     app.camera.updateProjectionMatrix();
-    app.camera.position.set(-8.8, 4.2, -4.6);
-    app.camera.lookAt(0.9, 0.25, 1.6);
+    app.camera.position.set(-5.6, 6.2, -7.2);
+    app.camera.lookAt(0.5, 0.10, 1.0);
   },
   settle: 0.5,
 });

@@ -237,7 +237,12 @@ export class Builder {
       const f = F[key]; if (!f) continue;
       const n = f[4];
       let c = typeof col === 'function' ? col(key, n, [cx, cy, cz]) : lit3(col, n, cx, cy, cz);
-      const skyK = key === 'py' ? 1.17 : key === 'ny' ? 0.80 : 1;   // sky above, roadway below
+      // In a shaded canyon the only light is the strip of sky overhead, so an up-facing surface
+      // is far brighter than a vertical one and a soffit is far darker. Without this every
+      // stoop, sill and cornice collapses into a single grey lump.
+      let skyK = 1;
+      if (key === 'py') skyK = litOf(n, cx, cy, cz) > 0.01 ? 1.10 : 1.34;
+      else if (key === 'ny') skyK = 0.78;
       if (skyK !== 1) c = [c[0] * skyK, c[1] * skyK, c[2] * skyK];
       let uvs = null;
       if (uvRect) uvs = rectUV(uvRect);
@@ -1015,6 +1020,8 @@ function stoop(ctx, lot) {
   T.box(sa, parlour + 9.5, cz - halfW - 0.45, sb, parlour + 10.1, cz + halfW + 0.45, scol, `${lot.front} py ny pz nz`);
 }
 
+const X2 = (lot, d0, d1) => (lot.out < 0 ? [lot.xf - d1, lot.xf - d0] : [lot.xf + d0, lot.xf + d1]);
+
 /** Chimney pots, water tanks, bulkheads, a coop — free period value over the cornice line. */
 function roofFurniture(ctx, lot, top) {
   const T = ctx.b('trim'), W = ctx.b(lot.brickKey);
@@ -1028,7 +1035,7 @@ function roofFurniture(ctx, lot, top) {
   // chimney at the party wall, standing clear of the parapet, crowned with terracotta pots.
   // A cluster of pots against the sky is the strongest 1920s city silhouette there is.
   const parapetTop = top + M.corniceH + M.parapet;
-  for (const cz of lot.chimneys) {
+  for (const cz of (lot.storeys >= 3 ? lot.chimneys : [])) {
     const [ca, cb] = inX(2.2, 5.4);
     const z = lot.z0 + cz * M.lot;
     const capY = parapetTop + lot.chimneyH;
@@ -1047,8 +1054,27 @@ function roofFurniture(ctx, lot, top) {
     }
   }
   // roof-stair bulkhead
-  const [ba, bb] = inX(9, 17);
-  T.box(ba, roofY, zc - 3, bb, roofY + 8, zc + 3, (f, n, c) => shadeLin(0x6b5a44, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.4 : 0), 'px nx py pz nz');
+  if (lot.storeys >= 3) {
+    const [ba, bb] = inX(9, 17);
+    T.box(ba, roofY, zc - 3, bb, roofY + 8, zc + 3, (f, n, c) => shadeLin(0x6b5a44, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.4 : 0), 'px nx py pz nz');
+  }
+  // a painted board on the roof of a one-storey taxpayer, facing down the street
+  if (lot.roofsign) {
+    const S = ctx.b('sign');
+    const sign = ctx.atlas.get('roofsign:1');
+    const [sa, sb] = X2(lot, -0.1, 0.5);
+    const px = lot.out < 0 ? sa : sb;
+    const y0 = top + M.corniceH + M.parapet, y1 = y0 + 6.2;
+    const za = lot.z0 + 2, zb = lot.z0 + M.lot - 2;
+    const P = lot.out < 0
+      ? [[px, y0, za], [px, y0, zb], [px, y1, zb], [px, y1, za]]
+      : [[px, y0, zb], [px, y0, za], [px, y1, za], [px, y1, zb]];
+    S.quad(P[0], P[1], P[2], P[3], texTint(litOf([lot.out, 0, 0], lot.xf, y0, za)), rectUV(sign), [lot.out, 0, 0]);
+    for (const pz of [za + 1, (za + zb) / 2, zb - 1]) {
+      T.box(Math.min(sa, sb) - 0.1, top + M.corniceH, pz - 0.16, Math.max(sa, sb) + 0.1, y1, pz + 0.16,
+        () => shadeLin(0x4a4a44, 0.2), 'px nx pz nz');
+    }
+  }
   // water tank — only where city pressure cannot reach, so only on the tall buildings
   if (lot.tank) {
     const [ta, tb] = inX(13, 25);
@@ -1104,13 +1130,15 @@ function partyWall(ctx, lot, top) {
     [k * 0.98, k * 0.99, k * 1.0], [[0, y0 / 8], [M.depth / 8, y0 / 8], [M.depth / 8, y1 / 8], [0, y1 / 8]], n);
   if (lot.ghost) {
     const slot = ctx.atlas.get(`ghost:${lot.ghost}`);
-    const h = Math.min(y1 - y0 - 2, 26);
-    const w = Math.min(M.depth - 6, h * (slot.w / slot.h));
-    const ax = o < 0 ? xf + 3 : xf - 3 - w;
-    const ay = y1 - 3.5 - h;
+    const h = Math.min(y1 - y0 - 2, 34);
+    const w = Math.min(M.depth - 5, h * (slot.w / slot.h));
+    const ax = o < 0 ? xf + 2.5 : xf - 2.5 - w;
+    // a wall dog worked from a swing stage, so the ad sits where the wall is, not at the top
+    const ay = y1 - y0 > 34 ? y0 + (y1 - y0 - h) * 0.45 : y1 - 3.5 - h;
     T.quad([ax + w, ay, z - 0.06], [ax, ay, z - 0.06], [ax, ay + h, z - 0.06], [ax + w, ay + h, z - 0.06],
       texTint(lit), rectUV(slot), n);
   }
+  if (y1 - y0 > 26 && !lot.bills) lot.bills = 'bills2';   // paper finds every blank wall
   if (lot.bills) {
     const slot = ctx.atlas.get(lot.bills);
     const ax = o < 0 ? xf + 1.2 : xf - 1.2 - 9;

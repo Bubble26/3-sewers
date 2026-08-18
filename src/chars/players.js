@@ -561,200 +561,198 @@ function faceCam(x, z, skew = 0) {
 registerScenario('anim_idle', {
   seed: 21,
   setup: () => {
-    const a = cast(6);
-    cam([1, 3.0, 46.2], { dist: 17.2, elev: 16, yaw: -28, fov: 50, aim: 0.4 });
-    const xs = [-9.8, -5.4, -0.6, 3.8, 8.4, 12.6];
-    const zs = [44.4, 48.6, 44.2, 48.4, 44.0, 48.2];
+    const a = cast(5);
+    cam([0.6, 3.4, 46.0], { dist: 13.8, elev: 9, yaw: -24, fov: 50, aim: 0.5 });
+    const xs = [-6.6, -3.0, 0.9, 4.6, 8.2];
+    const zs = [43.6, 47.0, 43.4, 46.8, 43.4];
     a.forEach((k, i) => {
       k.showStick(i === 2);
-      k.at(xs[i], zs[i], faceCam(xs[i], zs[i], (i - 2.5) * 0.2));
+      k.at(xs[i], zs[i], faceCam(xs[i], zs[i], (i - 2.5) * 0.11));
       k.idleClip = IDLES[i % IDLES.length];
       k.restClip = k.idleClip;
-      k.anim.play(k.idleClip, { at: i * 0.73, fade: 0 });
-      // staggered so every frame of the strip has three kids visibly moving
-      k.setCycle(3.9, [
-        { t: 0.0, do: (x) => { x.anim.play(x.idleClip, { fade: 0.22 }); x.flavour(x.fidgets[0]); } },
-        { t: 1.55, do: (x) => x.flavour(x.fidgets[1]) },
-        { t: 2.75, do: (x) => x.flavour(x.fidgets[2]) },
-      ], i * 0.62);
+      // staggered so every frame of the strip has three kids visibly moving, and no two of
+      // them are ever in the same pose
+      // Three fidgets per kid on a long, offset cycle: across any capture two or three kids
+      // are moving and no two are ever in the same pose, but nobody has both mitts up at once.
+      k.setCycle(6.2, [
+        { t: 0.0, do: (x) => { x.anim.play(x.idleClip, { fade: 0.22, at: 0.7 }); x.flavour(x.fidgets[0]); } },
+        { t: 2.3, do: (x) => x.flavour(x.fidgets[1]) },
+        { t: 4.3, do: (x) => x.flavour(x.fidgets[2]) },
+      ], i * 1.19);
     });
   },
-  settle: 1.35,
+  settle: 0.9,
 });
 
 registerScenario('anim_swing', {
   seed: 22,
   setup: () => {
-    const a = cast(5);
-    cam([0.4, 3.1, 45.0], { dist: 16.5, elev: 10, yaw: -15, fov: 50, aim: 0.75 });
+    const a = cast(4);
+    cam([0.2, 3.3, 44.6], { dist: 14.2, elev: 8, yaw: -13, fov: 50, aim: 0.5 });
     // Five batters, one swing, five phases: an animation chart you can read left to right.
-    // Cycle and settle are chosen so kid 0 is at the load and kid 4 is at the settle.
     const P = 1.2;
     a.forEach((k, i) => {
       k.giveStick(); k.showStick(true);
-      const x = -9.4 + i * 4.7, z = 44.2 + (i % 2) * 2.0;
+      const x = -7.5 + i * 5.0, z = 43.4 + (i % 2) * 1.9;
       k.at(x, z, faceCam(x, z, -0.2));
       k.setCycle(P, [
         { t: 0.0, do: (y) => { y.anim.play('stance', { fade: 0.1 }); y.flavour('waggle', { life: 0.2 }); } },
         { t: 0.16, do: (y) => y.anim.play('swing', { restart: true, fade: 0.05 }) },
-      ], (P / 5) * (4 - i));
+      ], (P / 4) * (3 - i) + 0.26);
     });
   },
-  settle: 0.2,
+  settle: 0.05,
 });
 
 registerScenario('anim_run', {
   seed: 23,
   setup: () => {
     const a = cast(6);
-    cam([1.5, 3.0, 45.5], { dist: 18.5, elev: 16, yaw: -14, fov: 52, aim: 0.3 });
-    // four kids at four phases of one cycle, running the same lane left to right
+    cam([1.0, 3.3, 44.6], { dist: 16.5, elev: 9, yaw: -10, fov: 52, aim: 0.4 });
+    // Four kids on a treadmill down the same block, spaced so the strip shows four different
+    // points of one cycle at once. Phase comes from distance travelled, never from the clock,
+    // which is what keeps the planted foot from skating.
+    const treadmill = (k, lane, x0) => {
+      k.at(x0, lane, -Math.PI / 2);
+      k.speed = T.run.speed;
+      k.goTo(32, lane, { speed: T.run.speed, onArrive: (y) => treadmill(y, lane, -20) });
+    };
     for (let i = 0; i < 4; i++) {
       const k = a[i];
-      const lane = 41.0 + i * 2.4;
+      const lane = 41.6 + i * 2.2;
       k.showStick(false);
-      k.at(-15 + i * 2.0, lane, -Math.PI / 2);
       k.runDist = i * (CLIPS.run.meta.stride * k.scale) / 4;
-      k.setCycle(3.6, [
-        { t: 0.0, do: (x) => { x.at(-16, lane, -Math.PI / 2); x.goTo(20, lane, { speed: T.run.speed }); } },
-      ], i * 0.62);
+      treadmill(k, lane, -9.5 + i * 5.4);
     }
-    // the hard stop
+    // the hard stop: full speed, both feet plant, everything above the knees keeps going
     const s = a[4];
     s.showStick(false);
-    s.at(-14, 51.2, -Math.PI / 2);
-    s.setCycle(3.6, [
-      { t: 0.0, do: (x) => { x.at(-14, 51.2, -Math.PI / 2); x.goTo(2.5, 51.2, { speed: T.run.speed, hard: true }); } },
-    ], 1.05);
+    s.setCycle(3.0, [
+      { t: 0.0, do: (x) => { x.at(-13, 51.4, -Math.PI / 2); x.speed = T.run.speed; x.goTo(1.5, 51.4, { speed: T.run.speed, hard: true }); } },
+    ], 1.02);
     // and the slide into the chalk
     const d = a[5];
     d.showStick(false);
-    d.setCycle(3.6, [
-      { t: 0.0, do: (x) => { x.at(6.5, 55.5, YAW(8.1, -4.1)); x.goTo(14.6, 51.4, { speed: T.run.speed }); } },
-      { t: 0.86, do: (x) => { x.target = null; x.act('slide', { state: 'slide' }); if (APP.puffs) APP.puffs.burst(new THREE.Vector3(x.pos.x, 0.2, x.pos.y), 12, 3.2); } },
-    ], 0.2);
+    d.setCycle(3.0, [
+      { t: 0.0, do: (x) => { x.at(3.5, 55.5, YAW(7, -4.5)); x.speed = T.run.speed; x.goTo(10.5, 51.0, { speed: T.run.speed }); } },
+      { t: 0.72, do: (x) => { x.target = null; x.act('slide', { state: 'slide' }); if (APP.puffs) APP.puffs.burst(new THREE.Vector3(x.pos.x, 0.2, x.pos.y), 14, 3.4); } },
+    ], 0.6);
   },
-  settle: 1.62,
+  settle: 0.3,
 });
 
 registerScenario('anim_celebrate', {
   seed: 24,
   setup: () => {
     const a = cast(7);
-    cam([0.5, 3.0, 8.0], { dist: 15.5, elev: 17, yaw: -22, fov: 50, aim: 0.5 });
+    cam([0, 3.3, 10.0], { dist: 17, elev: 10, yaw: -18, fov: 52, aim: 0.4 });
     const star = a[0];
     star.showStick(false);
-    star.at(0.5, 7.5, faceCam(0.5, 7.5));
-    star.anim.play('mobbed', { fade: 0 });
+    star.at(0, 9.5, faceCam(0, 9.5));
     star.setCycle(9, [{ t: 0, do: (x) => x.anim.play('mobbed', { fade: 0.2 }) }], 0.4);
     // four kids piling on, offset so no two are airborne on the same frame
-    const ring = [[-4.2, 5.2], [4.6, 5.6], [-2.9, 11.0], [3.6, 11.4]];
+    const ring = [[-3.9, 6.9], [4.1, 7.2], [-2.9, 12.4], [3.3, 12.6]];
     ring.forEach((p, i) => {
       const k = a[1 + i];
       k.showStick(false);
-      k.at(p[0], p[1], YAW(0.5 - p[0], 8.0 - p[1]));
-      k.anim.play('cheer_jump', { at: i * 0.22, fade: 0 });
-      k.setCycle(9, [{ t: 0, do: (x) => x.anim.play('cheer_jump', { fade: 0.2 }) }], i * 0.22);
+      k.at(p[0], p[1], YAW(0 - p[0], 9.5 - p[1]));
+      k.setCycle(9, [{ t: 0, do: (x) => x.anim.play('cheer_jump', { fade: 0.2 }) }], i * 0.23);
     });
     // one thumbing his nose at the other bench, one who lost taking it hard
     const t = a[5];
     t.showStick(false);
-    t.at(-10.5, 12.5, faceCam(-10.5, 12.5, 0.3));
-    t.anim.play('taunt', { at: 0.4, fade: 0 });
+    t.at(-9.6, 14.6, faceCam(-9.6, 14.6, 0.35));
     t.setCycle(9, [{ t: 0, do: (x) => x.anim.play('taunt', { fade: 0.2 }) }], 0.4);
     const s = a[6];
     s.showStick(false);
-    s.at(11.5, 13.5, faceCam(11.5, 13.5, -0.35));
-    s.anim.play('sulk', { at: 1.1, fade: 0 });
-    s.setCycle(9, [{ t: 0, do: (x) => x.anim.play('sulk', { fade: 0.2 }) }], 1.1);
+    s.at(9.4, 15.4, faceCam(9.4, 15.4, -0.4));
+    s.setCycle(9, [{ t: 0, do: (x) => x.anim.play('sulk', { fade: 0.2 }) }], 1.4);
   },
-  settle: 0.95,
+  settle: 0.6,
 });
 
 registerScenario('anim_pitch', {
   seed: 25,
   setup: () => {
     const a = cast(4);
-    cam([0, 3.0, 45.2], { dist: 15.5, elev: 16, yaw: -30, fov: 50, aim: 0.5 });
+    cam([0, 3.3, 44.8], { dist: 14, elev: 9, yaw: -28, fov: 50, aim: 0.4 });
     a.forEach((k, i) => {
       k.showStick(false);
-      const x = -7.6 + i * 5.1, z = 43.6 + (i % 2) * 2.2;
+      const x = -6.6 + i * 4.5, z = 43.2 + (i % 2) * 1.9;
       k.at(x, z, -0.34);
       k.setCycle(2.1, [
         { t: 0.0, do: (y) => y.anim.play('windup', { restart: true, fade: 0.06 }) },
         { t: 0.92, do: (y) => y.anim.play('pitch_recover', { restart: true, fade: 0.05 }) },
         { t: 1.9, do: (y) => y.anim.play('pitch_set', { fade: 0.12 }) },
-      ], (2.1 / 4) * i);
+      ], (2.1 / 4) * (3 - i));
     });
   },
-  settle: 0.52,
+  settle: 0.1,
 });
 
 registerScenario('anim_field', {
   seed: 26,
   setup: () => {
     const a = cast(4);
-    cam([0, 2.9, 45.2], { dist: 16, elev: 16, yaw: -20, fov: 52, aim: 0.4 });
+    cam([0, 3.2, 44.8], { dist: 14.6, elev: 9, yaw: -18, fov: 52, aim: 0.4 });
     const acts = ['dive', 'jump_catch', 'fumble', 'throw'];
     a.forEach((k, i) => {
       k.showStick(false);
-      const x = -8.2 + i * 5.5, z = 43.6 + (i % 2) * 2.2;
-      k.at(x, z, faceCam(x, z, 0.35));
+      const x = -7.0 + i * 4.7, z = 43.2 + (i % 2) * 1.9;
+      k.at(x, z, faceCam(x, z, 0.3));
       k.restClip = 'ready';
       k.setCycle(2.5, [
         { t: 0.0, do: (y) => y.act(acts[i], { state: 'demo' }) },
         { t: 2.0, do: (y) => y.anim.play('ready', { fade: 0.2 }) },
-      ], (2.5 / 4) * i * 0.6);
+      ], 0.35 + i * 0.28);
     });
   },
-  settle: 0.66,
+  settle: 0.1,
 });
 
 registerScenario('anim_car', {
   seed: 27,
   setup: () => {
     const a = cast(6);
-    cam([0, 3.0, 45.4], { dist: 19, elev: 18, yaw: -26, fov: 52, aim: 0.4 });
+    cam([0, 3.3, 45.0], { dist: 17.5, elev: 10, yaw: -24, fov: 52, aim: 0.4 });
     const spots = [[-8.6, 42.6], [-4.4, 47.6], [0.4, 42.8], [4.8, 47.8], [9.2, 43.2], [-11.6, 48.4]];
     a.forEach((k, i) => {
       k.showStick(i === 2);
       const sp = spots[i];
-      k.at(sp[0], sp[1], faceCam(sp[0], sp[1], (i - 2.5) * 0.2));
+      k.at(sp[0], sp[1], faceCam(sp[0], sp[1], (i - 2.5) * 0.14));
       k.setCycle(7.0, [
         { t: 0.0, do: (x) => { x.restClip = x.idleClip; x.anim.play(x.idleClip, { fade: 0.2 }); x.flavour(x.fidgets[0]); } },
         { t: 1.4, do: (x) => x.act('freeze', { state: 'freeze', lock: 1.7 }) },
         { t: 3.15, do: (x) => x.goTo(sp[0] < 0 ? -15.5 : 15.5, sp[1] + (sp[0] < 0 ? -2 : 2), { speed: T.run.speed, hard: true }) },
         { t: 4.5, do: (x) => { x.lookAt(0, 20); x.restClip = x.stick ? 'curb_wait' : 'idle_slouch'; x.anim.play(x.restClip, { fade: 0.25 }); } },
         { t: 6.3, do: (x) => { x.at(sp[0], sp[1], faceCam(sp[0], sp[1], 0)); x.restClip = x.idleClip; } },
-      ], 0);
+      ], 1.52);
     });
   },
-  settle: 1.55,
+  settle: 0.05,
 });
 
 registerScenario('anim_argue', {
   seed: 28,
   setup: () => {
     const a = cast(4);
-    cam([-0.4, 2.9, 46.2], { dist: 14.5, elev: 15, yaw: -32, fov: 50, aim: 0.5 });
+    cam([-0.4, 3.2, 46.0], { dist: 13.2, elev: 8, yaw: -30, fov: 50, aim: 0.4 });
     const [p, q, r, s] = a;
     p.showStick(false); q.showStick(false);
     p.at(-2.2, 45.4, YAW(4.4, 0.9)); q.at(2.2, 46.3, YAW(-4.4, -0.9));
-    p.anim.play('argue_jab', { fade: 0 });
-    q.anim.play('argue_appeal', { at: 0.5, fade: 0 });
-    p.setCycle(6, [{ t: 0, do: (x) => x.anim.play('argue_jab', { fade: 0.2 }) }], 0);
-    q.setCycle(6, [{ t: 0, do: (x) => x.anim.play('argue_appeal', { fade: 0.2 }) }], 0.5);
+    p.setCycle(6, [{ t: 0, do: (x) => x.anim.play('argue_jab', { fade: 0.2 }) }], 0.9);
+    q.setCycle(6, [{ t: 0, do: (x) => x.anim.play('argue_appeal', { fade: 0.2 }) }], 1.6);
     // the called shot, happening behind them, ignored by everybody
     r.giveStick(); r.showStick(true);
-    r.at(-9.5, 53, faceCam(-9.5, 53, -0.2));
+    r.at(-9.5, 53, faceCam(-9.5, 53, -0.25));
     r.setCycle(3.4, [
       { t: 0.0, do: (x) => x.act('point', { state: 'point' }) },
       { t: 2.2, do: (x) => x.anim.play('stance', { fade: 0.2 }) },
-    ], 0.6);
+    ], 0.9);
     s.showStick(false);
     s.at(8.5, 52, faceCam(8.5, 52, -0.4));
     s.restClip = 'idle_slouch';
     s.setCycle(6, [{ t: 0, do: (x) => x.anim.play('idle_slouch', { fade: 0.2 }) }], 1.4);
   },
-  settle: 1.15,
+  settle: 0.6,
 });
