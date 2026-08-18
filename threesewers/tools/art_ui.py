@@ -656,11 +656,19 @@ def _shelf(w=320, h=110, ss=SS):
     return A.finish(c, ink=0, light=False, grain_amt=4, seed=31)
 
 
+BRASS = (168, 140, 96)   # a gold that does not out-shout the ball
+
+
 def _stamp(size=260, ss=SS):
     """The rosette that lands on a card you have taken.
 
-    No type: at rack size a word would be a smudge, so it is a cut-paper star
-    on the spaldeen's pink — the one place that colour is allowed to spread.
+    No type: at rack size a word would be a smudge, so it is a cut-paper star.
+
+    It used to be a field of the spaldeen's pink, which measured LOUDER than
+    the ball itself (C* 32.8 against 31.1) and so broke the one rule the whole
+    palette is built on. It is paper now, with the pink kept to a small centre
+    — the link to the ball without the competition. A paper rosette is the
+    more period-correct object anyway.
     """
     c = A.Canvas(size, size, ss)
     r = size * 0.42
@@ -670,10 +678,11 @@ def _stamp(size=260, ss=SS):
         rr = r if k % 2 == 0 else r * 0.905
         pts.append((size / 2 + math.cos(ang) * rr, size / 2 + math.sin(ang) * rr))
     c.poly(pts, fill=INK)
-    c.circle(size / 2, size / 2, r * 0.86, fill=PINK)
+    c.circle(size / 2, size / 2, r * 0.86, fill=CHALK)
     c.circle(size / 2, size / 2, r * 0.86, outline=INK, width=size * 0.020)
-    c.circle(size / 2, size / 2, r * 0.70, outline=shade(PINK, 1.35),
-             width=size * 0.013)
+    c.circle(size / 2, size / 2, r * 0.70, outline=shade(PINK, 0.92),
+             width=size * 0.016)
+    c.circle(size / 2, size / 2, r * 0.40, fill=PINK)
     star = []
     for k in range(10):
         ang = -math.pi / 2 + k * math.pi / 5
@@ -838,9 +847,12 @@ def build_hud(outdir):
             pts.append((36 + math.cos(ang) * r, 36 + math.sin(ang) * r))
         grown = [(36 + (x - 36) * 1.18, 36 + (y - 36) * 1.18) for x, y in pts]
         p.poly(grown, fill=INK)
-        p.poly(pts, fill=A.GOLD)
+        # Brass, not gold: A.GOLD measures C* 57.7 against the spaldeen's 54.8,
+        # so a stat pip was the loudest colour on a screen whose entire rule is
+        # that the ball is. Brass still reads as struck metal on aged paper.
+        p.poly(pts, fill=BRASS)
         inner = [(36 + (x - 36) * 0.55, 36 + (y - 36) * 0.55 - 2) for x, y in pts]
-        p.poly(inner, fill=shade(A.GOLD, 1.14))
+        p.poly(inner, fill=shade(BRASS, 1.16))
         return A.finish(p, ink=0, light=False)
 
     def pip_out():
