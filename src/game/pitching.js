@@ -7,7 +7,7 @@ import { bus } from '../core/bus.js';
 import { rng, RNG } from '../core/rng.js';
 import { getKid, ROSTER } from '../chars/roster.js';
 import { CLIPS } from '../chars/clips.js';
-import { clip } from '../chars/anim.js';
+import { clip, Trail } from '../chars/anim.js';
 import { CHALK, INK, CLOTH, hexCSS } from '../render/palette.js';
 import { MAT, ballMesh } from '../render/materials.js';
 
@@ -583,6 +583,7 @@ function delivery(name, k) {
     dur: d,
     events: [
       { t: apex, name: 'apex' },
+      { t: 0.845 * d, name: 'dust' },      // the front foot lands on the block
       { t: rel, name: 'release' },
     ],
     keys: [
@@ -924,6 +925,12 @@ const pitching = {
     this.mark.renderOrder = 5;
     app.scene.add(this.mark);
 
+    // the arm smear: the same chalk ribbon the bat leaves, on the throwing hand. A kid
+    // this size has no readable elbow at 200 px, so the ARC is what says "he threw it".
+    this.smear = new Trail(app.scene, { samples: 15, color: CHALK });
+    this._sa = new THREE.Vector3(); this._sb = new THREE.Vector3(); this._sp = new THREE.Vector3();
+    this.smearT = 0;
+
     // the ball in the hand, before it is anywhere else
     this.held = ballMesh(T.ball.radius * 1.12, 'worn');
     this.held.visible = false;
@@ -1074,6 +1081,39 @@ const pitching = {
 
     if (app.sim.state.phase === 'wind_up' && this.phase !== 'idle') this.syncHeld(true);
     else this.held.visible = false;
+
+    this.updateSmear(dt, app);
+  },
+
+  /**
+   * Chalk smear off the throwing hand for the last third of a second of the delivery.
+   * Pushed every frame while the arm is moving and left to fade after the ball is gone.
+   */
+  updateSmear(dt, app) {
+    const k = this.pitcherKid();
+    const ph = app.sim.state.phase;
+    const near = ph === 'wind_up' && this.releaseT !== undefined && this.t > this.releaseT - 0.34;
+    const after = ph === 'pitch' && app.sim.pitchT < 0.26;
+    if (!k || (!near && !after)) {
+      this.smearT = Math.max(0, this.smearT - dt / 0.18);
+      if (this.smearT <= 0) this.smear.clear();
+      else { this.smear.strength = this.smearT * 0.5; this.smear.update(); }
+      return;
+    }
+    const hand = k.rig?.get?.('handR');
+    const elb = k.rig?.get?.('elbR');
+    if (!hand) return;
+    hand.updateWorldMatrix(true, false);
+    this._sb.setFromMatrixPosition(hand.matrixWorld);
+    if (elb) { elb.updateWorldMatrix(true, false); this._sa.setFromMatrixPosition(elb.matrixWorld); }
+    else this._sa.copy(this._sb).addScaledVector(_v.set(0, 1, 0), 0.4);
+    this._sa.lerp(this._sb, 0.28);
+    const v = this._sb.distanceTo(this._sp) / Math.max(dt, 1e-4);
+    this._sp.copy(this._sb);
+    const str = THREE.MathUtils.clamp((v - 11) / 26, 0, 1) * 0.62;
+    this.smearT = Math.max(this.smearT, str);
+    this.smear.push(this._sa, this._sb, str);
+    this.smear.update();
   },
 };
 
@@ -1104,6 +1144,7 @@ const impl = {
     P.apexT = P.setDur + dur * PT.apexAt;
     P.phase = 'lookin';
     P.staged = null;
+    P.smear.clear(); P.smearT = 0; P._sp.set(0, -99, 0);
     P.t = 0;
     P.told = false;
     sim.timer = P.releaseT;
@@ -1418,7 +1459,7 @@ registerScenario('pitch_types', {
 // how far into the delivery the still is taken; the film tool overrides it to 0
 let WINDUP_OFFSET = null;
 const WINDUP_AT = () => (WINDUP_OFFSET !== null ? WINDUP_OFFSET
-  : (APP.pitching.apexT ?? 0.9) + PT.apexHold * 0.5);
+  : (APP.pitching.releaseT ?? 1.7) - 0.045);
 globalThis.__SB_WINDUP_AT = (v) => { WINDUP_OFFSET = v; };
 
 registerScenario('pitch_windup', {
@@ -1430,8 +1471,8 @@ registerScenario('pitch_windup', {
     app.pitching.force(null);
     app.clock.advance(WINDUP_AT());
     app.camera.fov = 46;
-    app.camera.position.set(17.4, 9.2, 41.6);
-    app.camera.lookAt(-1.2, 3.1, PT.moundZ + 1.2);
+    app.camera.position.set(14.9, 8.0, 41.2);
+    app.camera.lookAt(-1.6, 3.0, PT.moundZ + 1.0);
     app.camera.updateProjectionMatrix();
   },
   settle: 0,

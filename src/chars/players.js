@@ -154,7 +154,7 @@ class Kid {
     this.after = o.after || null;
   }
   /** Additive layer on top of whatever is playing. */
-  flavour(name, o) { this.anim.once(name, o); }
+  flavour(name, o) { return this.anim.once(name, o); }
 
   /**
    * A looping director track. The offset is a TRUE phase offset: the starting step is fired
@@ -683,6 +683,11 @@ registerScenario('anim_idle', {
     // three-quarter, and no two the same way round: a kid square-on to the lens loses both
     // arms and both legs to foreshortening, which is exactly what killed the first pass
     const turn = [0.86, -0.72, 0.55, -0.92, 0.78];
+    // One named fidget each, held at a different point of its arc, so a SINGLE frame shows
+    // five different actions — a cap tug, a pebble kick, chatter at the batter, a hitch of
+    // the pants and a stretch — and nobody is standing still.
+    const first = ['fidget_cap', 'fidget_pebble', 'fidget_chatter', 'fidget_pants', 'fidget_stretch'];
+    const at = [0.44, 0.62, 0.46, 0.55, 0.72];
     a.forEach((k, i) => {
       const [x, z] = spot[i];
       k.showStick(i === 2);
@@ -691,15 +696,18 @@ registerScenario('anim_idle', {
       k.restClip = rest[i];
       k.baseFace = mood[i];
       k.setFace(mood[i]);
+      k.fidgets = [first[i], FIDGETS[(i * 3 + 2) % FIDGETS.length], FIDGETS[(i * 5 + 5) % FIDGETS.length]];
       // three fidgets each, on a long cycle offset by a fifth of a period per kid
       k.setCycle(6.6, [
-        { t: 0.0, do: (y) => { y.anim.play(y.idleClip, { fade: 0.22, at: 0.7 }); y.flavour(y.fidgets[0]); } },
-        { t: 2.4, do: (y) => y.flavour(y.fidgets[1]) },
-        { t: 4.5, do: (y) => y.flavour(y.fidgets[2]) },
+        { t: 0.0, do: (y) => { y.anim.play(y.idleClip, { fade: 0.22, at: 0.7 }); y.fidgetLayer = y.flavour(y.fidgets[0]); } },
+        { t: 2.4, do: (y) => { y.fidgetLayer = y.flavour(y.fidgets[1]); } },
+        { t: 4.5, do: (y) => { y.fidgetLayer = y.flavour(y.fidgets[2]); } },
       ], i * 1.31);
+      // wind each fidget to its own point in its arc, minus the settle the harness will run
+      if (k.fidgetLayer) k.fidgetLayer.t = at[i] - 0.12;
     });
   },
-  settle: 0.9,
+  settle: 0.12,
 });
 
 /**

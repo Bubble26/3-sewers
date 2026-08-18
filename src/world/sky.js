@@ -354,100 +354,99 @@ function cloudAtlas(P) {
   const rng = new RNG(19250922);
   const LIT = css(P.lit), MID = css(P.mid), SHD = css(P.shade), CIR = css(P.cirrus);
 
+  const rgba = (hex, al) => `rgba(${(hex >> 16) & 255},${(hex >> 8) & 255},${hex & 255},${al})`;
+
   /**
-   * One cumulus: a flat base of small lobes all tangent to the same waterline,
-   * a cauliflower crown of bigger lobes above it, and the whole silhouette then
-   * cut into three tone bands on a diagonal — poster banding, hard stops, no
-   * airbrush. The sun is up and to the sprite's right, which is where it is in
-   * the world when the camera looks east down the block.
+   * One cumulus. The volume comes from shading each LOBE — a warm cap on the
+   * sun side, a cool cap opposite — not from a gradient laid across the whole
+   * shape, because a single diagonal ramp reads as a graphic slash and a
+   * cauliflower reads as weather. Flat-ish base, irregular crown, three tones,
+   * nothing above coal-haze L* 83.3.
    */
   const drawCumulus = (ox, oy, nBase, nCrown, spanU, hU) => {
-    const baseY = oy + TILE * 0.74;
+    const baseY = oy + TILE * 0.76;
     const cx = ox + TILE * 0.5;
     const span = TILE * spanU, H = TILE * hU;
     const lobes = [];
-    let minR = 1e9;
+    const lobe = (x, y, rx, ry) => lobes.push({ x, y, rx, ry, r: Math.max(rx, ry) });
+    // one wide low binder so the base reads as a single mass and not a pearl string
+    lobe(cx, baseY - H * 0.14, span * 0.50, H * 0.17);
+    const step = span / Math.max(1, nBase - 1);
     for (let i = 0; i < nBase; i++) {
       const u = nBase === 1 ? 0.5 : i / (nBase - 1);
-      const bell = 0.34 + 0.66 * Math.sin(Math.PI * (0.10 + 0.80 * u));
-      const r = H * 0.30 * bell * (0.86 + 0.28 * rng.next());
-      lobes.push({ x: cx + (u - 0.5) * span, y: baseY - r, r, crown: 0 });
-      minR = Math.min(minR, r);
+      const bell = 0.62 + 0.38 * Math.sin(Math.PI * (0.10 + 0.80 * u));
+      const r = step * 0.74 * bell * (0.90 + 0.20 * rng.next());
+      lobe(cx + (u - 0.5) * span, baseY - r * 0.80, r * 1.16, r);
     }
     for (let i = 0; i < nCrown; i++) {
       const u = nCrown === 1 ? 0.5 : i / (nCrown - 1);
-      const bell = 0.42 + 0.58 * Math.sin(Math.PI * (0.16 + 0.68 * u));
-      const r = H * 0.52 * bell * (0.82 + 0.36 * rng.next());
-      const lift = H * (0.16 + 0.40 * bell) * (0.8 + 0.4 * rng.next());
-      lobes.push({ x: cx + (u - 0.5) * span * 0.68 + (rng.next() - 0.5) * H * 0.16, y: baseY - r - lift, r, crown: 1 });
+      const bell = 0.50 + 0.50 * Math.sin(Math.PI * (0.14 + 0.72 * u));
+      const r = H * 0.46 * bell * (0.84 + 0.32 * rng.next());
+      const lift = H * (0.10 + 0.34 * bell) * (0.84 + 0.32 * rng.next());
+      lobe(cx + (u - 0.5) * span * 0.62 + (rng.next() - 0.5) * H * 0.16,
+        baseY - r * 0.62 - lift, r * 1.10, r);
     }
     const silhouette = () => {
       g.beginPath();
-      for (const l of lobes) { g.moveTo(l.x + l.r, l.y); g.arc(l.x, l.y, l.r, 0, Math.PI * 2); }
-      g.moveTo(lobes[0].x, baseY - minR);
-      g.rect(lobes[0].x, baseY - minR, lobes[nBase - 1].x - lobes[0].x, minR);
+      for (const l of lobes) { g.moveTo(l.x + l.rx, l.y); g.ellipse(l.x, l.y, l.rx, l.ry, 0, 0, Math.PI * 2); }
       g.closePath();
     };
 
     g.save();
     silhouette();
+    g.fillStyle = MID;
+    g.fill();
     g.clip();
-    // three bands, cut on the diagonal the sun comes from
-    const grd = g.createLinearGradient(cx - span * 0.5, baseY, cx + span * 0.42, baseY - H * 1.5);
-    grd.addColorStop(0.00, SHD);
-    grd.addColorStop(0.30, SHD);
-    grd.addColorStop(0.315, MID);
-    grd.addColorStop(0.66, MID);
-    grd.addColorStop(0.675, LIT);
-    grd.addColorStop(1.00, LIT);
-    g.fillStyle = grd;
-    g.fillRect(ox, oy, TILE, TILE);
-    // the belly: a flat shaded strip along the waterline, which is what makes a
-    // cumulus sit in the air instead of floating like a paper cut-out
-    const belly = g.createLinearGradient(0, baseY - H * 0.34, 0, baseY);
-    belly.addColorStop(0, 'rgba(0,0,0,0)');
-    belly.addColorStop(1, SHD);
-    g.globalAlpha = 0.85;
-    g.fillStyle = belly;
-    g.fillRect(ox, baseY - H * 0.34, TILE, H * 0.4);
-    g.globalAlpha = 1;
-    // lit rims on the crown lobes, shade rims underneath: inside the clip, so
-    // nothing can poke a corner out of the silhouette
-    g.lineCap = 'round';
-    for (const l of lobes) {
-      if (l.r < H * 0.20) continue;
-      g.lineWidth = Math.max(2.2, l.r * 0.16);
-      g.strokeStyle = LIT;
-      g.beginPath();
-      g.arc(l.x, l.y, l.r - g.lineWidth * 0.45, Math.PI * 1.20, Math.PI * 2.02);
-      g.stroke();
-      if (!l.crown) continue;
-      g.lineWidth = Math.max(1.8, l.r * 0.11);
-      g.strokeStyle = SHD;
-      g.globalAlpha = 0.55;
-      g.beginPath();
-      g.arc(l.x, l.y, l.r - g.lineWidth * 0.45, Math.PI * 0.22, Math.PI * 0.86);
-      g.stroke();
-      g.globalAlpha = 1;
+
+    // sort back to front so the crown lumps shade over the base ones
+    const order = lobes.slice().sort((p, q) => (q.y + q.ry) - (p.y + p.ry));
+    for (const l of order) {
+      const sh = g.createRadialGradient(l.x - l.rx * 0.32, l.y + l.ry * 0.50, l.r * 0.06, l.x - l.rx * 0.12, l.y + l.ry * 0.18, l.r * 1.16);
+      sh.addColorStop(0.00, rgba(P.shade, 0.72));
+      sh.addColorStop(0.48, rgba(P.shade, 0.30));
+      sh.addColorStop(1.00, rgba(P.shade, 0));
+      g.fillStyle = sh;
+      g.beginPath(); g.ellipse(l.x, l.y, l.rx * 1.02, l.ry * 1.02, 0, 0, Math.PI * 2); g.fill();
+
+      const li = g.createRadialGradient(l.x + l.rx * 0.34, l.y - l.ry * 0.42, l.r * 0.05, l.x + l.rx * 0.08, l.y - l.ry * 0.14, l.r * 1.02);
+      li.addColorStop(0.00, rgba(P.lit, 1));
+      li.addColorStop(0.44, rgba(P.lit, 0.82));
+      li.addColorStop(0.88, rgba(P.lit, 0.08));
+      li.addColorStop(1.00, rgba(P.lit, 0));
+      g.fillStyle = li;
+      g.beginPath(); g.ellipse(l.x, l.y, l.rx * 1.02, l.ry * 1.02, 0, 0, Math.PI * 2); g.fill();
     }
+
+    // the flat underside a fair-weather cumulus actually has: a soft cool floor
+    const belly = g.createLinearGradient(0, baseY - H * 0.44, 0, baseY + H * 0.06);
+    belly.addColorStop(0.00, rgba(P.shade, 0));
+    belly.addColorStop(0.72, rgba(P.shade, 0.40));
+    belly.addColorStop(1.00, rgba(P.shade, 0.62));
+    g.fillStyle = belly;
+    g.fillRect(ox, baseY - H * 0.44, TILE, H * 0.5 + 4);
     g.restore();
   };
 
   const drawCirrus = (ox, oy, streaks) => {
     g.save();
     g.translate(ox, oy + TILE * 0.5);
-    g.strokeStyle = CIR;
     g.lineCap = 'round';
     for (let i = 0; i < streaks; i++) {
-      const y = (rng.next() - 0.5) * TILE * 0.44;
-      const len = TILE * (0.44 + 0.46 * rng.next());
-      const x0 = rng.range(8, TILE - len - 8);
-      g.globalAlpha = 0.26 + 0.40 * rng.next();
-      g.lineWidth = 2 + rng.next() * 8;
-      g.beginPath();
-      g.moveTo(x0, y);
-      g.bezierCurveTo(x0 + len * 0.34, y - 8 - rng.next() * 11, x0 + len * 0.70, y + 5, x0 + len, y - 3 - rng.next() * 7);
-      g.stroke();
+      const y = (rng.next() - 0.5) * TILE * 0.40;
+      const len = TILE * (0.56 + 0.36 * rng.next());
+      const x0 = rng.range(6, Math.max(8, TILE - len - 6));
+      const w = 3 + rng.next() * 9;
+      // a mare's tail: a thicker head, a long thin sweep, one tone only
+      for (let k = 0; k < 3; k++) {
+        g.globalAlpha = (0.30 + 0.34 * rng.next()) * (1 - k * 0.26);
+        g.strokeStyle = k === 0 ? CIR : LIT;
+        g.lineWidth = w * (1 - k * 0.30);
+        g.beginPath();
+        g.moveTo(x0, y + k * w * 0.5);
+        g.bezierCurveTo(x0 + len * 0.30, y - w * 1.4 + k * w * 0.4,
+          x0 + len * 0.68, y + w * 0.5 + k * w * 0.4, x0 + len, y - w * 0.3 + k * w * 0.3);
+        g.stroke();
+      }
     }
     g.restore();
   };

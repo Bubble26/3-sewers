@@ -154,9 +154,50 @@ export const FACADE = {
   ochre: 0xc8924e,               // one building in eight
   ochreShade: 0x9e7a46,
   partyWall: 0xb8a88e,           // painted-out wall, the ghost-sign ground
-  cornice: [0x7a4a34, 0x4c4a3c, 0x5b3b33],
-  sash: [0x2e4034, 0x5a2a24, 0x332f2c],
-  iron: [0x332e2a, 0x6e4231, 0x8a6a54],   // fire escapes, railings, lamp posts
+  /**
+   * §2.2 asks every building to pick one cornice paint, one sash colour and one iron finish,
+   * and forbids two adjacent buildings sharing more than one of the four. Three of each is
+   * not enough choices to satisfy that on a nine-lot block, and three warm browns is not
+   * enough HUE to satisfy §14 check 9 (9-14 distinct hues, hard fail under 8). So each list
+   * is extended with period-true paints — 1925 sold lead-and-linseed in oxide red, bottle
+   * green, slate blue, cream and olive, and a landlord painted the trim whatever the pail
+   * held. The first three entries are the bible's own and are unchanged, so any builder
+   * already indexing [0..2] renders exactly what it rendered before; everyone who picks from
+   * the whole list gets the hue spread for free. Every entry passes LAWS.check().
+   */
+  cornice: [
+    0x7a4a34, 0x4c4a3c, 0x5b3b33,
+    0x2f4a46,   // verdigris-tired bottle green, hue 173°
+    0x3d4a63,   // slate blue, hue 222°
+    0x6b5a34,   // olive drab, hue 47°
+    0x8a7a5e,   // cream gone grey, hue 40°, the one light cornice on the block
+  ],
+  sash: [
+    0x2e4034, 0x5a2a24, 0x332f2c,
+    0x2c3c50,   // slate blue sash, hue 213°
+    0x5c4a24,   // olive, hue 45°
+    0x6e6250,   // stone cream, the sash a landlord repainted last spring
+  ],
+  iron: [
+    0x332e2a, 0x6e4231, 0x8a6a54,   // fire escapes, railings, lamp posts
+    0x2c3a3a,   // black-green, the municipal lamp-post colour, hue 180°
+    0x46424e,   // blued steel, hue 262°
+  ],
+  /**
+   * Shopfront and cart paint. This is where a block that is 60% brick pays its hue bill, and
+   * it is period fact: a 1925 storefront was painted, lettered and varnished by hand, and no
+   * two shops on a block were the same colour. Saturated on purpose (Law 4).
+   */
+  paint: {
+    bottleGreen: 0x2c5f47,
+    oxblood: 0x7a2f2a,
+    prussian: 0x27456e,
+    forest: 0x3c5a2e,
+    plum: 0x5a3450,
+    cream: 0xc6b48a,
+    teal: 0x2a5a5e,
+    signRed: 0x9e3328,
+  },
 };
 
 /** The three materials §4.3 allows a specular highlight on. Nothing else in the game shines. */
@@ -218,6 +259,33 @@ export const ACCENTS = {
   periwinkle: 0x5c6bb0,
 };
 
+/**
+ * Striped awning canvas, as PAIRS, because a period awning is always two colours and the
+ * pale stripe is always the same bleached duck. Six pairs, six hues — this is Law 4's single
+ * cheapest instrument: an awning is 2% of frame area and drops a saturated neighbour onto
+ * the sootiest wall on the block. Never invent a seventh; pick from here.
+ */
+export const AWNINGS = [
+  [0xc8402f, 0xded0ad],   // red / duck        — the butcher
+  [0x2f7f63, 0xded0ad],   // bottle green      — the grocer
+  [0x3b5ea0, 0xd6cba8],   // indigo            — the tailor
+  [0xe3a32b, 0xded0ad],   // mustard           — the fruit stand
+  [0x7a2f2a, 0xcdbf9c],   // oxblood           — the barber
+  [0x2e6e6e, 0xd6cba8],   // teal              — the laundry
+];
+
+/** Bare and painted wood: broomsticks, crates, pushcarts, stoop doors, packing cases. */
+export const WOOD = {
+  bare: 0xb08a5e,        // a scrubbed broomstick handle
+  crate: 0xa8834e,
+  weathered: 0x8a7150,
+  cart: 0x6e4a2e,
+  tarred: 0x4a3a2c,
+};
+
+/** What is on a pushcart. Six hues in one 128 px region: Law 4 in a single prop. */
+export const PRODUCE = [0xc8402f, 0xe3a32b, 0x8fa23c, 0x7b4a8c, 0xd4694a, 0x2f7f63];
+
 /** The two sides. Street kids do not have uniforms — this is a cap band or an armband. */
 export const TEAMS = {
   home: { primary: ACCENTS.red, secondary: ACCENTS.mustard, name: 'Mulberry Street' },
@@ -246,18 +314,34 @@ export function sunlit(hex, amount = 0.3) {
  * reason our shadows read as afternoon rather than as dirt is that they move BLUE while the
  * light moves GOLD, and that the step is only 1.39:1 — a band, not a hole.
  */
-export function shade(hex, k = 0.72) {
+/* Law 2's two numbers, hoisted so the ramp functions can hold themselves to them without
+   reaching forward into LAWS (which is built out of these same constants below). */
+const FLOOR_FIELD = 28;      // no material below this in a region larger than 32x32 px
+const CEIL_BACKDROP = 84;    // nothing the ball flies against may exceed this
+export function shade(hex, k = 0.72, floorL = FLOOR_FIELD) {
   const [r, g, b] = rgbOf(hex).map(srgbToLinear);
   const dark = hexOf(...[r, g, b].map((c) => linearToSrgb(c * k)));
   const [h, s, l] = toHSL(mix(dark, AIR.shadowTint, 0.12));
   const cooled = fromHSL(coolHue(h, 6), Math.min(1, s + 0.04), l);
-  return atLstar(cooled, lstar(dark));      // hold the band exactly where the law puts it
+  // §3.4 — the shade band is where the ink floor actually gets broken, because it is the one
+  // operation in the pipeline that makes a legal colour darker. An already-dark material is
+  // therefore given a SHALLOWER band rather than a hole: the floor is raised, which is
+  // exactly what "lifted by raising ambient — never by adding a light" means in a ramp.
+  // Linear ironwork passes floorL 19 and keeps its full band (Law 2's one exemption).
+  return atLstar(cooled, Math.max(floorL, lstar(dark)));
 }
 
-/** Band 3 — the bounce. Warm kick off the roadway and the sunlit facade: 25% brickBounce, +6 L*. */
-export function bounce(hex) {
-  const [h, s, l] = toHSL(mix(hex, AIR.brickBounce, 0.25));
-  return fromHSL(h, s, Math.min(1, l * 0.86 + 0.09));
+/**
+ * Band 3 — the bounce. Warm kick off the roadway and the sunlit facade: 25% brickBounce and
+ * +6 L*, and the +6 is a LIMIT, not a suggestion. The old form multiplied lightness, which
+ * gave a pale material a +14 L* kick and turned a whole ground plane into cream; §4.1 asks
+ * for "a narrow strip", and a strip that is 14 points brighter than its own material is a
+ * rim light, which §15.7 bans outright. Held to +6 L* exactly, and never over the backdrop
+ * ceiling, so the bounce can never quietly break Law 2 on a bright surface.
+ */
+export function bounce(hex, lift = 6) {
+  const warm = mix(hex, AIR.brickBounce, 0.25);
+  return atLstar(warm, Math.min(CEIL_BACKDROP, lstar(hex) + lift));
 }
 
 /**
@@ -306,8 +390,8 @@ export const LAWS = {
   chalk: CHALK,
   ink: INK,
   worldCeiling: 89,        // nothing in the world may exceed this L* …
-  backdropCeiling: 84,     // … and nothing the ball flies against may exceed this
-  fieldFloor: 28,          // no material below this in a region larger than 32x32 px …
+  backdropCeiling: CEIL_BACKDROP,     // … and nothing the ball flies against may exceed this
+  fieldFloor: FLOOR_FIELD, // no material below this in a region larger than 32x32 px …
   linearFloor: 19,         // … except linear ironwork: sash bars, fire-escape rails, grooves
   renderedFloor: 26,       // §3.4: and no 64x64 px REGION of a rendered frame below this
   ballHue: [335, 10],      // the reserved rectangle of colour space: this hue range …
