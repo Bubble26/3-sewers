@@ -654,7 +654,7 @@ export function buildProps(app) {
    * Gamewell fire alarm box, corner, ruby globe on top
    * ------------------------------------------------------------------ */
   {
-    const x = GROUND.curbX + 1.5, z = 122;
+    const x = GROUND.curbX + 1.5, z = 64;
     const grp = new THREE.Group();
     grp.position.set(x, GROUND.walkTop, z); grp.rotation.y = -Math.PI * 0.62;
     const red = mat(0x9c2f26);
@@ -692,7 +692,7 @@ export function buildProps(app) {
    * Olive-drab pedestal mailbox
    * ------------------------------------------------------------------ */
   {
-    const x = GROUND.curbX + 1.5, z = 74;
+    const x = GROUND.curbX + 1.5, z = 36;
     const grp = new THREE.Group();
     grp.position.set(x, GROUND.walkTop, z); grp.rotation.y = -Math.PI * 0.46;
     const olive = mat(0x6b6c52);
@@ -1006,7 +1006,7 @@ export function buildProps(app) {
    * Barber pole on the right-hand storefront, slowly turning
    * ------------------------------------------------------------------ */
   {
-    const x = GROUND.facadeX - 0.5, z = 88;
+    const x = GROUND.facadeX - 0.5, z = 46;
     const grp = new THREE.Group();
     grp.position.set(x, 0, z);
     put(grp, box(0.16, 0.16, 1.5), ironDark, 0.2, 8.4, 0.55);
@@ -1117,38 +1117,100 @@ export function buildProps(app) {
   }
 
   /* ------------------------------------------------------------------ *
-   * The chalked strike box on the flattest wall on the block, with the
-   * strikeout tallies somebody kept beside it.
+   * The hoarding: a board fence pasted over a shop that closed, which is
+   * the flattest wall on the block and therefore where the strike box is
+   * chalked.  Bills go up on it the day they are printed and get pasted
+   * over the week after, which is why it is the one surface here that can
+   * be dated to the week.
    * ------------------------------------------------------------------ */
   {
-    const { c, g } = makeCanvas(512, 512);          // 8 ft x 8 ft of wall
-    const PX = 512 / 8;
-    g.clearRect(0, 0, 512, 512);
-    const box20 = 20 / 12 * PX, box30 = 30 / 12 * PX;
-    const bx = 256 - box20 / 2, by = 512 - (18 / 12 * PX) - box30;
-    chalkStroke(g, [[bx, by], [bx + box20, by], [bx + box20, by + box30], [bx, by + box30], [bx, by]], 5.0, 21, 0.95);
-    chalkStroke(g, [[bx + 6, by + 6], [bx + box20 - 6, by + 6], [bx + box20 - 6, by + box30 - 6], [bx + 6, by + box30 - 6], [bx + 6, by + 6]], 2.4, 33, 0.5);
-    // a bullseye somebody added
-    for (let i = 0; i < 14; i++) {
-      const a0 = i / 14 * Math.PI * 2, a1 = (i + 0.8) / 14 * Math.PI * 2;
-      chalkStroke(g, [[256 + Math.cos(a0) * 22, by + box30 / 2 + Math.sin(a0) * 22],
-        [256 + Math.cos(a1) * 22, by + box30 / 2 + Math.sin(a1) * 22]], 3.0, 40 + i, 0.7);
-    }
-    chalkText(g, 'STRIKE', 256, by - 16, 26, { align: 'center', condense: 0.8, seed: 55, weight: 0.15 });
-    // tally marks
-    let tx = bx + box20 + 26;
-    for (let i = 0; i < 12; i++) {
-      const gx = tx + Math.floor(i / 5) * 34 + (i % 5) * 6;
-      if (i % 5 === 4) chalkStroke(g, [[gx - 22, by + 40], [gx + 6, by + 8]], 3.4, 70 + i, 0.85);
-      else chalkStroke(g, [[gx, by + 6], [gx - 2, by + 42]], 3.4, 70 + i, 0.85);
-    }
-    const tex = canvasTexture(c);
-    const m = texMat(tex, { transparent: true, depthWrite: false });
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), m);
-    p.position.set(-GROUND.facadeX + 0.06, 4.0, 4);
-    p.rotation.y = Math.PI / 2;
-    p.renderOrder = 3;
-    root.add(p);
+    const W = 9.5, H = 8.2;
+    const tex = (() => {
+      const S = 1024, PX = S / W, PY = (S * H / W) / H;
+      const { c, g } = makeCanvas(S, Math.round(S * H / W));
+      const HH = c.height;
+      const r2 = new RNG(1861);
+      // vertical boards, each a slightly different weathered grey-brown
+      const boards = 11, bw = S / boards;
+      for (let i = 0; i < boards; i++) {
+        g.fillStyle = hex(mixHex(0x8d7a5c, r2.chance(0.5) ? 0xb8a482 : 0x6a5a42, r2.range(0, 0.45)));
+        g.fillRect(i * bw, 0, bw - 2, HH);
+        g.globalAlpha = 0.35; g.fillStyle = '#4c4032';
+        g.fillRect(i * bw + bw - 4, 0, 4, HH);
+        g.globalAlpha = 1;
+        for (let k = 0; k < 22; k++) {                       // grain
+          g.globalAlpha = r2.range(0.04, 0.13);
+          g.fillStyle = r2.chance(0.5) ? '#d0bb95' : '#5f5140';
+          g.fillRect(i * bw + r2.range(0, bw), r2.range(0, HH), r2.range(2, 7), r2.range(20, 130));
+        }
+        g.globalAlpha = 1;
+      }
+      // two rails and the nails
+      g.globalAlpha = 0.3; g.fillStyle = '#4c4032';
+      g.fillRect(0, HH * 0.24, S, 8); g.fillRect(0, HH * 0.76, S, 8);
+      g.globalAlpha = 1;
+
+      // pasted bills — the two that are genuinely on New York walls this week
+      const bill = (x, y, w, h, tilt, bg, lines, cols) => {
+        g.save(); g.translate(x, y); g.rotate(tilt);
+        g.fillStyle = 'rgba(40,32,24,0.28)'; g.fillRect(4, 6, w, h);
+        g.fillStyle = bg; g.fillRect(0, 0, w, h);
+        lines.forEach((ln, i) => slabText(g, ln[0], w / 2, h * ln[1], h * ln[2],
+          { align: 'center', color: cols[i % cols.length], weight: 0.21, condense: 0.76, jitter: 0.8, seed: 40 + i }));
+        g.restore();
+      };
+      bill(S * 0.025, HH * 0.04, S * 0.29, HH * 0.36, -0.035, '#ddd2b4',
+        [['HAROLD LLOYD', 0.24, 0.11], ['IN', 0.37, 0.07], ['THE FRESHMAN', 0.55, 0.15],
+          ['COLONY THEATRE', 0.74, 0.07], ['MAT. 15¢ EVE. 25¢', 0.87, 0.055]],
+        ['#2a2420', '#2a2420', '#a83a2c', '#2a2420', '#2a2420']);
+      bill(S * 0.70, HH * 0.08, S * 0.26, HH * 0.34, 0.05, '#c9d8dc',
+        [['WALKER', 0.30, 0.16], ['FOR MAYOR', 0.55, 0.10], ['NOVEMBER 3', 0.80, 0.07]],
+        ['#20406a', '#20406a', '#8a2a22']);
+      // a torn one underneath, half pasted over
+      g.save(); g.globalAlpha = 0.75;
+      g.fillStyle = '#c8bda0'; g.fillRect(S * 0.72, HH * 0.36, S * 0.2, HH * 0.2);
+      slabText(g, 'HYLAN', S * 0.82, HH * 0.50, HH * 0.1,
+        { align: 'center', color: '#7a6a52', weight: 0.2, condense: 0.78, jitter: 0.9, seed: 66 });
+      g.restore();
+      slabText(g, 'POST NO BILLS', S * 0.36, HH * 0.94, HH * 0.055,
+        { align: 'center', color: '#5a4e3c', weight: 0.2, condense: 0.74, jitter: 0.7, seed: 71 });
+
+      // THE STRIKE BOX — 20 in wide x 30 in tall, bottom edge 18 in up
+      const bx = S * 0.33, bw2 = (20 / 12) * PX, bh = (30 / 12) * PX;
+      const by = HH - (18 / 12) * PY * (H / H) - bh;
+      chalkStroke(g, [[bx, by], [bx + bw2, by], [bx + bw2, by + bh], [bx, by + bh], [bx, by]], 10, 21, 1.0);
+      chalkStroke(g, [[bx + 11, by + 11], [bx + bw2 - 11, by + 11], [bx + bw2 - 11, by + bh - 11], [bx + 11, by + bh - 11], [bx + 11, by + 11]], 4.0, 33, 0.5);
+      for (let i = 0; i < 16; i++) {                          // the bullseye somebody added
+        const a0 = i / 16 * Math.PI * 2, a1 = (i + 0.78) / 16 * Math.PI * 2, rr = bw2 * 0.22;
+        chalkStroke(g, [[bx + bw2 / 2 + Math.cos(a0) * rr, by + bh / 2 + Math.sin(a0) * rr],
+          [bx + bw2 / 2 + Math.cos(a1) * rr, by + bh / 2 + Math.sin(a1) * rr]], 5.0, 40 + i, 0.85);
+      }
+      chalkText(g, 'STRIKE', bx + bw2 / 2, by - 18, 42, { align: 'center', condense: 0.8, seed: 55, weight: 0.16 });
+      let tx = bx + bw2 + 48;                                 // and the strikeout tallies
+      for (let i = 0; i < 13; i++) {
+        const gx = tx + Math.floor(i / 5) * 52 + (i % 5) * 11;
+        if (i % 5 === 4) chalkStroke(g, [[gx - 34, by + 62], [gx + 10, by + 12]], 5.5, 70 + i, 0.9);
+        else chalkStroke(g, [[gx, by + 10], [gx - 4, by + 64]], 5.5, 70 + i, 0.9);
+      }
+      return canvasTexture(c);
+    })();
+
+    // it stands at the kerb, clear of the awnings, where a hoarding goes and
+    // where a rubber ball comes back off it into the infield
+    const x = GROUND.curbX + 2.1, z = -2.0;
+    const grp = new THREE.Group();
+    grp.position.set(x, GROUND.walkTop, z);
+    grp.rotation.y = -Math.PI / 2 + 0.10;
+    const panel = put(grp, box(W, H, 0.34), texMat(tex, { lift: 0.38 }), 0, H / 2, 0);
+    outline(panel, 0.05);
+    for (const sx of [-1, 1]) put(grp, box(0.5, H + 0.5, 0.5), mat(0x6a5a42), sx * (W / 2 - 0.15), (H + 0.5) / 2 - 0.2, -0.2);
+    put(grp, box(W + 0.4, 0.42, 0.5), mat(0x6a5a42), 0, H + 0.1, -0.2);
+    root.add(grp);
+    shadows.add(x, z, 1.2, W * 0.45, 5, 1, GROUND.walkTop);
+    addCollider(app, {
+      name: 'hoarding', kind: 'wood', sound: 'wood_boom', restitution: 0.5,
+      box: new THREE.Box3(new THREE.Vector3(x - 0.6, 0, z - W / 2), new THREE.Vector3(x + 0.6, H, z + W / 2)),
+    });
   }
 
   /* ------------------------------------------------------------------ *
@@ -1288,9 +1350,9 @@ registerScenario('props_tour', {
   seed: 2025,
   setup: ({ app }) => {
     app.sim.reset(2025);
-    app.camera.fov = 44; app.camera.updateProjectionMatrix();
-    app.camera.position.set(-7.5, 7.4, 4.0);
-    app.camera.lookAt(23.0, 3.6, 44);
+    app.camera.fov = 46; app.camera.updateProjectionMatrix();
+    app.camera.position.set(13.2, 6.0, -8.6);
+    app.camera.lookAt(25.5, 3.2, 42);
   },
   settle: 0.9,
 });

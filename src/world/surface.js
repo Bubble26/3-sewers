@@ -30,6 +30,20 @@ const HALF = 24;                          // the paved deck runs x -24..24
 
 /* --- the wear pattern, authored once, painted into every deck ------------- */
 
+/**
+ * Lettering that lies on the ground.  The paving canvases map canvas +x to
+ * world +x and canvas +y to world +z, but the game camera looks up the block
+ * from behind home plate, where world +x runs to screen LEFT — so anything
+ * written flat has to be turned through half a turn or it reads backwards.
+ */
+function groundText(g, text, px, py, size, opts = {}) {
+  g.save();
+  g.translate(px, py);
+  g.rotate(Math.PI);
+  chalkText(g, text, 0, 0, size, { align: 'center', ...opts });
+  g.restore();
+}
+
 /** irregular blob path in world feet */
 function blob(g, X, Z, cx, cz, rx, rz, r, wobble = 0.3, pts = 14) {
   g.beginPath();
@@ -143,8 +157,8 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
     const r = new RNG(4001);
     for (let i = 0; i < 760; i++) {                 // mottle: warm and cool blotches
       const cx = r.range(-HALF, HALF), cz = r.range(-45, 165);
-      g.globalAlpha = r.range(0.05, 0.15);
-      g.fillStyle = hex(r.chance(0.62) ? ROAD.warm : ROAD.dark);
+      g.globalAlpha = r.range(0.07, 0.20);
+      g.fillStyle = hex(r.chance(0.58) ? ROAD.warm : ROAD.dark);
       blob(g, X, Z, cx, cz, r.range(0.9, 3.6), r.range(0.9, 3.6), r, 0.45, 9);
       g.fill();
     }
@@ -155,7 +169,8 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
   const FIELDS = [
     [-22.4, -18.6, -45, 165, 71, 0.14],            // the gutter line, both sides
     [18.6, 22.4, -45, 165, 73, 0.14],
-    [-6.5, 3.4, 59, 74, 77, 0.42],                 // the worn-out patch mid-block
+    [-8.5, 5.5, 56, 78, 77, 0.42],                 // the worn-out patch mid-block
+    [-5.5, 4.5, 36, 47, 85, 0.36],                 // and where the pitcher stands
     [-3.8, 2.4, -4.2, 4.6, 79, 0.52],              // scoured bare around home plate
     [-12.5, -6.5, 118, 130, 81, 0.3],
     [10.5, 15.0, 30, 39, 83, 0.22],
@@ -176,7 +191,8 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
       [20.2, 62, 3.2, 18, ROAD.warm], [-20.2, 118, 3.2, 16, ROAD.dark],
       [2, 28, 10, 13, ROAD.warm], [-2, 126, 10, 12, ROAD.dark],
       [9, 4, 7, 8, ROAD.warm], [-8, -22, 8, 9, ROAD.warm], [7, -30, 7, 9, ROAD.dark],
-      [16, 140, 6, 10, ROAD.warm],
+      [16, 140, 6, 10, ROAD.warm], [13, 16, 6, 9, ROAD.dark], [-14, 4, 5.5, 8, ROAD.dark],
+      [17, 96, 5, 9, ROAD.warm], [-6, 84, 6.5, 8, ROAD.warm],
     ];
     for (const [cx, cz, rx, rz, col] of patches) {
       g.fillStyle = hex(col);
@@ -208,13 +224,13 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
     const r = new RNG(6006);
     for (const lane of [-6.6, 6.6]) {
       const pts = wander(r, lane, -45, lane + r.range(-0.8, 0.8), 165, 0.7, 24);
-      g.strokeStyle = 'rgba(232,216,192,0.16)';
-      g.lineWidth = K * 1.8; g.lineCap = 'round';
+      g.strokeStyle = 'rgba(232,216,192,0.10)';
+      g.lineWidth = K * 1.3; g.lineCap = 'round';
       g.beginPath();
       pts.forEach(([wx, wz], i) => (i ? g.lineTo(X(wx), Z(wz)) : g.moveTo(X(wx), Z(wz))));
       g.stroke();
-      g.strokeStyle = 'rgba(240,228,206,0.16)';
-      g.lineWidth = K * 0.55;
+      g.strokeStyle = 'rgba(240,228,206,0.10)';
+      g.lineWidth = K * 0.4;
       g.stroke();
     }
   }
@@ -225,15 +241,15 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
     const seams = [
       [-22, 4, 22, 9], [-22, 47, 22, 41], [-22, 88, 22, 95], [-22, 128, 22, 122],
       [-22, -24, 22, -19],
-      [-6, -45, -2, 165], [9, -45, 13, 165], [-15, 12, -20, 74], [16, 24, 21, 88],
-      [3, 20, -9, 46], [-11, 96, 7, 130], [17, -40, 12, 18],
+      [-6, -45, -2, 100], [10, -20, 13, 165], [-15, 12, -20, 74], [16, 24, 21, 88],
+      [3, 20, -9, 46], [-11, 96, 7, 130],
     ];
     for (const [x0, z0, x1, z1] of seams) {
       const pts = wander(r, x0, z0, x1, z1, 1.5, 22);
       g.lineCap = 'round'; g.lineJoin = 'round';
       g.strokeStyle = hex(ROAD.tar);
-      g.globalAlpha = 0.72;
-      g.lineWidth = K * r.range(0.17, 0.30);
+      g.globalAlpha = 0.60;
+      g.lineWidth = K * r.range(0.14, 0.26);
       g.beginPath();
       pts.forEach(([wx, wz], i) => (i ? g.lineTo(X(wx), Z(wz)) : g.moveTo(X(wx), Z(wz))));
       g.stroke();
@@ -293,6 +309,15 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
         g.globalAlpha = r.range(0.35, 0.9);
         g.fillRect(X(wx), Z(wz), r.range(0.08, 0.34) * K, r.range(0.05, 0.2) * K);
       }
+      for (let i = 0; i < 26; i++) {                     // what the pushcarts drop
+        const wx = side * r.range(18.9, 21.9), wz = r.range(-45, 165);
+        const t = r.next();
+        g.globalAlpha = r.range(0.55, 0.95);
+        g.fillStyle = t < 0.34 ? '#8fa23c' : t < 0.6 ? '#e3a32b' : t < 0.82 ? '#c8402f' : '#4e8ca8';
+        blob(g, X, Z, wx, wz, r.range(0.16, 0.42), r.range(0.12, 0.3), r, 0.5, 8);
+        g.fill();
+      }
+      g.globalAlpha = 1;
       // a torn sheet of newspaper against the curb
       g.globalAlpha = 0.9; g.fillStyle = '#d6ccb2';
       blob(g, X, Z, side * 20.4, side > 0 ? 34 : 108, 0.95, 0.75, r, 0.4, 9); g.fill();
@@ -325,7 +350,8 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
     g.fillRect(X(-15.2), Z(110.7), 10.4 * K, 0.55 * K);
     g.fillRect(X(-15.2), Z(112.2), 10.4 * K, 0.55 * K);
     g.globalAlpha = 0.17;
-    slabText(g, 'SLOW', X(-10), Z(114.8), 1.9 * K,
+    g.translate(X(-10), Z(113.8)); g.rotate(Math.PI);
+    slabText(g, 'SLOW', 0, 0, 1.9 * K,
       { align: 'center', color: hex(AIR.haze), weight: 0.2, condense: 0.8, jitter: 1, seed: 3 });
     g.restore();
     g.globalAlpha = 1;
@@ -355,9 +381,11 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
     for (let i = 0; i < 5200; i++) {
       const wx = r.range(-HALF, HALF), wz = r.range(-45, 165);
       const near = 1 - Math.min(1, Math.abs(wx) / 15);          // more exposed at the crown
-      g.globalAlpha = r.range(0.09, 0.26) * (0.35 + near * 0.85);
+      g.globalAlpha = r.range(0.06, 0.18) * (0.35 + near * 0.85);
       g.fillStyle = r.chance(0.55) ? hex(ROAD.crown) : hex(ROAD.tar);
-      g.fillRect(X(wx), Z(wz), r.range(0.05, 0.16) * K, r.range(0.04, 0.12) * K);
+      g.beginPath();
+      g.ellipse(X(wx), Z(wz), r.range(0.03, 0.09) * K, r.range(0.024, 0.07) * K, r.range(0, 3.14), 0, 7);
+      g.fill();
     }
     g.globalAlpha = 1;
     g.strokeStyle = hex(soot(ROAD.dark, 0.16));
@@ -383,7 +411,7 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
    * which is the difference between a stickball street and a road marking.
    */
   {
-    const CW = Math.max(1.8, K * 0.13);
+    const CW = Math.max(2.2, K * 0.16);
     const line = (pts, seed, alpha = 0.85, w = CW) => {
       const px = pts.map(([wx, wz]) => [X(wx), Z(wz)]);
       chalkStroke(g, px.map(([a, b]) => [a + 2.5, b + 3]), w * 1.5, seed + 7, alpha * 0.28, hex(ROAD.tar));
@@ -391,18 +419,18 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
     };
 
     // foul lines, 45 degrees off home toward the two curbs
-    line([[-1.2, 1.2], [-21, 21]], 101, 0.8);
-    line([[1.2, 1.2], [21, 21]], 103, 0.8);
+    line([[-1.2, 1.2], [-21, 21]], 101, 0.92);
+    line([[1.2, 1.2], [21, 21]], 103, 0.92);
     // first base: a big X on the asphalt beside the Ford's rear fender
     line([[16.4, 48], [20.4, 52]], 121, 0.95, CW * 1.7);
     line([[20.4, 48], [16.4, 52]], 123, 0.95, CW * 1.7);
-    chalkText(g, '1', X(18.4), Z(46.6), 1.4 * K, { align: 'center', seed: 125, weight: 0.15 });
+    groundText(g, '1', X(18.4), Z(47.2), 1.4 * K, { seed: 125, weight: 0.15 });
     // third base: an X at the foot of the lamp post
     line([[-21.4, 48], [-17.4, 52]], 131, 0.95, CW * 1.7);
     line([[-17.4, 48], [-21.4, 52]], 133, 0.95, CW * 1.7);
-    chalkText(g, '3', X(-19.4), Z(46.6), 1.4 * K, { align: 'center', seed: 135, weight: 0.15 });
+    groundText(g, '3', X(-19.4), Z(47.2), 1.4 * K, { seed: 135, weight: 0.15 });
     // the pitcher's scratch, halfway to second
-    line([[-1.8, 45], [1.8, 45]], 141, 0.7);
+    line([[-2.2, 45], [2.2, 45]], 141, 0.85, CW * 1.2);
     // somebody's chalk ring for immies, and the initials of whoever won
     {
       const pts = [];
@@ -411,7 +439,7 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
         pts.push([-14.5 + Math.cos(a) * 2.4, 14 + Math.sin(a) * 2.4]);
       }
       line(pts, 151, 0.7, CW * 0.85);
-      chalkText(g, 'S.M.', X(-14.5), Z(14.7), 1.1 * K, { align: 'center', seed: 153, weight: 0.14, alpha: 0.65 });
+      groundText(g, 'S.M.', X(-14.5), Z(14.2), 1.1 * K, { seed: 153, weight: 0.14, alpha: 0.65 });
     }
     // a numbered box game left over by the curb
     {
@@ -420,14 +448,14 @@ function paintRoad(g, S, minX, spanX, minZ, spanZ) {
       line(sq, 161, 0.68, CW * 0.9);
       line([[bx, bz], [bx + side, bz + side]], 163, 0.45, CW * 0.7);
       line([[bx + side, bz], [bx, bz + side]], 165, 0.45, CW * 0.7);
-      ['1', '2', '3', '4'].forEach((n, i) => chalkText(g, n,
-        X(bx + side * (0.28 + (i % 2) * 0.44)), Z(bz + side * (0.36 + Math.floor(i / 2) * 0.44)),
-        1.0 * K, { align: 'center', seed: 170 + i, weight: 0.14, alpha: 0.6 }));
+      ['1', '2', '3', '4'].forEach((n, i) => groundText(g, n,
+        X(bx + side * (0.28 + (i % 2) * 0.44)), Z(bz + side * (0.30 + Math.floor(i / 2) * 0.44)),
+        1.0 * K, { seed: 170 + i, weight: 0.14, alpha: 0.6 }));
     }
     // the sewer tally somebody keeps at the crown, by the second casting
     line([[9.2, 88], [9.2, 91]], 181, 0.75, CW);
     line([[9.9, 88], [9.9, 91]], 183, 0.75, CW);
-    chalkText(g, 'M', X(9.6), Z(87.4), 1.2 * K, { align: 'center', seed: 185, weight: 0.15, alpha: 0.65 });
+    groundText(g, 'M', X(9.6), Z(86.8), 1.2 * K, { seed: 185, weight: 0.15, alpha: 0.65 });
   }
 }
 
@@ -544,37 +572,52 @@ function curbTexture() {
 
 /** the chalk the little kids left: potsy, initials, a hopscotch grid */
 function sidewalkChalkTexture() {
-  const S = 1024;                                     // 10 ft x 20 ft
+  const S = 1024;                                     // 10 ft across x 20 ft along
   const { c, g } = makeCanvas(S / 2, S);
   const KX = (S / 2) / 10, KZ = S / 20;
   const P = (wx, wz) => [wx * KX, wz * KZ];
   const line = (pts, seed, a = 0.9, w = 5) => chalkStroke(g, pts.map(([x, z]) => P(x, z)), w, seed, a);
-  // potsy: 1..8, single, single, double, single, double, HOME
+  // potsy: single, single, double, single, double, then SKY
   const cells = [
-    [[3.4, 1.0], [5.6, 1.0], [5.6, 3.0], [3.4, 3.0]],
-    [[3.4, 3.0], [5.6, 3.0], [5.6, 5.0], [3.4, 5.0]],
-    [[2.2, 5.0], [4.4, 5.0], [4.4, 7.0], [2.2, 7.0]],
-    [[4.4, 5.0], [6.6, 5.0], [6.6, 7.0], [4.4, 7.0]],
-    [[3.4, 7.0], [5.6, 7.0], [5.6, 9.0], [3.4, 9.0]],
-    [[2.2, 9.0], [4.4, 9.0], [4.4, 11.0], [2.2, 11.0]],
-    [[4.4, 9.0], [6.6, 9.0], [6.6, 11.0], [4.4, 11.0]],
-    [[3.4, 11.0], [5.6, 11.0], [5.6, 13.4], [3.4, 13.4]],
+    [[3.4, 2.0], [5.6, 2.0], [5.6, 4.0], [3.4, 4.0]],
+    [[3.4, 4.0], [5.6, 4.0], [5.6, 6.0], [3.4, 6.0]],
+    [[2.2, 6.0], [4.4, 6.0], [4.4, 8.0], [2.2, 8.0]],
+    [[4.4, 6.0], [6.6, 6.0], [6.6, 8.0], [4.4, 8.0]],
+    [[3.4, 8.0], [5.6, 8.0], [5.6, 10.0], [3.4, 10.0]],
+    [[2.2, 10.0], [4.4, 10.0], [4.4, 12.0], [2.2, 12.0]],
+    [[4.4, 10.0], [6.6, 10.0], [6.6, 12.0], [4.4, 12.0]],
+    [[3.4, 12.0], [5.6, 12.0], [5.6, 14.4], [3.4, 14.4]],
   ];
   cells.forEach((q, i) => {
     line([...q, q[0]], 200 + i, 0.85, 5);
     const cx = (q[0][0] + q[1][0]) / 2, cz = (q[0][1] + q[3][1]) / 2;
-    chalkText(g, String(i + 1), cx * KX, cz * KZ + 16, 34, { align: 'center', seed: 220 + i, weight: 0.16 });
+    groundText(g, String(i + 1), cx * KX, cz * KZ, 34, { seed: 220 + i, weight: 0.16 });
   });
-  chalkText(g, 'SKY', 4.5 * KX, 12.9 * KZ, 30, { align: 'center', seed: 240, weight: 0.16, alpha: 0.8 });
-  // tic tac toe somebody abandoned
-  line([[7.6, 15.0], [9.4, 15.0]], 250, 0.7, 4);
-  line([[7.6, 16.0], [9.4, 16.0]], 251, 0.7, 4);
-  line([[8.2, 14.4], [8.2, 16.6]], 252, 0.7, 4);
-  line([[8.8, 14.4], [8.8, 16.6]], 253, 0.7, 4);
-  chalkText(g, 'X', 7.9 * KX, 15.0 * KZ - 4, 22, { align: 'center', seed: 254, weight: 0.16, alpha: 0.75 });
-  chalkText(g, 'O', 8.5 * KX, 16.0 * KZ - 4, 22, { align: 'center', seed: 255, weight: 0.16, alpha: 0.75 });
-  chalkText(g, 'ROSA', 2.0 * KX, 18.4 * KZ, 40, { seed: 260, weight: 0.15, alpha: 0.8, condense: 0.9 });
-  chalkText(g, 'WAS HERE', 2.0 * KX, 19.4 * KZ, 26, { seed: 262, weight: 0.15, alpha: 0.7, condense: 0.9 });
+  groundText(g, 'SKY', 4.5 * KX, 13.4 * KZ, 30, { seed: 240, weight: 0.16, alpha: 0.8 });
+  // a tic-tac-toe somebody abandoned
+  line([[7.4, 15.6], [9.4, 15.6]], 250, 0.7, 4);
+  line([[7.4, 16.6], [9.4, 16.6]], 251, 0.7, 4);
+  line([[8.0, 15.0], [8.0, 17.2]], 252, 0.7, 4);
+  line([[8.7, 15.0], [8.7, 17.2]], 253, 0.7, 4);
+  groundText(g, 'X', 7.7 * KX, 15.2 * KZ, 22, { seed: 254, weight: 0.16, alpha: 0.75 });
+  groundText(g, 'O', 8.35 * KX, 16.2 * KZ, 22, { seed: 255, weight: 0.16, alpha: 0.75 });
+  groundText(g, 'ROSA', 3.0 * KX, 18.2 * KZ, 40, { seed: 260, weight: 0.15, alpha: 0.8, condense: 0.9 });
+  groundText(g, 'WAS HERE', 3.0 * KX, 19.2 * KZ, 24, { seed: 262, weight: 0.15, alpha: 0.7, condense: 0.9 });
+  // somebody's little brother drew a cat.  It is not a good cat.
+  {
+    const cx = 7.9 * KX, cy = 4.6 * KZ, R2 = 26;
+    const ring = [];
+    for (let i = 0; i <= 20; i++) { const a = i / 20 * Math.PI * 2; ring.push([cx + Math.cos(a) * R2, cy + Math.sin(a) * R2]); }
+    chalkStroke(g, ring, 4, 300, 0.8);
+    chalkStroke(g, [[cx - 18, cy - 18], [cx - 24, cy - 38], [cx - 4, cy - 26]], 4, 301, 0.8);
+    chalkStroke(g, [[cx + 18, cy - 18], [cx + 24, cy - 38], [cx + 4, cy - 26]], 4, 302, 0.8);
+    chalkStroke(g, [[cx - 9, cy - 4], [cx - 9, cy - 5]], 6, 303, 0.9);
+    chalkStroke(g, [[cx + 9, cy - 4], [cx + 9, cy - 5]], 6, 304, 0.9);
+    chalkStroke(g, [[cx - 10, cy + 10], [cx, cy + 15], [cx + 10, cy + 10]], 4, 305, 0.8);
+    chalkStroke(g, [[cx - 30, cy + 2], [cx + 30, cy + 2]], 3, 306, 0.55);
+    chalkStroke(g, [[cx, cy + R2], [cx, cy + R2 + 40]], 4, 307, 0.8);
+    chalkStroke(g, [[cx, cy + R2 + 40], [cx + 26, cy + R2 + 22]], 4, 308, 0.8);
+  }
   return canvasTexture(c);
 }
 
@@ -624,13 +667,13 @@ function manholeTexture(kind) {
     relief(() => {
       g.beginPath(); g.arc(C, C, RAD * 0.99, 0, 7);
       g.arc(C, C, RAD * 0.735, 0, 7, true);
-    }, hex(mixHex(PAVEMENT.manholeHigh, PAVEMENT.manholeLow, 0.5)));
+    }, hex(mixHex(PAVEMENT.manholeHigh, PAVEMENT.manholeLow, 0.72)));
     arcText(g, 'BUREAU OF SEWERS', C, C, RAD * 0.862, -Math.PI / 2, S * 0.075,
-      { color: HI, weight: 0.22, condense: 0.8, spread: 0.148, flip: false,
-        shadow: { dx: 3, dy: 4, color: 'rgba(20,15,12,0.9)' } });
+      { color: HI, weight: 0.26, condense: 0.82, spread: 0.152, flip: false,
+        serif: S * 0.014, shadow: { dx: 5, dy: 6, color: 'rgba(16,12,9,0.95)' } });
     arcText(g, 'J.B.&J.M.CORNELL N.Y.', C, C, RAD * 0.862, Math.PI / 2, S * 0.058,
-      { color: HI, weight: 0.21, condense: 0.78, spread: 0.118, flip: true,
-        shadow: { dx: 3, dy: 4, color: 'rgba(20,15,12,0.9)' } });
+      { color: HI, weight: 0.24, condense: 0.8, spread: 0.122, flip: true,
+        serif: S * 0.011, shadow: { dx: 5, dy: 6, color: 'rgba(16,12,9,0.95)' } });
     // the pick holes
     for (const a of [0, Math.PI]) {
       g.fillStyle = 'rgba(18,14,11,0.95)';
@@ -711,6 +754,7 @@ function buildManhole(scene, x, z, kind) {
   lidGeo.computeVertexNormals();
   const lid = new THREE.Mesh(lidGeo, texMat(manholeTexture(kind), { transparent: true, lift: 0.16 }));
   lid.position.y = 0.055;
+  lid.rotation.y = Math.PI;      // cast lettering faces the batter's camera
   grp.add(lid);
   const bevel = new THREE.Mesh(
     new THREE.CylinderGeometry(1.083, 1.15, 0.12, 40, 1, true),
@@ -851,6 +895,7 @@ export function buildSurface(app) {
   buildManhole(root, 0.4, PLATE_Z + SEWER_SPACING, 'sewer');
   buildManhole(root, -0.6, PLATE_Z + SEWER_SPACING * 2, 'sewer');
   buildManhole(root, 7.4, 52, 'edison');
+  buildManhole(root, -6.5, 24, 'edison');
   buildManhole(root, -9.2, 108, 'edison');
   app.world = app.world || {};
   app.world.homePlate = new THREE.Vector3(0, 0, PLATE_Z);
@@ -879,11 +924,13 @@ export function buildSurface(app) {
     const r = new RNG(1717);
 
     // aggregate worn proud of the binder, and the crack map around it
-    for (let i = 0; i < 4200; i++) {
+    for (let i = 0; i < 3400; i++) {
       const wx = r.range(-SPAN / 2, SPAN / 2), wz = PLATE_Z + r.range(-SPAN / 2, SPAN / 2);
-      g.globalAlpha = r.range(0.10, 0.30);
+      g.globalAlpha = r.range(0.05, 0.16);
       g.fillStyle = r.chance(0.55) ? hex(ROAD.crown) : hex(ROAD.tar);
-      g.fillRect(X(wx), Z(wz), r.range(0.04, 0.15) * K, r.range(0.03, 0.11) * K);
+      g.beginPath();
+      g.ellipse(X(wx), Z(wz), r.range(0.018, 0.055) * K, r.range(0.014, 0.04) * K, r.range(0, 3.14), 0, 7);
+      g.fill();
     }
     g.globalAlpha = 1;
     g.lineCap = 'round';
@@ -927,10 +974,10 @@ export function buildSurface(app) {
     // the foul lines leaving home, and the arrow the kids scratched to second
     scuffed([[-1.2, 1.2], [-6.6, 6.7]], 405, 0.95, K * 0.14);
     scuffed([[1.2, 1.2], [6.6, 6.7]], 407, 0.95, K * 0.14);
-    chalkText(g, 'HOME', X(0), Z(-3.2), K * 1.0,
-      { align: 'center', seed: 409, weight: 0.15, condense: 0.85, alpha: 0.8 });
-    chalkText(g, '1 SEWER', X(-4.6), Z(6.2), K * 0.62,
-      { align: 'center', seed: 411, weight: 0.14, condense: 0.85, alpha: 0.55 });
+    groundText(g, 'HOME', X(0), Z(-4.0), K * 1.0,
+      { seed: 409, weight: 0.15, condense: 0.85, alpha: 0.8 });
+    groundText(g, '1 SEWER', X(-4.8), Z(5.6), K * 0.62,
+      { seed: 411, weight: 0.14, condense: 0.85, alpha: 0.55 });
     // the arrow up the block toward the second casting
     scuffed([[5.4, -4.6], [5.4, -2.2]], 413, 0.5, K * 0.09);
     scuffed([[4.9, -3.0], [5.4, -2.2], [5.9, -3.0]], 415, 0.5, K * 0.09);
@@ -943,18 +990,34 @@ export function buildSurface(app) {
 
   /* --- chalk on the curb: the block's own scorekeeping ----------------- */
   {
-    const S = 1024;
-    const { c, g } = makeCanvas(256, S);            // 3 ft x 12 ft of curb top
-    chalkText(g, 'M.G.', 24, 120, 54, { seed: 501, weight: 0.15, alpha: 0.9, condense: 0.85 });
-    for (let i = 0; i < 7; i++) {
-      const gx = 30 + Math.floor(i / 5) * 70 + (i % 5) * 12;
-      if (i % 5 === 4) chalkStroke(g, [[gx - 46, 200], [gx + 12, 156]], 6, 510 + i, 0.85);
-      else chalkStroke(g, [[gx, 150], [gx - 4, 206]], 6, 510 + i, 0.85);
-    }
-    chalkText(g, '2 SEWERS', 24, 300, 34, { seed: 520, weight: 0.15, alpha: 0.75, condense: 0.85 });
-    chalkText(g, 'SAL', 26, 470, 46, { seed: 530, weight: 0.15, alpha: 0.7, condense: 0.85 });
-    chalkStroke(g, [[24, 520], [190, 520]], 5, 540, 0.5);
-    chalkText(g, 'ROSA', 26, 600, 40, { seed: 550, weight: 0.15, alpha: 0.65, condense: 0.85 });
+    const W = 256, H = 1024;                         // 3 ft across x 12 ft along
+    const { c, g } = makeCanvas(W, H);
+    // everything is written along the kerb, read by somebody standing in the road
+    const along = (txt, at, size, opts) => {
+      g.save();
+      g.translate(W * 0.62, at * H);
+      g.rotate(-Math.PI / 2);
+      chalkText(g, txt, 0, 0, size, { align: 'center', ...opts });
+      g.restore();
+    };
+    const tally = (at, n, seed) => {
+      g.save();
+      g.translate(W * 0.30, at * H);
+      g.rotate(-Math.PI / 2);
+      for (let i = 0; i < n; i++) {
+        const gx = -70 + Math.floor(i / 5) * 66 + (i % 5) * 12;
+        if (i % 5 === 4) chalkStroke(g, [[gx - 44, 22], [gx + 10, -22]], 6, seed + i, 0.85);
+        else chalkStroke(g, [[gx, -26], [gx - 4, 24]], 6, seed + i, 0.85);
+      }
+      g.restore();
+    };
+    along('M. GRECO', 0.10, 46, { seed: 501, weight: 0.15, alpha: 0.9, condense: 0.85 });
+    tally(0.22, 7, 510);
+    along('2 SEWERS', 0.34, 34, { seed: 520, weight: 0.15, alpha: 0.75, condense: 0.85 });
+    along('SAL', 0.52, 46, { seed: 530, weight: 0.15, alpha: 0.7, condense: 0.85 });
+    tally(0.62, 4, 540);
+    along('ROSA', 0.78, 40, { seed: 550, weight: 0.15, alpha: 0.65, condense: 0.85 });
+    tally(0.88, 6, 560);
     const geo = new THREE.PlaneGeometry(GROUND.curbW, 12);
     geo.rotateX(-Math.PI / 2);
     const m = new THREE.Mesh(geo, texMat(canvasTexture(c), { transparent: true, depthWrite: false, lift: 0.5 }));
@@ -992,10 +1055,10 @@ registerScenario('surface_detail', {
   seed: 1925,
   setup: ({ app }) => {
     app.sim.reset(1925);
-    app.camera.fov = 38;
+    app.camera.fov = 40;
     app.camera.updateProjectionMatrix();
-    app.camera.position.set(-8.4, 2.0, -1.8);
-    app.camera.lookAt(0.8, 0.30, 0.6);
+    app.camera.position.set(-8.8, 4.2, -4.6);
+    app.camera.lookAt(0.9, 0.25, 1.6);
   },
   settle: 0.5,
 });

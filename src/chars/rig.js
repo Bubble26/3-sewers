@@ -45,18 +45,18 @@ import { makeFace, setExpression, EXPRESSION_NAMES } from './faces.js';
    [shoulder xyz], [elbow xyz] per side, plus stance and lean.
    ========================================================================= */
 const POSES = {
-  ready:      { sR: [0.10, 0, -0.26], sL: [0.10, 0, 0.26], eR: [-0.42, 0, 0.10], eL: [-0.42, 0, -0.10], spread: 0.16, toe: 0.22, lean: 0.03 },
-  hipsHands:  { sR: [0.05, 0, -0.98], sL: [0.05, 0, 0.98], eR: [-0.55, 0, 1.72], eL: [-0.55, 0, -1.72], spread: 0.30, toe: 0.34, lean: -0.05 },
-  armsCrossed:{ sR: [-0.30, 0, -0.52], sL: [-0.30, 0, 0.52], eR: [-1.30, 0, 1.60], eL: [-1.42, 0, -1.60], spread: 0.20, toe: 0.26, lean: -0.02 },
-  scratch:    { sR: [-0.25, 0, -2.55], sL: [0.14, 0, 0.18], eR: [-1.55, 0, 0.55], eL: [-0.35, 0, -0.08], spread: 0.14, toe: 0.20, lean: 0.02 },
-  pockets:    { sR: [0.05, 0, -0.30], sL: [0.05, 0, 0.30], eR: [-0.30, 0, 0.62], eL: [-0.30, 0, -0.62], spread: 0.18, toe: 0.28, lean: 0.04 },
-  slouch:     { sR: [0.18, 0, -0.14], sL: [0.30, 0, 0.34], eR: [-0.22, 0, 0.06], eL: [-0.16, 0, -0.20], spread: 0.34, toe: 0.42, lean: -0.09, hip: 0.10 },
-  point:      { sR: [-1.75, 0, -0.30], sL: [0.06, 0, 0.92], eR: [-0.22, 0, 0.05], eL: [-0.50, 0, -1.66], spread: 0.24, toe: 0.30, lean: 0.06 },
-  batReady:   { sR: [-0.55, 0, -1.10], sL: [-0.62, 0, 0.86], eR: [-1.35, 0, 0.55], eL: [-1.50, 0, -0.35], spread: 0.34, toe: 0.30, lean: 0.02, turn: 0.42 },
-  tidy:       { sR: [0.02, 0, -0.10], sL: [0.02, 0, 0.10], eR: [-0.10, 0, 0], eL: [-0.10, 0, 0], spread: 0.06, toe: 0.14, lean: 0.0 },
-  sleeves:    { sR: [0.06, 0, -0.34], sL: [0.06, 0, 0.34], eR: [-0.18, 0, 0.04], eL: [-0.18, 0, -0.04], spread: 0.16, toe: 0.24, lean: 0.05 },
-  sprintset:  { sR: [-1.05, 0, -0.22], sL: [0.95, 0, 0.22], eR: [-0.95, 0, 0], eL: [-0.80, 0, 0], spread: 0.26, toe: 0.16, lean: 0.20, stagger: 0.55 },
-  crutch:     { sR: [0.02, 0, -0.16], sL: [0.22, 0, 0.30], eR: [-0.12, 0, 0.02], eL: [-0.30, 0, -0.10], spread: 0.22, toe: 0.28, lean: -0.04, hip: -0.06 },
+  ready:      { sR: [0.10, 0, -0.26], sL: [0.10, 0, 0.26], eR: [-0.42, 0, 0.10], eL: [-0.42, 0, -0.10], spread: 0.16, toe: 0.11, lean: 0.03 },
+  hipsHands:  { sR: [0.05, 0, -0.98], sL: [0.05, 0, 0.98], eR: [-0.55, 0, 1.72], eL: [-0.55, 0, -1.72], spread: 0.30, toe: 0.18, lean: -0.05 },
+  armsCrossed:{ sR: [-0.30, 0, -0.52], sL: [-0.30, 0, 0.52], eR: [-1.30, 0, 1.60], eL: [-1.42, 0, -1.60], spread: 0.20, toe: 0.14, lean: -0.02 },
+  scratch:    { sR: [-0.25, 0, -2.55], sL: [0.14, 0, 0.18], eR: [-1.55, 0, 0.55], eL: [-0.35, 0, -0.08], spread: 0.14, toe: 0.10, lean: 0.02 },
+  pockets:    { sR: [0.05, 0, -0.30], sL: [0.05, 0, 0.30], eR: [-0.30, 0, 0.62], eL: [-0.30, 0, -0.62], spread: 0.18, toe: 0.15, lean: 0.04 },
+  slouch:     { sR: [0.18, 0, -0.14], sL: [0.30, 0, 0.34], eR: [-0.22, 0, 0.06], eL: [-0.16, 0, -0.20], spread: 0.34, toe: 0.22, lean: -0.09, hip: 0.10 },
+  point:      { sR: [-1.75, 0, -0.30], sL: [0.06, 0, 0.92], eR: [-0.22, 0, 0.05], eL: [-0.50, 0, -1.66], spread: 0.24, toe: 0.16, lean: 0.06 },
+  batReady:   { sR: [-0.55, 0, -1.10], sL: [-0.62, 0, 0.86], eR: [-1.35, 0, 0.55], eL: [-1.50, 0, -0.35], spread: 0.34, toe: 0.16, lean: 0.02, turn: 0.42 },
+  tidy:       { sR: [0.02, 0, -0.10], sL: [0.02, 0, 0.10], eR: [-0.10, 0, 0], eL: [-0.10, 0, 0], spread: 0.06, toe: 0.07, lean: 0.0 },
+  sleeves:    { sR: [0.06, 0, -0.34], sL: [0.06, 0, 0.34], eR: [-0.18, 0, 0.04], eL: [-0.18, 0, -0.04], spread: 0.16, toe: 0.12, lean: 0.05 },
+  sprintset:  { sR: [-1.05, 0, -0.22], sL: [0.95, 0, 0.22], eR: [-0.95, 0, 0], eL: [-0.80, 0, 0], spread: 0.26, toe: 0.08, lean: 0.20, stagger: 0.55 },
+  crutch:     { sR: [0.02, 0, -0.16], sL: [0.22, 0, 0.30], eR: [-0.12, 0, 0.02], eL: [-0.30, 0, -0.10], spread: 0.22, toe: 0.15, lean: -0.04, hip: -0.06 },
 };
 
 /* ============================================================================
@@ -100,11 +100,14 @@ function makeSkull(hs, hh) {
   const geo = deformHead(G.sphere(1, 22, 16), hs);
   geo.computeBoundingBox();
   const bb = geo.boundingBox;
-  const s = hh / (bb.max.y - bb.min.y);
+  // read the extents BEFORE scaling: applyMatrix4 recomputes boundingBox in place, and
+  // reading it afterwards silently multiplies the head width by the scale a second time.
+  const w0 = bb.max.x - bb.min.x, d0 = bb.max.z - bb.min.z, h0 = bb.max.y - bb.min.y;
+  const s = hh / h0;
   const yOff = -((bb.max.y + bb.min.y) / 2) * s;
   geo.scale(s, s, s);
   geo.translate(0, yOff, 0);
-  return { geo, s, yOff, hw: (bb.max.x - bb.min.x) * s, hd: (bb.max.z - bb.min.z) * s };
+  return { geo, s, yOff, hw: w0 * s, hd: d0 * s };
 }
 
 function faceDecal(hs, hh, s, yOff, texture) {
@@ -147,11 +150,11 @@ export function buildKidFromSpec(specRef, opts = {}) {
 
   const skull = makeSkull(fam.head, hh);
   const hw = skull.hw;
-  const chestW = hw * (0.42 + build * 0.09);          // HALF shoulder width: <= head width
+  const chestW = hw * (0.400 + build * 0.100);        // HALF shoulder width: <= head width
   const chestD = chestW * 0.74;
-  const hipR = chestW * (0.86 + build * 0.14);
-  const legR = hipR * 0.54;
-  const handW = hw * (0.58 + build * 0.06);
+  const hipR = chestW * (0.82 + build * 0.26);
+  const legR = hipR * 0.47;
+  const handW = hw * (0.55 + build * 0.05);
 
   /* ---- colours -------------------------------------------------------- */
   const skinColor = SKIN[spec.skin ?? 1];
@@ -171,15 +174,18 @@ export function buildKidFromSpec(specRef, opts = {}) {
     spec, fam, hh, hw, hd: skull.hd, tall, heads, build,
     torsoH, chestW, chestD, hipR, legR, thighLen, shinLen, ankleH, shoeLen, handW, legLen,
     skinColor, trouser, trouserDark: soot(trouser, 0.26), buckle: PAVEMENT.manholeHigh,
-    patchColor: mix(trouser, WOOL[(seed + 4) % WOOL.length], 0.7),
+    patchColor: seed % 2 ? mix(trouser, CLOTH[2], 0.55) : soot(mix(trouser, WOOL[(seed + 4) % WOOL.length], 0.6), 0.16),
+    patchStitch: mix(CLOTH[0], PAVEMENT.curb, 0.30),
+    buckleBand: mix(soot(trouser, 0.42), INK, 0.22),
     patched: seed % 3 !== 0, dirt, baggy: fam.baggy,
     bareLeg: !!fam.bareLeg,
-    outline: hh * 0.042,
+    outline: hh * 0.050,
     teamColor: teamCol,
     teamOnCap: hatKind !== 'none',
     hat: hatKind === 'none' ? null : { ...fam.hat, color: slot === 'cap' ? accent : WOOL[(seed + 1) % WOOL.length] },
     hair: { style: spec.hairStyle || fam.hair, color: hairColor, ribbon: slot === 'ribbon' ? accent : null },
     ears: fam.ears || 0,
+    earShade: coolShade(skinColor, 0.80),
     susp: { on: fam.susp, color: slot === 'suspenders' ? accent : LEATHER[seed % 3], offShoulder: seed % 4 === 0 ? 'L' : seed % 4 === 1 ? 'R' : null },
     prop: spec.prop,
     feet: fam.feet === 'bare'
@@ -190,7 +196,7 @@ export function buildKidFromSpec(specRef, opts = {}) {
         sole: fam.feet === 'keds' ? soot(CLOTH[2], 0.30) : soot(LEATHER[2], 0.25),
         tongue: LEATHER[(seed + 1) % 3], lace: mix(CLOTH[0], PAVEMENT.curb, 0.4),
       },
-    capY: hh * Math.max(0.120, Math.min(0.26, 0.175 - ((hatKind === 'none' ? 1 : fam.hat.size) - 1) * 0.16)),
+    capY: hh * Math.max(0.185, Math.min(0.28, 0.228 - ((hatKind === 'none' ? 1 : fam.hat.size) - 1) * 0.10)),
   };
 
   /* ---- hierarchy ------------------------------------------------------ */
@@ -214,15 +220,15 @@ export function buildKidFromSpec(specRef, opts = {}) {
     t.scale(1, 1, chestD / chestW);
     tb.add(t, shirt);
     // open collar, shirttail out on one side
-    const col = G.tube([[chestW * 0.60, torsoH * 0.94], [chestW * 0.74, torsoH * 1.04], [chestW * 0.66, torsoH * 1.10]], 14);
+    const col = G.tube([[chestW * 0.60, torsoH * 0.94], [chestW * 0.74, torsoH * 1.04], [chestW * 0.66, torsoH * 1.10]], 20);
     col.scale(1, 1, chestD / chestW * 1.06);
     tb.add(col, mix(shirt, CHALK, 0.20));
   }
   if (topKind === 'vest') {
     const v = G.tube([
-      [chestW * 1.03, -hh * 0.10], [chestW * 1.09, torsoH * 0.30],
+      [chestW * 1.04, -hh * 0.03], [chestW * 1.10, torsoH * 0.30],
       [chestW * 1.06, torsoH * 0.66], [chestW * 0.98, torsoH * 0.90],
-    ], 14);
+    ], 20);
     v.scale(1, 1, chestD / chestW);
     tb.add(v, accent);
     for (let i = 0; i < 3; i++) {
@@ -234,16 +240,16 @@ export function buildKidFromSpec(specRef, opts = {}) {
     const s = G.tube([
       [hipR * 1.20, -hh * 0.30], [hipR * 1.22, -hh * 0.10], [chestW * 1.12, torsoH * 0.42],
       [chestW * 1.10, torsoH * 0.80], [chestW * 0.96, torsoH * 0.98],
-    ], 14);
+    ], 20);
     s.scale(1, 1, chestD / chestW);
     tb.add(s, accent);
   } else if (topKind === 'handmedown') {
     // A small kid entirely inside an adult's wool sweater: the silhouette is a bell.
     const s = G.tube([
-      [hipR * 1.62, -thighLen * 0.62], [hipR * 1.58, -thighLen * 0.42],
-      [hipR * 1.36, -hh * 0.05], [chestW * 1.30, torsoH * 0.52],
+      [hipR * 1.92, -thighLen * 0.98], [hipR * 1.86, -thighLen * 0.74],
+      [hipR * 1.44, -hh * 0.05], [chestW * 1.34, torsoH * 0.52],
       [chestW * 1.20, torsoH * 0.86], [chestW * 0.98, torsoH * 1.00],
-    ], 14);
+    ], 20);
     s.scale(1, 1, chestD / chestW * 1.06);
     tb.add(s, accent);
     tb.smudge(0, -thighLen * 0.5, hipR, hipR * 1.6, dirt, 0.30);
@@ -251,9 +257,9 @@ export function buildKidFromSpec(specRef, opts = {}) {
     const s = G.tube([
       [hipR * 1.16, -hh * 0.16], [hipR * 1.10, hh * 0.02], [chestW * 1.04, torsoH * 0.50],
       [chestW * 1.02, torsoH * 0.86], [chestW * 0.92, torsoH * 1.00],
-    ], 14);
+    ], 20);
     s.scale(1, 1, chestD / chestW);
-    tb.add(s, mix(shirt, accent, 0.34));
+    tb.add(s, mix(shirt, accent, 0.52));
     const sash = G.tube([[hipR * 1.20, -hh * 0.16], [hipR * 1.22, -hh * 0.04]], 14);
     sash.scale(1, 1, chestD / chestW);
     tb.add(sash, accent);
@@ -271,13 +277,6 @@ export function buildKidFromSpec(specRef, opts = {}) {
   }
   buildSuspenders(tb, ctx);
   buildProp(tb, ctx);
-  // team armband on the kids who have no cap to band
-  if (!ctx.teamOnCap) {
-    const b = G.tube([[chestW * 0.34, torsoH * 0.60], [chestW * 0.36, torsoH * 0.74]], 12);
-    b.rotateZ(0.22);
-    b.translate(chestW * 1.02, 0, 0);
-    tb.add(b, teamCol);
-  }
   tb.smudge(0, hh * 0.05, chestD, hipR * 1.6, dirt, 0.22);
   torso.add(partMesh(tb, ctx.outline, 'torso'));
 
@@ -302,7 +301,7 @@ export function buildKidFromSpec(specRef, opts = {}) {
       [hipR * 1.18, hh * 0.02], [hipR * 1.34, -thighLen * 0.40],
       [hipR * 1.62, hem + hh * 0.06], [hipR * 1.66, hem],
     ], 16);
-    sb.add(s, mix(shirt, accent, 0.34));
+    sb.add(s, mix(shirt, accent, 0.52));
     const trim = G.tube([[hipR * 1.66, hem], [hipR * 1.68, hem + hh * 0.05]], 16);
     sb.add(trim, accent);
     sb.smudge(0, hem + hh * 0.1, hipR, hipR * 1.4, dirt, 0.24);
@@ -337,6 +336,12 @@ export function buildKidFromSpec(specRef, opts = {}) {
       const cuff = G.tube([[armR2 * 1.06, -upperLen * 0.84], [armR2 * 1.14, -upperLen * 0.97], [armR2 * 1.00, -upperLen * 1.02]], 10);
       ub.add(cuff, soot(shirt, 0.10));
     }
+    // Team marker for the kids with no cap to band: a strip of dyed flannel round the arm.
+    if (!ctx.teamOnCap && side > 0) {
+      const b = G.tube([[armR2 * 1.10, -upperLen * 0.26], [armR2 * 1.16, -upperLen * 0.40],
+        [armR2 * 1.08, -upperLen * 0.50]], 12);
+      ub.add(b, teamCol);
+    }
     sh.add(partMesh(ub, ctx.outline, 'upper' + nm));
 
     const el = new THREE.Group(); el.position.y = -upperLen; sh.add(el);
@@ -356,13 +361,13 @@ export function buildKidFromSpec(specRef, opts = {}) {
     if (!sleevePast) {
       const hb = new Body();
       const mitt = G.sphere(handW * 0.50, 12, 9);
-      mitt.scale(0.94, 1.02, 0.56);
+      mitt.scale(0.58, 1.06, 0.94);
       mitt.translate(0, -handW * 0.20, 0);
-      hb.add(mitt, skinColor);
-      const thumb = G.sphere(handW * 0.21, 8, 6);
-      thumb.scale(1, 1.15, 0.8);
-      thumb.translate(-side * handW * 0.34, -handW * 0.10, handW * 0.06);
-      hb.add(thumb, skinColor);
+      hb.add(mitt, mix(skinColor, coolShade(skinColor), 0.28));
+      const thumb = G.sphere(handW * 0.19, 8, 6);
+      thumb.scale(0.8, 1.15, 1.0);
+      thumb.translate(-side * handW * 0.15, -handW * 0.08, handW * 0.24);
+      hb.add(thumb, mix(skinColor, coolShade(skinColor), 0.28));
       hb.smudge(0, -handW * 0.46, 0, handW * 1.05, dirt, 0.50);   // black palm: dirt shape #3
       hd.add(partMesh(hb, ctx.outline * 0.85, 'hand' + nm));
     }
@@ -378,7 +383,7 @@ export function buildKidFromSpec(specRef, opts = {}) {
   for (const side of [-1, 1]) {
     const nm = side < 0 ? 'R' : 'L';
     const hipG = new THREE.Group();
-    hipG.position.set(side * hipR * 0.62, 0, 0);
+    hipG.position.set(side * hipR * 0.56, 0, 0);
     hips.add(hipG);
     const lb = new Body();
     buildKnicker(lb, ctx, side);
@@ -562,21 +567,17 @@ export function buildBust(specRef) {
   rig.head.rotation.set(0, 0, 0);
   g.add(rig.head);
   const bust = new Body();
-  const cw = hh * 0.60;
+  const cw = hh * 0.46;
   const cloth = kid.userData.cloth;
   const sh = G.tube([
-    [cw * 0.40, -hh * 0.56], [cw * 0.54, -hh * 0.68],
-    [cw * 1.10, -hh * 0.86], [cw * 1.22, -hh * 1.06], [cw * 1.24, -hh * 1.24],
-  ], 18);
-  sh.scale(1, 1, 0.74);
+    [cw * 0.44, -hh * 0.58], [cw * 0.58, -hh * 0.70],
+    [cw * 1.06, -hh * 0.86], [cw * 1.15, -hh * 1.00],
+  ], 20);
+  sh.scale(1, 1, 0.76);
   bust.add(sh, cloth.shirt);
-  const collar = G.tube([[cw * 0.44, -hh * 0.60], [cw * 0.62, -hh * 0.74], [cw * 0.56, -hh * 0.80]], 18);
-  collar.scale(1, 1, 0.80);
-  bust.add(collar, mix(cloth.shirt, CHALK, 0.16));
-  const band = G.tube([[cw * 0.86, -hh * 0.90], [cw * 0.92, -hh * 1.02]], 18);
-  band.scale(1, 1, 0.74);
-  band.translate(cw * 0.62, 0, 0);
-  bust.add(band, cloth.team);
+  const collar = G.tube([[cw * 0.48, -hh * 0.62], [cw * 0.68, -hh * 0.74], [cw * 0.60, -hh * 0.80]], 20);
+  collar.scale(1, 1, 0.82);
+  bust.add(collar, mix(cloth.shirt, CHALK, 0.18));
   g.add(partMesh(bust, hh * 0.042, 'bust'));
   g.userData.face = kid.userData.face;
   g.userData.spec = kid.userData.spec;
@@ -613,7 +614,7 @@ function spaldeen(r) {
    ========================================================================= */
 const STUDIO_Y = 400;
 // Front row and back row between them carry all nine silhouette families.
-const LINEUP_FRONT = ['sal', 'irving', 'sidney', 'eugene', 'ethel', 'abie'];
+const LINEUP_FRONT = ['irving', 'sal', 'sidney', 'eugene', 'ethel', 'abie'];
 const LINEUP_BACK = ['otto', 'reese', 'bessie', 'cheech', 'tiny', 'maureen'];
 const SHEET = ['sal', 'ethel', 'reese', 'bessie', 'cheech', 'kathleen', 'booker', 'gertie'];
 const SHEET_EX = ['neutral', 'grin', 'determined', 'shock', 'disappointed', 'taunt', 'yell', 'smug'];
@@ -671,13 +672,13 @@ export default registerSystem({
     const RISE = 4.95;
     const step = new THREE.Mesh(
       new THREE.BoxGeometry(34, RISE, 9),
-      new THREE.MeshBasicMaterial({ color: PAVEMENT.sidewalk, fog: false, toneMapped: false }),
+      new THREE.MeshBasicMaterial({ color: mix(PAVEMENT.sidewalk, CHALK, 0.30), fog: false, toneMapped: false }),
     );
     step.position.set(0, RISE / 2, -4.9);
     g.add(step);
     const nosing = new THREE.Mesh(
       new THREE.BoxGeometry(34, 0.34, 9.5),
-      new THREE.MeshBasicMaterial({ color: PAVEMENT.curb, fog: false, toneMapped: false }),
+      new THREE.MeshBasicMaterial({ color: soot(PAVEMENT.curb, 0.18), fog: false, toneMapped: false }),
     );
     nosing.position.set(0, RISE - 0.17, -4.9);
     g.add(nosing);
@@ -699,7 +700,7 @@ export default registerSystem({
       }
     });
     place(LINEUP_BACK, RISE, -3.2, 3.30, 0);
-    place(LINEUP_FRONT, 0, 2.4, 2.92, 0);
+    place(LINEUP_FRONT, 0, 2.4, 3.00, 0);
 
     a.scene.add(g);
     this.lineup = g;
@@ -714,14 +715,14 @@ export default registerSystem({
     bd.position.set(0, 0, -6);
     g.add(bd);
     this.busts = [];
-    const cols = 4, dx = 2.62, dy = 2.52;
+    const cols = 4, dx = 2.68, dy = 2.44;
     SHEET.forEach((id, i) => {
       const b = buildBust(id);
       const cx = (i % cols - (cols - 1) / 2) * dx;
       const cy = ((i < cols ? 1 : 0) - 0.5) * dy;
-      b.position.set(cx, cy - 0.16, 0);
-      b.rotation.y = -Math.atan2(cx, 7.2);
-      b.rotation.x = Math.atan2(cy, 7.2) * 0.55;
+      b.position.set(cx, cy - 0.06, 0);
+      b.rotation.y = -Math.atan2(cx, 8.3);
+      b.rotation.x = Math.atan2(cy, 8.3) * 0.55;
       g.add(b);
       setExpressionOn(b, SHEET_EX[i]);
       this.busts.push({ g: b, i });
@@ -767,7 +768,7 @@ function setExpressionOn(bust, name) {
 registerScenario('lineup', {
   seed: 1925,
   setup: () => {
-    app.camera.position.set(0, STUDIO_Y + 4.85, 15.2);
+    app.camera.position.set(0, STUDIO_Y + 4.85, 15.9);
     app.camera.lookAt(0, STUDIO_Y + 4.60, -0.6);
   },
   settle: 0.1,
@@ -776,7 +777,7 @@ registerScenario('lineup', {
 registerScenario('face_sheet', {
   seed: 1925,
   setup: () => {
-    app.camera.position.set(0, STUDIO_Y + 40, 7.2);
+    app.camera.position.set(0, STUDIO_Y + 40, 8.3);
     app.camera.lookAt(0, STUDIO_Y + 40, 0);
   },
   settle: 0.05,

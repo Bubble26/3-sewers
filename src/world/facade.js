@@ -24,8 +24,8 @@ export const M = {
   lot: 25,             // the unit of the whole city
   ground: 12,          // store/parlour floor is taller
   floor: 10.5,         // upper floor-to-floor
-  corniceH: 2.8,
-  corniceOut: 3.0,
+  corniceH: 3.2,
+  corniceOut: 3.2,
   parapet: 2.4,
   depth: 42,           // how far into the block we bother modelling
 };
@@ -121,6 +121,12 @@ function southWall(z) {
   return 62;                                  // the tenement row
 }
 
+/** The height of the terminator on a facade at x, and the z where the taxpayer's edge cuts it. */
+export function shadowLine(x) {
+  const d = (x + M.facadeX) / -SUN_H[0];
+  return { y: 62 - RISE * d, z: TAXPAYER.z1 - SUN_H[1] * d };
+}
+
 /** 0..1 — is this point in the sun? Soft over ~0.7ft so the terminator is 2-3px on screen. */
 export function occlusion(x, y, z) {
   const d = (x + M.facadeX) / -SUN_H[0];          // distance to the south building line
@@ -145,14 +151,17 @@ export function litOf(n, x, y, z) {
 export function shadeLin(hex, lit, dark = 0, bounce = 0) {
   let c = tc(hex);
   if (lit > 0.01) {
+    // A warm SHIFT, not a mix toward a bright colour: mixing lifts dark materials far more
+    // than light ones and flattens the whole facade into one salmon value.
     const t = Math.min(1, lit / 0.74);
-    c = mixLin(c, tc(AIR.sunTint), 0.19 * t);
-    c = scaleLin(c, 1 + 0.40 * t);
+    c = [c[0] * (1 + 0.19 * t), c[1] * (1 + 0.02 * t), c[2] * (1 - 0.30 * t)];
+    c = scaleLin(c, 0.95 + 0.47 * t);
   } else {
-    c = mixLin(c, tc(AIR.skyFill), 0.09);
+    c = mixLin(c, tc(AIR.skyFill), 0.11);
+    c = scaleLin(c, 0.95);
   }
   if (bounce > 0) c = mixLin(c, tc(AIR.brickBounce), 0.22 * bounce);
-  if (dark > 0) c = scaleLin(c, 1 - 0.34 * dark);
+  if (dark > 0) c = scaleLin(c, 1 - 0.55 * dark);
   return floorLum(c);
 }
 
@@ -163,11 +172,11 @@ export function shadeLin(hex, lit, dark = 0, bounce = 0) {
  */
 export function texTint(lit, dark = 0, bounce = 0) {
   const t = Math.min(1, Math.max(0, lit) / 0.74);
-  let k = lit > 0.01 ? 1 + 0.40 * t : 0.90;
-  k *= 1 - 0.34 * dark;
+  let k = lit > 0.01 ? 0.95 + 0.47 * t : 0.95;
+  k *= 1 - 0.50 * dark;
   return lit > 0.01
-    ? [k * (1 + 0.06 * t), k, k * (1 - 0.11 * t)]
-    : [k * 0.96, k * 0.985, k * 1.06];
+    ? [k * (1 + 0.085 * t), k, k * (1 - 0.15 * t)]
+    : [k * 0.945, k * 0.98, k * 1.075];
 }
 
 /** Coal haze: distance lightens, never darkens (DESIGN-BIBLE §2.3). */
@@ -227,7 +236,9 @@ export class Builder {
     for (const key of faces.split(' ')) {
       const f = F[key]; if (!f) continue;
       const n = f[4];
-      const c = typeof col === 'function' ? col(key, n, [cx, cy, cz]) : lit3(col, n, cx, cy, cz);
+      let c = typeof col === 'function' ? col(key, n, [cx, cy, cz]) : lit3(col, n, cx, cy, cz);
+      const skyK = key === 'py' ? 1.17 : key === 'ny' ? 0.80 : 1;   // sky above, roadway below
+      if (skyK !== 1) c = [c[0] * skyK, c[1] * skyK, c[2] * skyK];
       let uvs = null;
       if (uvRect) uvs = rectUV(uvRect);
       else {
@@ -410,107 +421,138 @@ export function washTexture(baseHex, seed) {
 }
 
 // ─── painted sprites: what lives in a window, and what iron looks like ────────
-function roomBack(g, w, h) {
-  const gr = g.createLinearGradient(0, 0, 0, h);
-  gr.addColorStop(0, tcCss(0x4a4038));
-  gr.addColorStop(1, tcCss(0x3d342e));
-  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+/**
+ * A window is a hole, and a hole is darker than the wall around it. Ours reflects the sky in
+ * its top third and the shaded facade opposite in the rest — which is what glass in a 64ft
+ * canyon actually does, and it gives every opening a hard internal value break that survives
+ * being 12 pixels tall.
+ */
+function glassPane(g, w, h, y0 = 0, y1 = 1) {
+  const H = h * (y1 - y0), Y = h * y0;
+  const gr = g.createLinearGradient(0, Y, 0, Y + H);
+  gr.addColorStop(0, tcCss(0x8ea6c0));
+  gr.addColorStop(0.26, tcCss(0x7d93ad));
+  gr.addColorStop(0.30, tcCss(0x5d4b40));
+  gr.addColorStop(1, tcCss(0x4c3d34));
+  g.fillStyle = gr; g.fillRect(0, Y, w, H);
+  // the reflected cornice line opposite, and a little glazing grime
+  g.fillStyle = 'rgba(240,232,210,0.13)';
+  g.beginPath(); g.moveTo(0, Y + H * 0.30); g.lineTo(w, Y + H * 0.22); g.lineTo(w, Y + H * 0.27); g.lineTo(0, Y + H * 0.36); g.fill();
+  g.fillStyle = 'rgba(216,207,184,0.10)';
+  for (let i = 0; i < 3; i++) g.fillRect(w * (0.14 + i * 0.3), Y, w * 0.05, H);
 }
-function curtain(g, w, h, side = 0, amt = 0.30) {
-  const x = side ? w * (1 - amt) : 0;
-  g.fillStyle = tcCss(0xd8cfb8);
+function roomBack(g, w, h, y0 = 0) {
+  const Y = h * y0;
+  const gr = g.createLinearGradient(0, Y, 0, h);
+  gr.addColorStop(0, tcCss(0x413a33));
+  gr.addColorStop(1, tcCss(0x4e443a));
+  g.fillStyle = gr; g.fillRect(0, Y, w, h - Y);
+}
+function curtain(g, w, h, side = 0, amt = 0.30, y0 = 0) {
+  const x = side ? w * (1 - amt) : 0, Y = h * y0;
+  g.fillStyle = tcCss(0xc0b294);
   g.beginPath();
-  g.moveTo(x, 0); g.lineTo(x + w * amt, 0);
+  g.moveTo(x, Y); g.lineTo(x + w * amt, Y);
   for (let i = 0; i <= 6; i++) {
     const t = i / 6;
-    g.lineTo(x + w * amt * (1 - t * 0.25) + Math.sin(t * 7) * w * 0.03, h * t);
+    g.lineTo(x + w * amt * (1 - t * 0.22) + Math.sin(t * 7) * w * 0.03, Y + (h - Y) * t);
   }
   g.lineTo(x, h); g.closePath(); g.fill();
-  g.fillStyle = 'rgba(90,78,64,0.22)';
-  for (let i = 0; i < 5; i++) g.fillRect(x + w * amt * (i / 5) * 0.9, 0, w * 0.012, h);
+  g.fillStyle = 'rgba(70,60,48,0.26)';
+  for (let i = 0; i < 5; i++) g.fillRect(x + w * amt * (i / 5) * 0.9, Y, w * 0.014, h - Y);
 }
-function glassPane(g, w, h) {
-  const gr = g.createLinearGradient(0, 0, w * 0.6, h);
-  gr.addColorStop(0, tcCss(0x7d8c94));
-  gr.addColorStop(0.45, tcCss(0x53565a));
-  gr.addColorStop(1, tcCss(0x40403e));
-  g.fillStyle = gr; g.fillRect(0, 0, w, h);
-  g.globalAlpha = 0.30; g.fillStyle = tcCss(AIR.skyLower);
-  g.beginPath(); g.moveTo(0, 0); g.lineTo(w, 0); g.lineTo(w, h * 0.22); g.lineTo(0, h * 0.42); g.fill();
-  g.globalAlpha = 1;
+/** The lintel soffit throws a hard line across the top of every opening. */
+function reveal(g, w, h) {
+  g.fillStyle = 'rgba(28,20,16,0.55)'; g.fillRect(0, 0, w, h * 0.06);
+  g.fillStyle = 'rgba(28,20,16,0.30)'; g.fillRect(0, h * 0.06, w, h * 0.04);
+  g.fillStyle = 'rgba(28,20,16,0.22)'; g.fillRect(0, 0, w * 0.05, h);
 }
 
 export function registerFacadeSprites(atlas) {
   const W = 84, H = 160;
-  atlas.add('win:sash', W, H, (g, w, h) => { glassPane(g, w, h); curtain(g, w, h, 1, 0.26); });
+  atlas.add('win:sash', W, H, (g, w, h) => { glassPane(g, w, h); curtain(g, w, h, 1, 0.17); reveal(g, w, h); });
   atlas.add('win:shade', W, H, (g, w, h) => {
     glassPane(g, w, h);
-    g.fillStyle = tcCss(0xc9b48b); g.fillRect(0, 0, w, h * 0.42);
-    g.fillStyle = tcCss(0x8a7a5c); g.fillRect(0, h * 0.42 - 3, w, 3);
-    g.fillStyle = tcCss(0x8a7a5c); g.fillRect(w * 0.48, h * 0.42, 2, h * 0.06);
+    g.fillStyle = tcCss(0xb8a681); g.fillRect(0, 0, w, h * 0.40);          // a roller shade, half down
+    g.fillStyle = tcCss(0x8a7a5c); g.fillRect(0, h * 0.40 - 3, w, 3);
+    g.fillStyle = tcCss(0x8a7a5c); g.fillRect(w * 0.48, h * 0.40, 2, h * 0.05);
+    reveal(g, w, h);
   });
   atlas.add('win:open', W, H, (g, w, h) => {
-    roomBack(g, w, h);
-    glassPane(g, w, h * 0.46);                       // the raised lower sash
-    curtain(g, w, h, 0, 0.34);
-    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.46, w, 3);
+    roomBack(g, w, h, 0.44);
+    glassPane(g, w, h, 0, 0.46);                                          // the raised lower sash
+    curtain(g, w, h, 0, 0.32, 0.44);
+    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.44, w, 3.5);
+    reveal(g, w, h);
   });
   atlas.add('win:lean', W, H, (g, w, h) => {         // §8.11 — elbows on a folded towel
-    roomBack(g, w, h);
-    glassPane(g, w, h * 0.40);
-    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.40, w, 3);
-    g.fillStyle = tcCss(0x8a5f7a);                   // shoulders
-    g.beginPath(); g.ellipse(w * 0.5, h * 1.02, w * 0.42, h * 0.26, 0, Math.PI, 0); g.fill();
-    g.fillStyle = tcCss(0xdfa377);                   // arms
-    g.beginPath(); g.ellipse(w * 0.22, h * 0.90, w * 0.11, h * 0.05, 0.5, 0, 7); g.fill();
-    g.beginPath(); g.ellipse(w * 0.78, h * 0.90, w * 0.11, h * 0.05, -0.5, 0, 7); g.fill();
-    g.fillStyle = tcCss(0xefc199);                   // head
-    g.beginPath(); g.ellipse(w * 0.5, h * 0.71, w * 0.17, h * 0.11, 0, 0, 7); g.fill();
-    g.fillStyle = tcCss(0x4a3b30);                   // hair, pinned up
-    g.beginPath(); g.ellipse(w * 0.5, h * 0.655, w * 0.185, h * 0.075, 0, Math.PI, 0); g.fill();
-    g.fillStyle = tcCss(0xefe6d2);                   // the folded towel on the sill
-    g.fillRect(w * 0.10, h * 0.955, w * 0.80, h * 0.05);
+    roomBack(g, w, h, 0.36);
+    glassPane(g, w, h, 0, 0.38);
+    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.36, w, 3.5);
+    g.fillStyle = tcCss(0x7c4f6b);
+    g.beginPath(); g.ellipse(w * 0.5, h * 1.04, w * 0.44, h * 0.30, 0, Math.PI, 0); g.fill();
+    g.fillStyle = tcCss(0xc08a5e);
+    g.beginPath(); g.ellipse(w * 0.20, h * 0.885, w * 0.13, h * 0.055, 0.45, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(w * 0.80, h * 0.885, w * 0.13, h * 0.055, -0.45, 0, 7); g.fill();
+    g.fillStyle = tcCss(0xdfa377);
+    g.beginPath(); g.ellipse(w * 0.5, h * 0.70, w * 0.19, h * 0.125, 0, 0, 7); g.fill();
+    g.fillStyle = tcCss(0x4a3b30);
+    g.beginPath(); g.ellipse(w * 0.5, h * 0.645, w * 0.205, h * 0.085, 0, Math.PI, 0); g.fill();
+    g.fillStyle = tcCss(0x2a1d1a);
+    g.beginPath(); g.ellipse(w * 0.42, h * 0.705, w * 0.022, h * 0.011, 0, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(w * 0.58, h * 0.705, w * 0.022, h * 0.011, 0, 0, 7); g.fill();
+    g.fillStyle = tcCss(0xd8cfb8);                   // the folded towel on the sill
+    g.fillRect(w * 0.06, h * 0.945, w * 0.88, h * 0.055);
+    reveal(g, w, h);
   });
   atlas.add('win:cat', W, H, (g, w, h) => {
-    roomBack(g, w, h);
-    glassPane(g, w, h * 0.44); curtain(g, w, h, 1, 0.22);
-    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.44, w, 3);
-    g.fillStyle = tcCss(0x3a322c);                   // a cat, sitting, unimpressed
-    g.beginPath(); g.ellipse(w * 0.62, h * 0.93, w * 0.16, h * 0.09, 0, 0, 7); g.fill();
-    g.beginPath(); g.ellipse(w * 0.62, h * 0.80, w * 0.10, h * 0.055, 0, 0, 7); g.fill();
-    g.beginPath(); g.moveTo(w * 0.53, h * 0.775); g.lineTo(w * 0.56, h * 0.725); g.lineTo(w * 0.60, h * 0.775); g.fill();
-    g.beginPath(); g.moveTo(w * 0.64, h * 0.775); g.lineTo(w * 0.68, h * 0.725); g.lineTo(w * 0.71, h * 0.775); g.fill();
+    roomBack(g, w, h, 0.44);
+    glassPane(g, w, h, 0, 0.46); curtain(g, w, h, 1, 0.20, 0.44);
+    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.44, w, 3.5);
+    g.fillStyle = tcCss(0x54483f);                   // a cat, sitting, unimpressed
+    g.beginPath(); g.ellipse(w * 0.60, h * 0.925, w * 0.19, h * 0.105, 0, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(w * 0.60, h * 0.775, w * 0.12, h * 0.068, 0, 0, 7); g.fill();
+    g.beginPath(); g.moveTo(w * 0.49, h * 0.745); g.lineTo(w * 0.53, h * 0.675); g.lineTo(w * 0.585, h * 0.745); g.fill();
+    g.beginPath(); g.moveTo(w * 0.625, h * 0.745); g.lineTo(w * 0.68, h * 0.675); g.lineTo(w * 0.715, h * 0.745); g.fill();
     g.fillStyle = tcCss(0xe3a32b);
-    g.fillRect(w * 0.575, h * 0.792, w * 0.022, h * 0.012);
-    g.fillRect(w * 0.645, h * 0.792, w * 0.022, h * 0.012);
-    g.strokeStyle = tcCss(0x3a322c); g.lineWidth = 2.5;
-    g.beginPath(); g.moveTo(w * 0.78, h * 0.96); g.quadraticCurveTo(w * 0.92, h * 0.90, w * 0.86, h * 0.78); g.stroke();
+    g.fillRect(w * 0.545, h * 0.768, w * 0.035, h * 0.016);
+    g.fillRect(w * 0.635, h * 0.768, w * 0.035, h * 0.016);
+    g.strokeStyle = tcCss(0x54483f); g.lineWidth = 3;
+    g.beginPath(); g.moveTo(w * 0.79, h * 0.955); g.quadraticCurveTo(w * 0.95, h * 0.88, w * 0.88, h * 0.75); g.stroke();
+    reveal(g, w, h);
   });
   atlas.add('win:pot', W, H, (g, w, h) => {
-    roomBack(g, w, h);
-    glassPane(g, w, h * 0.44); curtain(g, w, h, 0, 0.28);
-    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.44, w, 3);
-    g.fillStyle = tcCss(0x8a6a54);                   // a coffee can with a geranium in it
-    g.fillRect(w * 0.34, h * 0.86, w * 0.30, h * 0.13);
+    roomBack(g, w, h, 0.44);
+    glassPane(g, w, h, 0, 0.46); curtain(g, w, h, 0, 0.26, 0.44);
+    g.fillStyle = tcCss(0x2e2a26); g.fillRect(0, h * 0.44, w, 3.5);
+    g.fillStyle = tcCss(0x9a7050);                   // a coffee can with a geranium in it
+    g.fillRect(w * 0.32, h * 0.855, w * 0.34, h * 0.145);
+    g.fillStyle = tcCss(0x7a5a3e); g.fillRect(w * 0.32, h * 0.855, w * 0.34, h * 0.022);
     g.fillStyle = tcCss(0x2f7f63);
-    for (let i = 0; i < 5; i++) {
-      g.beginPath(); g.ellipse(w * (0.40 + i * 0.05), h * (0.80 - (i % 2) * 0.03), w * 0.07, h * 0.035, i, 0, 7); g.fill();
+    for (let i = 0; i < 6; i++) {
+      g.beginPath(); g.ellipse(w * (0.34 + i * 0.06), h * (0.80 - (i % 2) * 0.035), w * 0.085, h * 0.042, i, 0, 7); g.fill();
     }
     g.fillStyle = tcCss(0xc8402f);
-    g.beginPath(); g.ellipse(w * 0.50, h * 0.745, w * 0.10, h * 0.045, 0, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(w * 0.50, h * 0.735, w * 0.115, h * 0.055, 0, 0, 7); g.fill();
+    g.fillStyle = tcCss(0xd4694a);
+    g.beginPath(); g.ellipse(w * 0.44, h * 0.722, w * 0.05, h * 0.026, 0, 0, 7); g.fill();
+    reveal(g, w, h);
   });
   atlas.add('win:board', W, H, (g, w, h) => {        // §8.39 — something already broken
-    roomBack(g, w, h);
     glassPane(g, w, h);
-    woodPanel(g, w, h);
-  });
-  function woodPanel(g, w, h) {
     g.fillStyle = tcCss(0x8a7458);
-    g.save(); g.translate(w * 0.5, h * 0.55); g.rotate(0.08); g.fillRect(-w * 0.58, -h * 0.13, w * 1.16, h * 0.26); g.restore();
-    g.fillStyle = 'rgba(60,48,38,0.35)';
-    g.save(); g.translate(w * 0.5, h * 0.55); g.rotate(0.08); g.fillRect(-w * 0.58, -h * 0.13, w * 1.16, h * 0.03); g.restore();
-  }
+    g.save(); g.translate(w * 0.5, h * 0.55); g.rotate(0.08); g.fillRect(-w * 0.58, -h * 0.14, w * 1.16, h * 0.28); g.restore();
+    g.fillStyle = 'rgba(50,40,32,0.40)';
+    g.save(); g.translate(w * 0.5, h * 0.55); g.rotate(0.08); g.fillRect(-w * 0.58, -h * 0.14, w * 1.16, h * 0.035); g.restore();
+    reveal(g, w, h);
+  });
 
+  // the grating's shadow: white bars, so the vertex colour alone decides how dark it lands
+  atlas.add('bars', 64, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#ffffff';
+    for (let i = 0; i < 8; i++) g.fillRect(i * 8 + 1.6, 0, 3.6, h);
+  });
   // fire-escape deck: bar grating, so light passes through and it reads as lace
   atlas.add('grate', 64, 64, (g, w, h) => {
     g.clearRect(0, 0, w, h);
@@ -522,16 +564,19 @@ export function registerFacadeSprites(atlas) {
   // laundry over the rail — the best free lighting moment on the block
   atlas.add('laundry', 132, 80, (g, w, h) => {
     g.clearRect(0, 0, w, h);
-    const items = [[0.02, 0.30, 0xefe6d2], [0.34, 0.26, 0xe8dcc4], [0.62, 0.20, 0xd2c3a6], [0.84, 0.14, 0xefe6d2]];
+    const items = [[0.01, 0.26, 0xddd2b8], [0.30, 0.22, 0xcfc4a8], [0.55, 0.17, 0xc2b79c], [0.75, 0.24, 0xd8ccb0]];
     for (const [x, ww, col] of items) {
       g.fillStyle = tcCss(col);
       g.beginPath();
-      g.moveTo(x * w, 0); g.lineTo((x + ww) * w, 0);
-      g.lineTo((x + ww) * w - 2, h * 0.86);
-      for (let i = 6; i >= 0; i--) g.lineTo(x * w + ww * w * (i / 6), h * (0.86 + Math.sin(i * 1.7) * 0.06));
+      g.moveTo(x * w, h * 0.06); g.lineTo((x + ww) * w, h * 0.02);
+      g.lineTo((x + ww) * w - 2, h * 0.84);
+      for (let i = 6; i >= 0; i--) g.lineTo(x * w + ww * w * (i / 6), h * (0.84 + Math.sin(i * 1.9) * 0.09));
       g.closePath(); g.fill();
-      g.fillStyle = 'rgba(62,70,88,0.18)';
-      g.fillRect(x * w, h * 0.5, ww * w, h * 0.36);
+      // folds, and the shaded half where it hangs inside the rail
+      g.fillStyle = 'rgba(62,70,88,0.22)';
+      for (let i = 0; i < 4; i++) g.fillRect((x + ww * (0.18 + i * 0.2)) * w, h * 0.06, w * 0.008, h * 0.78);
+      g.fillStyle = 'rgba(62,70,88,0.16)';
+      g.fillRect(x * w, h * 0.52, ww * w, h * 0.36);
     }
   });
   // sidewalk ironwork
@@ -553,6 +598,24 @@ export function registerFacadeSprites(atlas) {
         g.beginPath(); g.arc(c * 12 + 6, r0 * 16 + 8, 4.4, 0, 7); g.fill();
       }
     }
+  });
+  // pigeons on the cornice — the block's own motion, and free period value
+  atlas.add('pigeons', 128, 48, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const put = (x, s, flip, col) => {
+      g.save(); g.translate(x, h); g.scale(flip ? -s : s, s);
+      g.fillStyle = tcCss(col);
+      g.beginPath(); g.ellipse(0, -13, 9, 7.5, -0.2, 0, 7); g.fill();       // body
+      g.beginPath(); g.ellipse(-7, -22, 4.4, 4.4, 0, 0, 7); g.fill();       // head
+      g.beginPath(); g.moveTo(6, -16); g.lineTo(17, -9); g.lineTo(5, -8); g.fill();  // tail
+      g.fillStyle = tcCss(0x8a6a54);
+      g.beginPath(); g.moveTo(-11, -22); g.lineTo(-14.5, -20.5); g.lineTo(-11, -19.5); g.fill();
+      g.fillStyle = tcCss(0x4a4038);
+      g.fillRect(-2, -6, 1.8, 6); g.fillRect(2, -6, 1.8, 6);
+      g.restore();
+    };
+    put(18, 1.0, false, 0x6b6a68); put(52, 0.92, true, 0x565550);
+    put(84, 1.05, false, 0x7a7168); put(112, 0.85, true, 0x63625e);
   });
   atlas.add('coop', 112, 56, (g, w, h) => {          // chicken wire on the pigeon loft
     g.clearRect(0, 0, w, h);
@@ -586,11 +649,12 @@ const uniqSort = (a) => [...new Set(a.map((v) => Math.round(v * 1000) / 1000))].
 function wallMul(lot, z, y, wins) {
   const lit = litOf(FACE_N[lot.front], lot.xf, y, z);
   const t = Math.min(1, lit / 0.74);
-  let k = t > 0 ? 1 + 0.40 * t : 0.90;
-  const tint = t > 0 ? [1 + 0.06 * t, 1, 1 - 0.11 * t] : [0.96, 0.985, 1.06];
+  let k = t > 0 ? 0.95 + 0.47 * t : 0.95;
+  const tint = t > 0 ? [1 + 0.085 * t, 1, 1 - 0.15 * t] : [0.945, 0.98, 1.075];
   const top = storeyTop(lot.storeys);
   const s = clamp01((y - M.ground * 0.6) / Math.max(1, top - M.ground * 0.6));
   k *= 1 - 0.42 * s * s;                                  // soot goes up; the game happens down
+  if (y > top - 3.2) k *= 1 - 0.30 * clamp01((y - (top - 3.2)) / 3.2);   // the cornice throws
   for (const w of wins) {                                 // drawn streaks below every sill
     if (w.noStreak) continue;
     if (z >= w.z0 - 0.2 && z <= w.z1 + 0.2 && y < w.y0 && y > w.y0 - 3.6) {
@@ -598,6 +662,7 @@ function wallMul(lot, z, y, wins) {
       break;
     }
   }
+  k *= lot.grime;                                         // every building weathers differently
   k *= 1 + 0.22 * clamp01((z - 80) / 240);                 // coal haze lifts the far end
   return [k * tint[0], k * tint[1], k * tint[2]];
 }
@@ -608,8 +673,10 @@ function wallGrid(B, lot, wins, yTop, yBot) {
   const rows = [yBot, yTop];
   for (const w of wins) { addSplit(cols, w.z0, z0, z1); addSplit(cols, w.z1, z0, z1); addSplit(rows, w.y0, yBot, yTop); addSplit(rows, w.y1, yBot, yTop); addSplit(rows, w.y0 - 3.6, yBot, yTop); }
   addSplit(rows, M.ground, yBot, yTop);
-  addSplit(rows, 17.55, yBot, yTop); addSplit(rows, 18.25, yBot, yTop);   // the 60ft canyon's shadow line
-  addSplit(cols, 36.5, z0, z1); addSplit(cols, 37.3, z0, z1);             // and where the taxpayer's edge cuts it
+  const SL = shadowLine(lot.xf);                                          // the canyon's own terminator
+  addSplit(rows, SL.y - 0.36, yBot, yTop); addSplit(rows, SL.y + 0.36, yBot, yTop);
+  addSplit(cols, SL.z - 0.36, z0, z1); addSplit(cols, SL.z + 0.36, z0, z1);
+  addSplit(rows, yTop - 3.2, yBot, yTop);                                 // the cornice's own shadow
   const C = uniqSort(cols), R = uniqSort(rows);
   const inWin = (za, zb, ya, yb) => wins.some((w) => za >= w.z0 - 0.01 && zb <= w.z1 + 0.01 && ya >= w.y0 - 0.01 && yb <= w.y1 + 0.01);
   for (let i = 0; i < C.length - 1; i++) {
@@ -671,20 +738,21 @@ function cornice(ctx, lot, top) {
   const o = lot.out, xf = lot.xf, z0 = lot.z0, z1 = lot.z0 + M.lot;
   const X = (d0, d1) => (o < 0 ? [xf - d1, xf - d0] : [xf + d0, xf + d1]);
   const paint = lot.corniceHex;
+  const SOOT = 0.42;                    // forty years of coal, worst right under the roofline
   const face = `${lot.front} py ny pz nz`;
   // bed mould
   let [a, b] = X(-0.05, 0.55);
-  T.box(a, top, z0, b, top + 0.42, z1, (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.5 : 0), face);
+  T.box(a, top, z0, b, top + 0.42, z1, (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), SOOT + (f === 'ny' ? 0.5 : 0)), face);
   // scrolled brackets, 6-10 across 25ft — count varies building to building
   const nb = lot.brackets;
   for (let i = 0; i < nb; i++) {
     const cz = z0 + (i + 0.5) * (M.lot / nb);
     const [ba, bb] = X(-0.05, M.corniceOut * 0.82);
     T.box(ba, top + 0.42, cz - 0.30, bb, top + M.corniceH - 0.55, cz + 0.30,
-      (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.6 : f === 'pz' || f === 'nz' ? 0.22 : 0), face);
+      (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), SOOT + (f === 'ny' ? 0.72 : f === 'pz' || f === 'nz' ? 0.3 : 0)), face);
     const [sa, sb] = X(M.corniceOut * 0.5, M.corniceOut * 0.9);
     T.box(sa, top + 0.9, cz - 0.42, sb, top + M.corniceH - 0.75, cz + 0.42,
-      (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]) * 1.1, f === 'ny' ? 0.6 : 0), face);
+      (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]) * 1.1, SOOT + (f === 'ny' ? 0.6 : 0)), face);
   }
   // dentil band
   if (lot.lod === 0) {
@@ -692,16 +760,27 @@ function cornice(ctx, lot, top) {
       const cz = z0 + (i + 0.5) * (M.lot / 24);
       const [da, db] = X(0.5, 1.05);
       T.box(da, top + M.corniceH - 0.72, cz - 0.22, db, top + M.corniceH - 0.42, cz + 0.22,
-        (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.55 : 0), face);
+        (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), SOOT + (f === 'ny' ? 0.55 : 0)), face);
     }
   }
   // the shelf: 3ft of overhang and the darkest underside on the block
   const [ca, cb] = X(-0.05, M.corniceOut);
-  T.box(ca, top + M.corniceH - 0.42, z0 - 0.12, cb, top + M.corniceH, z1 + 0.12,
-    (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.62 : 0), face);
+  T.box(ca, top + M.corniceH - 0.52, z0 - 0.12, cb, top + M.corniceH, z1 + 0.12,
+    (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), SOOT + (f === 'ny' ? 0.78 : 0)), face);
   const [ea, eb] = X(-0.05, M.corniceOut + 0.22);
   T.box(ea, top + M.corniceH, z0 - 0.16, eb, top + M.corniceH + 0.30, z1 + 0.16,
-    (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.5 : 0), face);
+    (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]), SOOT + (f === 'ny' ? 0.5 : 0)), face);
+  if (lot.pigeons) {
+    const S = ctx.b('sign');
+    const pu = ctx.atlas.get('pigeons');
+    const px = o < 0 ? X(M.corniceOut - 0.9, M.corniceOut)[0] : X(M.corniceOut - 0.9, M.corniceOut)[1];
+    const py0 = top + M.corniceH + 0.30, py1 = py0 + 1.55;
+    const pz0 = z0 + M.lot * 0.24, pz1 = pz0 + 4.1;
+    const P = o < 0
+      ? [[px, py0, pz0], [px, py0, pz1], [px, py1, pz1], [px, py1, pz0]]
+      : [[px, py0, pz1], [px, py0, pz0], [px, py1, pz0], [px, py1, pz1]];
+    S.quad(P[0], P[1], P[2], P[3], texTint(litOf([o, 0, 0], lot.xf, py0, pz0)), rectUV(pu), [o, 0, 0]);
+  }
   // parapet behind it, brick, with a stone coping
   const [pa, pb] = X(-0.05, 0.75);
   W.box(pa, top + M.corniceH, z0, pb, top + M.corniceH + M.parapet, z1,
@@ -723,7 +802,7 @@ function fireEscape(ctx, lot) {
   const bz0 = cz - 4.0, bz1 = cz + 4.0;
   const X = (d0, d1) => (o < 0 ? [xf - d1, xf - d0] : [xf + d0, xf + d1]);
   const iron = lot.ironHex;
-  const col = (f, n, c) => shadeLin(iron, litOf(n, c[0], c[1], c[2]) * 0.85, f === 'ny' ? 0.3 : 0);
+  const col = (f, n, c) => shadeLin(iron, litOf(n, c[0], c[1], c[2]) * 0.55, f === 'ny' ? 0.34 : 0.12);
   const deck = 3.1;
   const levels = [];
   for (let f = 1; f < lot.storeys; f++) levels.push(M.ground + (f - 1) * M.floor + 1.85);
@@ -732,11 +811,25 @@ function fireEscape(ctx, lot) {
     const [xa, xb] = X(0.05, deck);
     // grating deck, so light passes through and it reads as lace
     const gu = rectUV(A.get('grate'));
-    const lit = texTint(0.34), dark = texTint(0, 0.32);
+    const lit = texTint(0.12, 0.22), dark = texTint(0, 0.40);
     for (let s = 0; s < 4; s++) {
       const za = bz0 + (bz1 - bz0) * (s / 4), zb = bz0 + (bz1 - bz0) * ((s + 1) / 4);
       S.quad([xa, y, za], [xb, y, za], [xb, y, zb], [xa, y, zb], lit, gu, [0, 1, 0]);
       S.quad([xa, y - 0.02, zb], [xb, y - 0.02, zb], [xb, y - 0.02, za], [xa, y - 0.02, za], dark, gu, [0, -1, 0]);
+    }
+    // the striped shadow the grating throws on the brick below it — drawn, never filtered
+    {
+      const sy = y - 1.30, sz = 0.95;
+      if (litOf([o, 0, 0], xf, sy - 1, bz0) > 0.1) {
+        const gs = A.get('bars');
+        const uvR = [[gs.u0, gs.v1], [gs.u0, gs.v0], [gs.u1, gs.v0], [gs.u1, gs.v1]];
+        const sx = xf + o * 0.04;
+        const shadow = scaleLin(shadeLin(lot.brickHex, 0.30), 0.72);
+        const P2 = o < 0
+          ? [[sx, sy - 2.2, bz0 + sz], [sx, sy - 2.2, bz1 + sz], [sx, sy, bz1 + sz], [sx, sy, bz0 + sz]]
+          : [[sx, sy - 2.2, bz1 + sz], [sx, sy - 2.2, bz0 + sz], [sx, sy, bz0 + sz], [sx, sy, bz1 + sz]];
+        S.quad(P2[0], P2[1], P2[2], P2[3], shadow, uvR, [o, 0, 0]);
+      }
     }
     // stringers and the outer beam
     T.box(xa, y - 0.30, bz0, xb, y - 0.02, bz0 + 0.16, col, 'px nx py ny pz nz');
@@ -778,8 +871,8 @@ function fireEscape(ctx, lot) {
       const [la, lb] = X(deck - 0.12, deck - 0.06);
       const x = o < 0 ? la : lb;
       const P = o < 0
-        ? [[x, y + 0.1, bz0 + 0.6], [x, y + 0.1, bz1 - 0.6], [x, y + 2.9, bz1 - 0.6], [x, y + 2.9, bz0 + 0.6]]
-        : [[x, y + 0.1, bz1 - 0.6], [x, y + 0.1, bz0 + 0.6], [x, y + 2.9, bz0 + 0.6], [x, y + 2.9, bz1 - 0.6]];
+        ? [[x, y + 0.55, bz0 + 1.4], [x, y + 0.55, bz1 - 1.4], [x, y + 2.55, bz1 - 1.4], [x, y + 2.55, bz0 + 1.4]]
+        : [[x, y + 0.55, bz1 - 1.4], [x, y + 0.55, bz0 + 1.4], [x, y + 2.55, bz0 + 1.4], [x, y + 2.55, bz1 - 1.4]];
       S.quad(P[0], P[1], P[2], P[3], texTint(litOf([o, 0, 0], xf, y + 1.5, cz)), rectUV(lu), [o, 0, 0]);
     }
     if (lot.escapeProps && idx === lot.escapeProps.crate) {
@@ -827,7 +920,7 @@ function stoop(ctx, lot) {
   const o = lot.out, xf = lot.xf;
   const X = (d0, d1) => (o < 0 ? [xf - d1, xf - d0] : [xf + d0, xf + d1]);
   const cz = lot.z0 + M.lot * lot.stoopAt;
-  const halfW = 2.75, cheek = 0.62;
+  const halfW = 2.75, cheek = 0.52;
   const risers = 7, rise = 0.68, tread = 0.85;
   const y0 = M.walkY;
   const parlour = y0 + risers * rise;
@@ -839,32 +932,35 @@ function stoop(ctx, lot) {
     const az0 = sgn < 0 ? lot.z0 + 0.4 : cz + halfW + cheek;
     const az1 = sgn < 0 ? cz - halfW - cheek : lot.z0 + M.lot - 0.4;
     if (az1 - az0 < 1) continue;
-    const [wa, wb] = X(0, 4.2);
-    T.box(wa, -3.9, az0, wb, -3.6, az1, () => shadeLin(0x8e877a, 0, 0.34), 'py');   // areaway floor
-    W.box(wa, -3.6, az0, wb, y0, az1,                                               // wall below grade
-      (f, n, c) => (f === lot.front ? [0.62, 0.6, 0.6] : [0.5, 0.5, 0.53]), `${lot.front}`, 8);
-    for (const ez of [az0, az1 - 0.25]) {                                            // the dividing walls
-      T.box(wa, -3.6, ez, wb, y0, ez + 0.25, () => shadeLin(stone, 0, 0.42), 'px nx pz nz py');
+    // The well is dug inside the building line: the sidewalk out front belongs to another
+    // piece and is a solid plane, so a pit on it would simply be roofed over.
+    const IN = (d0, d1) => (o < 0 ? [xf + d0, xf + d1] : [xf - d1, xf - d0]);
+    const [wa, wb] = IN(0, 4.4);
+    T.box(wa, -4.2, az0, wb, -3.9, az1, () => shadeLin(0x8e877a, 0, 0.30), 'py');    // areaway floor
+    const [ba, bb] = IN(4.15, 4.4);                                                  // the wall below grade
+    W.box(ba, -3.9, az0, bb, y0 + 1.2, az1, () => [0.66, 0.64, 0.64], `${lot.front}`, 8);
+    for (const ez of [az0, az1 - 0.3]) {                                             // dividing walls
+      T.box(wa, -3.9, ez, wb, y0, ez + 0.3, () => shadeLin(stone, 0, 0.38), 'px nx pz nz py');
     }
-    const [oa, ob] = X(3.95, 4.2);                                                   // street-side retaining wall
-    T.box(oa, -3.6, az0, ob, y0, az1, () => shadeLin(stone, 0, 0.30), 'px nx py');
-    const [ra, rb] = X(4.0, 4.3);
+    if (sgn > 0 && lot.basement) {                                                   // a basement shop
+      const bx = o < 0 ? xf + 4.1 : xf - 4.1;
+      const dz = (az0 + az1) / 2;
+      const P = o < 0
+        ? [[bx, -3.9, dz - 1.6], [bx, -3.9, dz + 1.6], [bx, 2.4, dz + 1.6], [bx, 2.4, dz - 1.6]]
+        : [[bx, -3.9, dz + 1.6], [bx, -3.9, dz - 1.6], [bx, 2.4, dz - 1.6], [bx, 2.4, dz + 1.6]];
+      S.quad(P[0], P[1], P[2], P[3], texTint(0, 0.26), rectUV(ctx.atlas.get(`glass:${lot.basement}`)), [o, 0, 0]);
+      for (let i = 0; i < 4; i++) {                                                  // steps down under the stoop
+        const [sa, sb] = IN(0.4 + i * 0.9, 4.4);
+        T.box(sa, -3.9 + i * 1.1, dz - 1.8, sb, -3.9 + (i + 1) * 1.1, dz + 1.8, scol, `${lot.front} py`);
+      }
+    }
+    const [ra, rb] = X(-0.15, 0.25);                                                 // low stone curb at the line
     T.box(ra, y0, az0, rb, y0 + 0.42, az1, scol, `${lot.front} py pz nz`);
     // railing: 5/8in bars at 5in centres, 34in tall
     const rc = (f, n, c) => shadeLin(lot.ironHex, litOf(n, c[0], c[1], c[2]) * 0.8, 0.1);
     T.box(ra + 0.05, y0 + 2.9, az0, rb - 0.05, y0 + 3.05, az1, rc, 'px nx py ny pz nz');
     for (let z = az0 + 0.25; z < az1; z += 0.44) {
       T.box(ra + 0.07, y0 + 0.42, z - 0.035, rb - 0.07, y0 + 2.9, z + 0.035, rc, 'px nx pz nz');
-    }
-    // basement shop door under the sidewalk line, three feet down
-    if (sgn > 0 && lot.basement) {
-      const [ba, bb] = X(0.05, 0.12);
-      const x = o < 0 ? ba : bb;
-      const dz = (az0 + az1) / 2;
-      const P = o < 0
-        ? [[x, -3.4, dz - 1.4], [x, -3.4, dz + 1.4], [x, 3.0, dz + 1.4], [x, 3.0, dz - 1.4]]
-        : [[x, -3.4, dz + 1.4], [x, -3.4, dz - 1.4], [x, 3.0, dz - 1.4], [x, 3.0, dz + 1.4]];
-      S.quad(P[0], P[1], P[2], P[3], texTint(0, 0.30), rectUV(ctx.atlas.get(`glass:${lot.basement}`)), [o, 0, 0]);
     }
   }
 
@@ -878,7 +974,7 @@ function stoop(ctx, lot) {
     const z = cz + sgn * (halfW + cheek / 2);
     for (let i = 0; i < risers; i++) {
       const [xa, xb] = X(0, (risers - i) * tread);
-      T.box(xa, y0, z - cheek / 2, xb, y0 + (i + 1) * rise + 0.5, z + cheek / 2, scol, `${lot.front} py pz nz`);
+      T.box(xa, y0, z - cheek / 2, xb, y0 + (i + 1) * rise + 0.34, z + cheek / 2, scol, `${lot.front} py pz nz`);
     }
     // iron rail following the slope
     const rc = (f, n, c) => shadeLin(lot.ironHex, litOf(n, c[0], c[1], c[2]) * 0.8, 0.1);
@@ -896,6 +992,14 @@ function stoop(ctx, lot) {
   const [da, db] = X(0.02, 0.36);
   T.box(da, parlour, cz - halfW + 0.1, db, parlour + 7.6, cz + halfW - 0.1,
     (f, n, c) => shadeLin(lot.doorHex, litOf(n, c[0], c[1], c[2]) * 0.5, 0.28), `${lot.front} py pz nz`);
+  for (const dz of [-1, 1]) {                       // raised panels and a glass light in each leaf
+    for (const [pa, pb] of [[0.55, 3.0], [3.5, 5.4]]) {
+      T.box(da + o * 0.08, parlour + pa, cz + dz * 0.35 - 0.95, db + o * 0.08, parlour + pb, cz + dz * 0.35 + 0.95,
+        (f, n, c) => shadeLin(lot.doorHex, 0, f === lot.front ? 0.16 : 0.42), `${lot.front} py ny pz nz`);
+    }
+    T.box(da + o * 0.06, parlour + 5.8, cz + dz * 0.35 - 0.9, db + o * 0.06, parlour + 7.1, cz + dz * 0.35 + 0.9,
+      (f, n, c) => shadeLin(0x53565a, 0, 0.1), `${lot.front}`);
+  }
   T.box(da - o * 0.06, parlour + 0.4, cz - 0.06, db - o * 0.06, parlour + 7.2, cz + 0.06,
     (f, n, c) => shadeLin(lot.doorHex, 0, 0.42), `${lot.front}`);
   const [ta, tb] = X(0.02, 0.2);
@@ -921,20 +1025,25 @@ function roofFurniture(ctx, lot, top) {
   // flat tar roof
   const [ra, rb] = inX(0, M.depth);
   T.box(ra, roofY - 0.2, lot.z0, rb, roofY, lot.z0 + M.lot, (f, n, c) => shadeLin(0x5a4e46, 0.30), 'py');
-  // chimney at the party wall, with pots
+  // chimney at the party wall, standing clear of the parapet, crowned with terracotta pots.
+  // A cluster of pots against the sky is the strongest 1920s city silhouette there is.
+  const parapetTop = top + M.corniceH + M.parapet;
   for (const cz of lot.chimneys) {
-    const [ca, cb] = inX(3, 5.6);
+    const [ca, cb] = inX(2.2, 5.4);
     const z = lot.z0 + cz * M.lot;
-    W.box(ca, roofY, z - 1.4, cb, roofY + lot.chimneyH, z + 1.4,
-      (f, n, c) => [0.72, 0.7, 0.68], `px nx py pz nz`, 8);
-    T.box(ca - 0.12, roofY + lot.chimneyH, z - 1.52, cb + 0.12, roofY + lot.chimneyH + 0.3, z + 1.52,
-      (f, n, c) => shadeLin(lot.stoneHex, litOf(n, c[0], c[1], c[2])), 'px nx py pz nz');
-    const n = lot.pots;
-    for (let i = 0; i < n; i++) {
-      const px = (ca + cb) / 2 + (i % 2 ? 0.75 : -0.75);
-      const pz = z - 0.7 + Math.floor(i / 2) * 0.9;
-      T.cyl(px, pz, 0.42, roofY + lot.chimneyH + 0.3, roofY + lot.chimneyH + 2.1 + (i % 3) * 0.35, 7,
+    const capY = parapetTop + lot.chimneyH;
+    W.box(ca, roofY, z - 1.5, cb, capY, z + 1.5,
+      (f, n, c) => (f === 'py' ? [0.6, 0.58, 0.57] : litOf(n, c[0], c[1], c[2]) > 0.3 ? [1.24, 1.2, 1.06] : [0.86, 0.87, 0.92]),
+      `px nx py pz nz`, 8);
+    T.box(ca - 0.14, capY, z - 1.64, cb + 0.14, capY + 0.34, z + 1.64,
+      (f, n, c) => shadeLin(lot.stoneHex, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.4 : 0), 'px nx py pz nz');
+    for (let i = 0; i < lot.pots; i++) {
+      const px = (ca + cb) / 2 + (i % 2 ? 0.8 : -0.8);
+      const pz = z - 0.75 + Math.floor(i / 2) * 0.9;
+      T.cyl(px, pz, 0.44, capY + 0.34, capY + 2.0 + (i % 3) * 0.42, 7,
         (n2, c) => shadeLin(0xb8724a, litOf(n2, c[0], c[1], c[2])));
+      T.cyl(px, pz, 0.30, capY + 2.0 + (i % 3) * 0.42, capY + 2.14 + (i % 3) * 0.42, 7,
+        (n2, c) => shadeLin(0x6b4235, 0, 0.2));
     }
   }
   // roof-stair bulkhead

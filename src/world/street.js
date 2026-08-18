@@ -3,7 +3,7 @@ import { registerSystem } from '../app.js';
 import { T } from '../core/tuning.js';
 import { RNG } from '../core/rng.js';
 import { registerScenario } from '../core/scenarios.js';
-import { PAVEMENT, FACADE, AIR, CHALK, INK } from '../render/palette.js';
+import { PAVEMENT, FACADE, AIR, CHALK, INK, soot } from '../render/palette.js';
 import {
   M, Builder, Atlas, setTone, tc, tcCss, hexToLin, linToCss, scaleLin, mixLin,
   shadeLin, texTint, litOf, occlusion, rectUV, panel, storeyTop, buildingTop, FACE_N,
@@ -39,8 +39,6 @@ const NORTH = [
   { st: 6, brick: 'red', shop: 'fivedime', fe: 1, coop: 1 },
   { st: 4, brick: 'ochre', stoop: 1, alley: 1, bills: 'bills' },
   { st: 6, brick: 'red', shop: 'lunch', fe: 1, ghost: 'uneeda', tank: 1 },
-  { st: 5, brick: 'red', stoop: 1, fe: 1 },
-  { st: 6, brick: 'ochre', shop: 'ice', fe: 1, tank: 1 },
 ];
 const SOUTH = [
   { st: 6, brick: 'red', shop: 'deli', fe: 1, ghost: 'goldDust', tank: 1 },
@@ -50,8 +48,7 @@ const SOUTH = [
   { st: 5, brick: 'ochre', shop: 'laundry', fe: 1 },
   { st: 6, brick: 'red', stoop: 1, fe: 1, tank: 1 },
   { st: 4, brick: 'ochre', shop: 'shoe' },
-  { st: 6, brick: 'red', shop: 'fish', fe: 1, ghost: 'castoria', tank: 1 },
-  { st: 5, brick: 'red', stoop: 1, fe: 1 },
+  { st: 6, brick: 'red', shop: 'ice', fe: 1, ghost: 'castoria', tank: 1 },
 ];
 const NORTH_Z0 = -15, SOUTH_Z0 = 5;
 const TAX = { z0: -46, z1: 5, h: 16 };     // the corner taxpayer, DESIGN-BIBLE §3.2
@@ -83,9 +80,9 @@ function makeLots() {
         brickKey: spec.brick === 'ochre' ? 'wallOchre' : 'wallRed',
         brickHex: BRICKS[spec.brick],
         ci, si, ii,
-        corniceHex: CORNICE[ci], sashHex: SASH[si], ironHex: IRON[ii],
-        stoneHex: r.chance(0.5) ? 0x9a8f7e : 0x8e8579,
-        lintelHex: r.chance(0.35) ? CORNICE[ci] : 0x8e8579,
+        corniceHex: soot(CORNICE[ci], 0.22), sashHex: SASH[si], ironHex: IRON[ii],
+        stoneHex: r.chance(0.5) ? 0x8a6a54 : 0x9a9184,
+        lintelHex: r.chance(0.4) ? CORNICE[ci] : (r.chance(0.5) ? 0x7d5a44 : 0x8a7f70),
         doorHex: [0x5a2a24, 0x2e4034, 0x3a2f28][r.int(0, 2)],
         bulkhead: [0x2e4034, 0x5a2a24, 0x332f2c][r.int(0, 2)],
         ground: spec.shop ? 'store' : 'stoop',
@@ -94,9 +91,11 @@ function makeLots() {
         fireEscape: !!spec.fe,
         stoopAt: 0.5 + r.range(-0.06, 0.06),
         brackets: r.int(6, 9),
-        chimneys: [0.04, 0.96], chimneyH: 3.4 + r.range(0, 2.2), pots: r.int(3, 6),
+        grime: 0.88 + r.range(0, 0.18),
+        chimneys: [0.05, 0.95], chimneyH: 2.6 + r.range(0, 2.6), pots: r.int(3, 6),
         tank: !!spec.tank, tankZ: r.range(-4, 4),
         coop: !!spec.coop,
+        pigeons: (spec.st === 6 || !!spec.coop),
         ghost: spec.ghost || null,
         bills: spec.bills || null,
         alley: !!spec.alley,
@@ -118,7 +117,7 @@ function makeLots() {
     const top = buildingTop(lot.storeys);
     if (wTop != null && top - wTop > 4) lot.exposedFrom = wTop;
     else { lot.ghost = null; lot.bills = null; }
-    lot.lod = lot.z0 > 130 ? 1 : 0;
+    lot.lod = 0;   // the whole block ships in six draw calls, so nothing is worth cutting
   }
   return lots;
 }
@@ -201,9 +200,9 @@ function alleyArch(ctx, lot) {
 
 // ─── the system ───────────────────────────────────────────────────────────────
 const TOUR = {
-  pos: [[19, 30, -42], [12, 17, 14], [-13, 21, 78], [-4, 15, 146], [0, 13, 196]],
-  look: [[2, 17, 62], [-4, 14, 108], [27, 26, 150], [8, 26, 232], [0, 24, 262]],
-  time: 13,
+  pos: [[7, 32, -58], [13, 19, -2], [-16, 25, 54], [-6, 16, 112], [3, 13, 158]],
+  look: [[1, 22, 96], [-8, 15, 84], [32, 28, 114], [10, 24, 182], [0, 22, 212]],
+  time: 14,
 };
 const DEFAULT_CAM = { pos: [0, 12, -34], look: [0, 4, 30] };
 
@@ -322,8 +321,8 @@ registerScenario('facade_detail', {
   seed: 1925,
   setup: ({ app }) => {
     app.sim.reset(1925);
-    app.camera.position.set(-15.5, 25.5, 44);
-    app.camera.lookAt(30, 28, 104);
+    app.camera.position.set(-21, 21, 12);
+    app.camera.lookAt(32, 29, 96);
   },
   settle: 0.4,
 });

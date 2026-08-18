@@ -93,59 +93,59 @@ function centred(g, o, W) {
 // name, the lines on the sign band, the awning colours, and the gold leaf on the glass.
 export const SHOPS = {
   grocer: {
-    band: { bg: 0x2e4034, lines: [['GRISTEDE BROS.', 1.0, 0xe6c96a], ['FANCY GROCERIES', 0.42, 0xf0e6cf]] },
+    band: { bg: 0x2e4034, lines: [['GRISTEDE BROS.', 1.0, 0xe6c96a], ['FANCY GROCERIES', 0.42, 0xe6dbc0]] },
     glass: [['GROCERIES', 0.5], ['FRUIT · VEGETABLES', 0.3]],
-    awning: [0x2f7f63, 0xefe6d2], goods: 'produce', tile: 'G',
+    awning: [0x2f7f63, 0xddd2b8], goods: 'produce', tile: 'G',
   },
   barber: {
-    band: { bg: 0x5a2a24, lines: [['BARBER SHOP', 1.0, 0xf0e6cf], ['HAIR CUT 25¢ · SHAVE 15¢', 0.36, 0xe6c96a]] },
+    band: { bg: 0x5a2a24, lines: [['BARBER SHOP', 1.0, 0xe6dbc0], ['HAIR CUT 25¢ · SHAVE 15¢', 0.36, 0xe6c96a]] },
     glass: [['SHAVE 15¢', 0.46], ['CHILDREN 15¢', 0.3]],
-    awning: [0xb03a5e, 0xefe6d2], goods: 'none', pole: true, tile: 'B',
+    awning: [0xb03a5e, 0xddd2b8], goods: 'none', pole: true, tile: 'B',
   },
   tailor: {
-    band: { bg: 0x332f2c, lines: [['S. LEVINE · TAILOR', 0.86, 0xe6c96a], ['CLEANING · PRESSING · DYEING', 0.34, 0xf0e6cf]] },
+    band: { bg: 0x332f2c, lines: [['S. LEVINE · TAILOR', 0.86, 0xe6c96a], ['CLEANING · PRESSING · DYEING', 0.34, 0xe6dbc0]] },
     glass: [['SUITS PRESSED 50¢', 0.4], ['REPAIRING', 0.3]],
     awning: null, goods: 'none', tile: 'L',
   },
   cigar: {
-    band: { bg: 0x7b1f1f, lines: [['UNITED CIGAR STORES', 0.8, 0xe6c96a], ['CIGARS · CIGARETTES · CANDY · SODA', 0.34, 0xf0e6cf]] },
+    band: { bg: 0x7b1f1f, lines: [['UNITED CIGAR STORES', 0.8, 0xe6c96a], ['CIGARS · CIGARETTES · CANDY · SODA', 0.34, 0xe6dbc0]] },
     glass: [['ICE CREAM SODA 5¢', 0.42], ['EGG CREAM 3¢', 0.3]],
-    awning: [0xc8a23a, 0xefe6d2], goods: 'papers', tile: 'C',
+    awning: [0xc8a23a, 0xddd2b8], goods: 'papers', tile: 'C',
   },
   deli: {
-    band: { bg: 0x2f5f3f, lines: [['SALUMERIA', 1.0, 0xf0e6cf], ['LATTICINI FRESCHI · OLIO D’OLIVA', 0.32, 0xe6c96a]] },
+    band: { bg: 0x2f5f3f, lines: [['SALUMERIA', 1.0, 0xe6dbc0], ['LATTICINI FRESCHI · OLIO D’OLIVA', 0.32, 0xe6c96a]] },
     glass: [['PANE FRESCO', 0.42], ['OGNI GIORNO', 0.3]],
-    awning: [0x8a2f2f, 0xefe6d2], goods: 'produce', tile: 'S',
+    awning: [0x8a2f2f, 0xddd2b8], goods: 'produce', tile: 'S',
   },
   shoe: {
-    band: { bg: 0x3a3020, lines: [['SHOE REPAIRING WHILE U WAIT', 0.66, 0xf0e6cf], ['HEELS 40¢ · SOLES 75¢', 0.4, 0xe0a62b]] },
+    band: { bg: 0x3a3020, lines: [['SHOE REPAIRING WHILE U WAIT', 0.66, 0xe6dbc0], ['HEELS 40¢ · SOLES 75¢', 0.4, 0xe0a62b]] },
     glass: [['SHINE 10¢', 0.5]],
     awning: null, goods: 'none', tile: 'R',
   },
   fivedime: {
-    band: { bg: 0x9c2a22, lines: [['F. W. WOOLWORTH CO.', 0.78, 0xe6c96a], ['5¢ AND 10¢ STORE', 0.46, 0xf0e6cf]] },
+    band: { bg: 0x9c2a22, lines: [['F. W. WOOLWORTH CO.', 0.78, 0xe6c96a], ['5¢ AND 10¢ STORE', 0.46, 0xe6dbc0]] },
     glass: [['NOTHING OVER 10¢', 0.36]],
-    awning: [0x8a6a2a, 0xefe6d2], goods: 'crates', tile: 'W',
+    awning: [0x8a6a2a, 0xddd2b8], goods: 'crates', tile: 'W',
   },
   lunch: {
-    band: { bg: 0x24384c, lines: [['LUNCH ROOM', 1.0, 0xf0e6cf], ['REGULAR DINNER 35¢ · COFFEE 5¢', 0.32, 0xe6c96a]] },
+    band: { bg: 0x24384c, lines: [['LUNCH ROOM', 1.0, 0xe6dbc0], ['REGULAR DINNER 35¢ · COFFEE 5¢', 0.32, 0xe6c96a]] },
     glass: [['SODA · CIGARS', 0.4], ['OPEN ALL NIGHT', 0.28]],
-    awning: [0x3b5ea0, 0xefe6d2], goods: 'none', tile: 'N',
+    awning: [0x3b5ea0, 0xddd2b8], goods: 'none', tile: 'N',
   },
   laundry: {
-    band: { bg: 0x1f4038, lines: [['HAND LAUNDRY', 0.92, 0xf0e6cf], ['SHIRTS 8¢ · COLLARS 3¢', 0.36, 0xe6c96a]] },
+    band: { bg: 0x1f4038, lines: [['HAND LAUNDRY', 0.92, 0xe6dbc0], ['SHIRTS 8¢ · COLLARS 3¢', 0.36, 0xe6c96a]] },
     glass: [['洗衣', 0.6, 'cjk'], ['SHIRTS 8¢', 0.3]],
     awning: null, goods: 'none', tile: 'H',
   },
   ice: {
-    band: { bg: 0x3d4a52, lines: [['COAL · WOOD · ICE', 0.9, 0xf0e6cf], ['DELIVERED TO ALL FLOORS', 0.34, 0xe6c96a]] },
+    band: { bg: 0x3d4a52, lines: [['COAL · WOOD · ICE', 0.9, 0xe6dbc0], ['DELIVERED TO ALL FLOORS', 0.34, 0xe6c96a]] },
     glass: [['ICE 10¢', 0.5]],
     awning: null, goods: 'crates', tile: 'I',
   },
   fish: {
-    band: { bg: 0x2b4a5e, lines: [['FISH MARKET', 1.0, 0xf0e6cf], ['CARP · WHITEFISH · PIKE', 0.34, 0xe6c96a]] },
+    band: { bg: 0x2b4a5e, lines: [['FISH MARKET', 1.0, 0xe6dbc0], ['CARP · WHITEFISH · PIKE', 0.34, 0xe6c96a]] },
     glass: [['FRESH DAILY', 0.44]],
-    awning: [0x2e6e6e, 0xefe6d2], goods: 'crates', tile: 'F',
+    awning: [0x2e6e6e, 0xddd2b8], goods: 'crates', tile: 'F',
   },
 };
 
@@ -409,8 +409,8 @@ function drawTransom(g, w, h, seed) {
 }
 
 const ROOF_SIGNS = [
-  { lines: [['ROOMS TO LET', 1.0, 0xf0e6cf], ['INQUIRE WITHIN', 0.4, 0xe6c96a]], bg: 0x3a3228 },
-  { lines: [['MOXIE', 1.0, 0xe87a2a], ['DRINK IT', 0.4, 0xf0e6cf]], bg: 0x1f3a6e },
+  { lines: [['ROOMS TO LET', 1.0, 0xe6dbc0], ['INQUIRE WITHIN', 0.4, 0xe6c96a]], bg: 0x3a3228 },
+  { lines: [['MOXIE', 1.0, 0xe87a2a], ['DRINK IT', 0.4, 0xe6dbc0]], bg: 0x1f3a6e },
 ];
 
 /** Draw every lettered thing into the shared atlas. Called once, at init. */
@@ -432,20 +432,20 @@ export function registerSignSprites(atlas, plan) {
   const walls = {
     uneeda: {
       ftH: 24, ground: 0xb8a88e,
-      lines: [['UNEEDA', 1.0, 0xf0e6cf], ['BISCUIT', 0.8, 0xf0e6cf], ['5¢', 0.62, 0xe0a62b]],
+      lines: [['UNEEDA', 1.0, 0xe6dbc0], ['BISCUIT', 0.8, 0xe6dbc0], ['5¢', 0.62, 0xe0a62b]],
       outline: 0x1f2f52, shadow: 0x1f2f52,
       faded: [['OMEGA OIL', 0.10], ['IT’S GREEN', 0.07]], fadedColour: 0x3f7a4a,
       ghost: 'SAPOLIO',
     },
     goldDust: {
       ftH: 22, ground: 0xb2a48c,
-      lines: [['GOLD DUST', 1.0, 0xe0a62b], ['WASHING POWDER', 0.42, 0xf0e6cf]],
+      lines: [['GOLD DUST', 1.0, 0xe0a62b], ['WASHING POWDER', 0.42, 0xe6dbc0]],
       outline: 0x2a1d1a, faded: [['BULL DURHAM', 0.09]], fadedColour: 0x8a6a54,
       ghost: 'RUPPERT',
     },
     castoria: {
       ftH: 20, ground: 0xbaa88c,
-      lines: [['FLETCHER’S', 0.62, 0xf0e6cf], ['CASTORIA', 1.0, 0xf0e6cf], ['CHILDREN CRY FOR IT', 0.30, 0xe0a62b]],
+      lines: [['FLETCHER’S', 0.62, 0xe6dbc0], ['CASTORIA', 1.0, 0xe6dbc0], ['CHILDREN CRY FOR IT', 0.30, 0xe0a62b]],
       outline: 0x6b2020, shadow: 0x6b2020, ghost: 'SAPOLIO',
     },
   };
@@ -597,7 +597,7 @@ export function buildStorefront(ctx, lot) {
   }
 
   // the barber's pole: the one turned object on the block
-  if (shop.pole) {
+  if (shop.pole && lot.pole) {
     const [px0, px1] = X(0.8, 1.3);
     const cx = (px0 + px1) / 2, pz = z0 + 2.1;
     T.cyl(cx, pz, 0.24, y0 + 3.0, y0 + 6.5, 8, (n, c) => shadeLin(0xefe6d2, litOf(n, c[0], c[1], c[2])));

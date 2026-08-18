@@ -13,12 +13,12 @@ import { M, Builder, tcCss, hexToLin, linToCss, scaleLin, shadeLin, texTint, lit
  * 1925 you do not see a skyline, you see the El.
  */
 export const EL = {
-  nearCol: 254, farCol: 296,     // the two column lines, at the avenue's curbs
+  nearCol: 208, farCol: 246,     // the two column lines, at the avenue's curbs
   deckY: 22.5,                   // underside — a low ceiling
   railY: 26.6,
   bay: 46,                       // longitudinal column spacing
-  avenueNear: 236, avenueFar: 337,
-  farRow: 337,                   // the frontage that closes the view
+  avenueNear: 190, avenueFar: 286,
+  farRow: 286,                   // the frontage that closes the view
 };
 
 export function registerElSprites(atlas) {
@@ -28,27 +28,27 @@ export function registerElSprites(atlas) {
   atlas.add('lattice', 48, 96, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     g.strokeStyle = tcCss(0x4a4440);
-    g.lineWidth = 6;
-    for (let i = -1; i < 5; i++) {
-      g.beginPath(); g.moveTo(0, i * 32); g.lineTo(w, i * 32 + 32); g.stroke();
-      g.beginPath(); g.moveTo(w, i * 32); g.lineTo(0, i * 32 + 32); g.stroke();
+    g.lineWidth = w * 0.11;
+    const band = h / 3;
+    for (let i = -1; i < 4; i++) {
+      g.beginPath(); g.moveTo(0, i * band); g.lineTo(w, (i + 1) * band); g.stroke();
+      g.beginPath(); g.moveTo(w, i * band); g.lineTo(0, (i + 1) * band); g.stroke();
     }
     g.fillStyle = tcCss(0x4a4440);
-    g.fillRect(0, 0, 7, h); g.fillRect(w - 7, 0, 7, h);
+    g.fillRect(0, 0, w * 0.13, h); g.fillRect(w * 0.87, 0, w * 0.13, h);
   });
   // the side of an El car: windows lit against the gloom under the deck
   atlas.add('elcar', 448, 84, (g, w, h) => {
     g.fillStyle = tcCss(0x2f3a34); g.fillRect(0, 0, w, h);
     g.fillStyle = tcCss(0x243029); g.fillRect(0, h * 0.72, w, h * 0.28);
     g.fillStyle = tcCss(0x3a4740); g.fillRect(0, 0, w, h * 0.1);
+    const pitch = w / 9.4;
     for (let i = 0; i < 9; i++) {
-      const x = 24 + i * 54;
+      const x = w * 0.03 + i * pitch;
       g.fillStyle = tcCss(0xe8d9a8);
-      g.fillRect(x, h * 0.22, 34, h * 0.40);
+      g.fillRect(x, h * 0.22, pitch * 0.62, h * 0.40);
       g.fillStyle = tcCss(0x6b5a44);
-      g.fillRect(x + 6, h * 0.28, 22, h * 0.22);            // a passenger, in silhouette
-      g.fillStyle = tcCss(0x2f3a34);
-      g.fillRect(x - 4, h * 0.22, 4, h * 0.40);
+      g.fillRect(x + pitch * 0.12, h * 0.28, pitch * 0.4, h * 0.22);   // a passenger, in silhouette
     }
     g.fillStyle = tcCss(0xe0d0a0);
     g.fillRect(w * 0.42, h * 0.06, w * 0.16, h * 0.09);
@@ -56,17 +56,19 @@ export function registerElSprites(atlas) {
   // a distant avenue facade: windows painted in, because at 350ft that is all a window is
   atlas.add('farwall', 112, 224, (g, w, h) => {
     const r = new RNG(88);
+    const cols = 4, rows = 8;
+    const cw = w / cols, ch = h / rows;
     g.fillStyle = tcCss(0x8a4a3a); g.fillRect(0, 0, w, h);
-    for (let row = 0; row < 9; row++) {
-      for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
         const lit = r.chance(0.18);
         g.fillStyle = tcCss(lit ? 0xc9b48b : 0x53483f);
-        g.fillRect(10 + col * 30, 14 + row * 26, 15, 18);
+        g.fillRect(col * cw + cw * 0.28, row * ch + ch * 0.36, cw * 0.44, ch * 0.5);
         g.fillStyle = tcCss(0x6b6259);
-        g.fillRect(8 + col * 30, 10 + row * 26, 19, 4);
+        g.fillRect(col * cw + cw * 0.22, row * ch + ch * 0.26, cw * 0.56, ch * 0.11);
       }
     }
-    g.fillStyle = tcCss(0x6b4235); g.fillRect(0, 0, w, 10);
+    g.fillStyle = tcCss(0x6b4235); g.fillRect(0, 0, w, h * 0.04);
   });
 }
 
@@ -138,31 +140,39 @@ export function buildElevated(ctx) {
     for (let x = -186; x < 186; x += 7) T.box(x, EL.railY, z - 0.09, x + 0.18, EL.railY + 1.8, z + 0.09, iron, 'px nx pz nz');
   }
 
-  // the avenue frontage that closes the view: a wall of building, hazed and stepped
+  // the avenue frontage that closes the view: a wall of building, hazed and stepped.
+  // Kept low and irregular — from a tenement cross street in 1925 the view ends in the El
+  // and the sky, never in a skyline.
   let x = -190;
   let i = 0;
   while (x < 190) {
-    const w = 22 + r.range(0, 16);
-    const h = 42 + r.range(0, 34) + (Math.abs(x) < 40 ? 22 : 0);
+    const w = 19 + r.range(0, 13);
+    const h = 30 + r.range(0, 15) + Math.max(0, 16 - Math.abs(x) * 0.15);
     const d = 30;
     const brick = r.chance(0.3) ? 0xc8924e : 0x8a4a3a;
     W.box(x, 0, EL.farRow, x + w - 1.2, h, EL.farRow + d,
       (f, n, c) => {
-        const k = f === 'nz' ? 1.0 : 0.82;
-        return [k, k, k];
+        const k = f === 'nz' ? 0.88 : 0.72;
+        return [k, k * 0.99, k * 1.02];
       }, 'nz py', 8);
     const uv = rectUV(A.get('farwall'));
     const rows = Math.max(1, Math.round(h / 40));
     for (let k = 0; k < rows; k++) {
       const a = (k / rows) * h, b = ((k + 1) / rows) * h;
       S.quad([x + w - 1.2, a, EL.farRow - 0.1], [x, a, EL.farRow - 0.1], [x, b, EL.farRow - 0.1], [x + w - 1.2, b, EL.farRow - 0.1],
-        texTint(0.30), uv, [0, 0, -1]);
+        texTint(0.10, 0.10), uv, [0, 0, -1]);
     }
-    // cornice
-    T.box(x - 0.6, h, EL.farRow - 2.2, x + w - 0.6, h + 2.2, EL.farRow + 1,
-      () => shadeLin(r.chance(0.5) ? 0x4c4a3c : 0x7a4a34, 0.34), 'nz py ny pz');
+    // cornice — the one silhouette event that says "not a housing block"
+    T.box(x - 0.8, h, EL.farRow - 2.6, x + w - 0.4, h + 2.4, EL.farRow + 1,
+      () => shadeLin(r.chance(0.5) ? 0x4c4a3c : 0x5b3b33, 0.12), 'nz py ny pz');
+    // parapet, chimney stack, pots
+    if (r.chance(0.7)) {
+      const cxx = x + w * r.range(0.2, 0.8);
+      T.box(cxx - 1.4, h + 2.4, EL.farRow + 3, cxx + 1.4, h + 2.4 + r.range(4, 8), EL.farRow + 6,
+        () => shadeLin(0x8a4a3a, 0.2), 'nz px nx py');
+    }
     // a tank or two on the taller ones, where city pressure cannot reach
-    if (h > 66 && i % 2 === 0) {
+    if (h > 40 && i % 3 === 0) {
       const tx = x + w * 0.5, tz = EL.farRow + 12;
       for (const dx of [-4, 4]) for (const dz of [-4, 4]) {
         T.box(tx + dx - 0.3, h, tz + dz - 0.3, tx + dx + 0.3, h + 13, tz + dz + 0.3, () => shadeLin(0x6b5a44, 0.2), 'px nx pz nz');
@@ -170,10 +180,15 @@ export function buildElevated(ctx) {
       T.cyl(tx, tz, 5.4, h + 13, h + 23, 12, (n, c) => shadeLin(0x8e8579, litOf(n, c[0], c[1], c[2]) * 0.8), '');
       T.cyl(tx, tz, 5.6, h + 22.4, h + 23.4, 12, (n, c) => shadeLin(0x4a4038, 0.2), '');
     }
+    if (i === 3 || i === 8) {
+      const slot = A.get(i === 3 ? 'ghost:goldDust' : 'ghost:uneeda');
+      const aw = Math.min(w - 4, h * 0.62), ah = aw * (slot.h / slot.w);
+      S.quad([x + w * 0.5 + aw / 2, h - 4 - ah, EL.farRow - 0.3], [x + w * 0.5 - aw / 2, h - 4 - ah, EL.farRow - 0.3],
+        [x + w * 0.5 - aw / 2, h - 4, EL.farRow - 0.3], [x + w * 0.5 + aw / 2, h - 4, EL.farRow - 0.3],
+        texTint(0.20, 0.06), rectUV(slot), [0, 0, -1]);
+    }
     x += w; i++;
   }
-  // the avenue roadway, in permanent brown twilight under the deck
-  T.box(-190, 0.01, EL.avenueNear, 190, 0.03, EL.avenueFar, () => shadeLin(0x6e5c4c, 0, 0.22), 'py');
 }
 
 /** A train, as its own mesh, because it is the one thing at the end of the street that moves. */

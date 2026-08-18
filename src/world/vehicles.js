@@ -146,7 +146,7 @@ function modelTKit(scene) {
   // a token lift — otherwise every Ford on the block comes out white.
   const paint = texMat(tex, { lift: 0.10 });
   const paintSide = texMat(tex, { side: THREE.DoubleSide, lift: 0.10 });
-  const trim = mat(0x9a938a);
+  const trim = mat(0x847d72);
   const brass = mat(0x8a7444);
   const nickel = mat(0x7d786e);
   const canvasTop = mat(0x4a463c);
@@ -452,7 +452,7 @@ export function buildVehicles(app) {
   // ---- the two Fords, one Kit, two paint jobs -----------------------------
   const kit = modelTKit(root);
   const CARS = [
-    [18.4, 50, 0.02, 0x33302c, 'ford (first base)'],           // FIRST BASE, and it kicks left
+    [18.4, 50, 0.02, 0x262320, 'ford (first base)'],           // FIRST BASE, and it kicks left
     [-18.4, 92, Math.PI + 0.03, 0x5e2b2f, 'maroon ford'],       // the repainted 1919 oddball
   ];
   for (const [x, z, ry, colour, name] of CARS) {

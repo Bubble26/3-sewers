@@ -96,13 +96,15 @@ export function inkOf(hex) {
 }
 
 /* Cloth the palette does not name directly, all derived from it — never invented. */
+// Dark wool trousers under an ecru shirt is the period's own value structure: the kids
+// carry their contrast on their own bodies, light on top and dark below.
 export const WOOL = [
-  soot(PAVEMENT.asphaltWarm, 0.20),                            // warm brown
-  soot(PAVEMENT.asphaltShade, 0.06),                           // taupe
-  mix(soot(PAVEMENT.asphaltShade, 0.28), AIR.shadowTint, 0.5), // faded navy
-  soot(mix(PAVEMENT.belgianBlock, ACCENTS.olive, 0.42), 0.26), // olive
+  soot(PAVEMENT.asphaltWarm, 0.30),                            // warm brown
+  soot(mix(PAVEMENT.asphaltShade, PAVEMENT.belgianBlock, 0.35), 0.26), // taupe
+  mix(soot(PAVEMENT.asphaltShade, 0.34), AIR.shadowTint, 0.42), // faded navy
+  soot(mix(PAVEMENT.belgianBlock, ACCENTS.olive, 0.42), 0.36), // olive
   soot(FACADE.brickShade, 0.30),                               // brown herringbone
-  soot(PAVEMENT.curb, 0.30),                                   // heather grey
+  soot(PAVEMENT.curb, 0.40),                                   // heather grey
 ];
 export const HAIR = [
   soot(SKIN[5], 0.58),                       // black
@@ -118,10 +120,10 @@ export const LEATHER = [
   soot(mix(ACCENTS.tan, FACADE.brickShade, 0.6), 0.56),
 ];
 export const SOCKWOOL = [
-  soot(PAVEMENT.asphaltDark, 0.34),
-  soot(ACCENTS.tan, 0.48),
-  soot(PAVEMENT.curb, 0.42),
-  mix(soot(PAVEMENT.asphaltShade, 0.40), AIR.shadowTint, 0.45),
+  soot(PAVEMENT.asphaltDark, 0.42),
+  soot(ACCENTS.tan, 0.46),
+  soot(PAVEMENT.curb, 0.34),
+  mix(soot(PAVEMENT.asphaltShade, 0.44), AIR.shadowTint, 0.40),
 ];
 
 /* ============================================================================
@@ -143,7 +145,7 @@ function bakeBands(geo, hex, opt) {
   for (let i = 0; i < n; i++) {
     const nx = nrm.getX(i), ny = nrm.getY(i), nz = nrm.getZ(i);
     const d = nx * KEY[0] + ny * KEY[1] + nz * KEY[2];
-    const c = (ny < -0.52) ? bnc : (d > term ? lit : shd);
+    const c = (ny < -0.52 || ny > 0.80) ? bnc : (d > term ? lit : shd);
     col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2];
     ocol[i * 3] = olc[0]; ocol[i * 3 + 1] = olc[1]; ocol[i * 3 + 2] = olc[2];
   }
@@ -267,11 +269,17 @@ export const G = {
     return g;
   },
   cyl: (rt, rb, h, seg = 12, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open),
-  /** Lathe from a [radius, y] profile. Ends pinch closed so the outline shell never gapes. */
-  tube(profile, seg = 12) {
-    const pts = [new THREE.Vector2(1e-3, profile[0][1])];
-    for (const [r, y] of profile) pts.push(new THREE.Vector2(Math.max(r, 1e-3), y));
-    pts.push(new THREE.Vector2(1e-3, profile[profile.length - 1][1]));
+  /**
+   * Lathe from a [radius, y] profile. Ends pinch closed so the outline shell never gapes.
+   * The profile is normalised to run UPWARD first: a lathe built from points that descend
+   * comes out inside-out, which silently flips its normals — every band lands on the wrong
+   * side and the outline hull grows inward instead of outward.
+   */
+  tube(profile, seg = 16) {
+    const p = profile[0][1] > profile[profile.length - 1][1] ? [...profile].reverse() : profile;
+    const pts = [new THREE.Vector2(1e-3, p[0][1])];
+    for (const [r, y] of p) pts.push(new THREE.Vector2(Math.max(r, 1e-3), y));
+    pts.push(new THREE.Vector2(1e-3, p[p.length - 1][1]));
     return new THREE.LatheGeometry(pts, seg);
   },
   /** A half-disc slab lying in XZ, pointing +Z. Caps and hat brims. */
@@ -335,9 +343,9 @@ export function buildCap(body, ctx) {
     const flat = h.kind === 'flat';
     // 1.15-1.4x the head's PLAN AREA is 1.07-1.18x its plan radius. A cap the wrong size
     // is the joke on two kids, so size drives width and how far down it drops, not both.
-    const base = hw * 0.555 * (h.size ** 0.85);
+    const base = hw * 0.535 * (h.size ** 0.60);
     const rx = base, rz = base * (flat ? 1.08 : 1.02);
-    const domeH = hh * (flat ? 0.38 : 0.44) * (0.88 + 0.12 * h.size);
+    const domeH = hh * (flat ? 0.35 : 0.41) * (0.86 + 0.14 * h.size);
     // Eight-panel dome: a squashed sphere-cap, drooping forward over the brim.
     const dome = G.sphere(1, 16, 9);
     const dp = dome.attributes.position;
@@ -355,7 +363,7 @@ export function buildCap(body, ctx) {
     const brim = G.brim(rx * 0.99, hh * 0.032, 16);
     brim.scale(1, 1, flat ? 0.78 : 0.60);
     brim.translate(0, -hh * 0.005, rz * 0.10);
-    const m = new THREE.Matrix4().makeRotationX(0.16);
+    const m = new THREE.Matrix4().makeRotationX(0.105);
     brim.applyMatrix4(m);
     sub.add(brim, col, { shade: 0.62 });
     // Team marker: a strip of dyed flannel round the cap band. <=15% of silhouette.
@@ -391,12 +399,17 @@ export function buildHair(body, ctx) {
     nape.computeVertexNormals();
     body.add(nape, c);
   };
+  const round = (y) => {                 // sphere -> dome: hold the width higher up
+    const a = Math.min(0.999, Math.abs(y));
+    return Math.sqrt(Math.max(0, 1 - a ** 3)) / Math.max(0.05, Math.sqrt(1 - a * a));
+  };
   const dome = (top, wide) => {
     const g = G.sphere(1, 16, 11);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const y = Math.max(p.getY(i), -0.45);
-      p.setXYZ(i, p.getX(i) * hw * wide, y * hh * top + hh * 0.07, p.getZ(i) * hw * wide);
+      const k = Math.min(1.5, round(p.getY(i)));
+      p.setXYZ(i, p.getX(i) * hw * wide * k, y * hh * top + hh * 0.07, p.getZ(i) * hw * wide * k);
     }
     g.computeVertexNormals();
     body.add(g, c);
@@ -479,11 +492,17 @@ export function buildHair(body, ctx) {
 /** Ears. Optional and usually under the cap — except on the one kid they define. */
 export function buildEars(body, ctx) {
   const e = ctx.ears; if (!e) return;
+  const eh = ctx.hh * (0.115 + 0.062 * e);        // how tall
+  const ew = ctx.hh * (0.026 + 0.052 * e);        // how far it sticks out
   for (const sx of [-1, 1]) {
-    const g = G.sphere(ctx.hh * 0.115 * e, 10, 8);
-    g.scale(0.42, 1.05, 0.95);
-    g.translate(sx * ctx.hw * 0.50, -ctx.hh * 0.02, -ctx.hw * 0.05);
+    const g = G.sphere(1, 12, 9);
+    g.scale(ew, eh, eh * 0.80);
+    g.translate(sx * (ctx.hw * 0.42 + ew * 0.62), -ctx.hh * 0.015, -ctx.hw * 0.06);
     body.add(g, ctx.skinColor);
+    const bowl = G.sphere(1, 10, 8);               // the shell, so it is an ear and not a fin
+    bowl.scale(ew * 0.42, eh * 0.62, eh * 0.50);
+    bowl.translate(sx * (ctx.hw * 0.42 + ew * 0.78), -ctx.hh * 0.015, -ctx.hw * 0.02);
+    body.add(bowl, ctx.earShade);
   }
 }
 
@@ -493,23 +512,28 @@ export function buildEars(body, ctx) {
  */
 export function buildKnicker(body, ctx, side) {
   const { thighLen, legR } = ctx;
-  const seat = legR * 1.34 * ctx.baggy;
+  const seat = legR * 1.40 * ctx.baggy;
   const g = G.tube([
     [legR * 1.02, legR * 0.9], [seat, -thighLen * 0.20], [seat * 0.99, -thighLen * 0.54],
     [seat * 0.86, -thighLen * 0.88], [legR * 0.86, -thighLen * 0.97],
   ], 12);
   body.add(g, ctx.trouser);
   // The buckle band: a hard horizontal at the knee, and it is the whole point of knickers.
-  const band = G.cyl(legR * 0.90, legR * 0.86, thighLen * 0.12, 12);
-  band.translate(0, -thighLen * 1.01, 0);
-  body.add(band, ctx.trouserDark, { shade: 0.62 });
+  const band = G.cyl(legR * 0.98, legR * 0.94, thighLen * 0.16, 12);
+  band.translate(0, -thighLen * 1.02, 0);
+  body.add(band, ctx.buckleBand, { shade: 0.60 });
   const buckle = G.box(legR * 0.34, thighLen * 0.085, legR * 0.20, 0.01, 1);
   buckle.translate(side * legR * 0.12, -thighLen * 1.01, legR * 0.86);
   body.add(buckle, ctx.buckle);
   if (ctx.patched) {
-    const patch = G.box(legR * 0.98, thighLen * 0.34, legR * 0.30, legR * 0.16, 2);
-    patch.translate(0, -thighLen * 0.70, seat * 0.86);
+    const patch = G.box(legR * 0.66, thighLen * 0.24, legR * 0.26, legR * 0.15, 2);
+    patch.translate(side * legR * 0.10, -thighLen * 0.80, seat * 0.86);
     body.add(patch, ctx.patchColor);
+    for (let i = 0; i < 4; i++) {                       // four stitches, because somebody sewed it
+      const st = G.sphere(legR * 0.048, 6, 5);
+      st.translate(side * legR * 0.10 + (i - 1.5) * legR * 0.17, -thighLen * 0.68, seat * 0.92);
+      body.add(st, ctx.patchStitch);
+    }
   }
   body.smudge(0, -thighLen * 0.92, legR * 0.9, legR * 2.0, ctx.dirt, 0.34);
 }
@@ -517,7 +541,7 @@ export function buildKnicker(body, ctx, side) {
 /** Long stockings — accordion sag above the boot, three folds, asymmetric L/R. */
 export function buildStocking(body, ctx, side, sock, bareTop = 0) {
   const { shinLen } = ctx;
-  const r = ctx.legR * 0.86;
+  const r = ctx.legR * 1.02;
   const sag = sock.sag;
   const top = -shinLen * bareTop;               // beanpole: four inches of bare shin
   const span = shinLen * (1 - bareTop);
@@ -526,8 +550,8 @@ export function buildStocking(body, ctx, side, sock, bareTop = 0) {
   for (let i = 0; i <= N; i++) {
     const t = i / N;
     const y = top - span * t;
-    const wob = 1 + sag * 0.22 * Math.sin(t * Math.PI * 3 + sock.phase) * Math.min(1, t * 2.4);
-    prof.push([r * (1.06 - 0.30 * t) * wob, y]);
+    const wob = 1 + sag * 0.20 * Math.sin(t * Math.PI * 3 + sock.phase) * Math.min(1, t * 2.4);
+    prof.push([r * (1.02 - 0.26 * t) * wob, y]);
   }
   body.add(G.tube(prof, 12), sock.color);
   // the darned cuff at the top of the stocking, a hard horizontal
@@ -552,24 +576,29 @@ export function buildBoot(body, ctx, side) {
     body.smudge(0, -ctx.ankleH + h * 0.03, L * 0.3, L * 0.9, ctx.dirt, 0.5);
     return;
   }
-  const upper = f.kind === 'keds' ? h * 0.16 : h * 0.30;
-  const boot = G.box(L * 0.48, upper, L * 0.86, L * 0.14, 3);
-  boot.translate(0, -ctx.ankleH + upper * 0.5, L * 0.10);
+  const upper = f.kind === 'keds' ? h * 0.19 : h * 0.36;
+  const boot = G.box(L * 0.40, upper, L * 0.72, L * 0.13, 3);
+  boot.translate(0, -ctx.ankleH + upper * 0.50, L * 0.04);
   body.add(boot, f.color);
-  const toe = G.sphere(L * 0.26, 12, 8);
-  toe.scale(0.92, 0.62, 1.15);
-  toe.translate(0, -ctx.ankleH + L * 0.16, L * 0.40);
+  const toe = G.sphere(L * 0.23, 12, 9);
+  toe.scale(0.88, 0.64, 1.16);
+  toe.translate(0, -ctx.ankleH + L * 0.145, L * 0.33);
   body.add(toe, f.color);
-  const sole = G.box(L * 0.54, h * 0.045, L * 0.96, L * 0.05, 2);
-  sole.translate(0, -ctx.ankleH + h * 0.022, L * 0.13);
-  body.add(sole, f.sole, { shade: 0.6 });
+  const sole = G.box(L * 0.42, h * 0.050, L * 0.86, L * 0.05, 2);
+  sole.translate(0, -ctx.ankleH + h * 0.025, L * 0.09);
+  body.add(sole, f.sole, { shade: 0.60 });
   if (f.kind !== 'keds') {
-    const tongue = G.box(L * 0.22, upper * 0.7, L * 0.06, L * 0.03, 1);
-    tongue.rotateX(-0.32);
-    tongue.translate(0, -ctx.ankleH + upper * 0.72, L * 0.30);
+    const tongue = G.box(L * 0.20, upper * 0.78, L * 0.06, L * 0.03, 1);
+    tongue.rotateX(-0.36);
+    tongue.translate(0, -ctx.ankleH + upper * 0.76, L * 0.235);
     body.add(tongue, f.tongue);
-    const knot = G.sphere(L * 0.058, 7, 5);
-    knot.translate(side * L * 0.10, -ctx.ankleH + upper * 0.62, L * 0.34);
+    for (let i = 0; i < 3; i++) {          // laces, and one of them knotted where it broke
+      const lace = G.box(L * 0.20, L * 0.026, L * 0.03, L * 0.012, 1);
+      lace.translate(0, -ctx.ankleH + upper * (0.34 + i * 0.21), L * 0.26);
+      body.add(lace, f.lace);
+    }
+    const knot = G.sphere(L * 0.055, 7, 5);
+    knot.translate(side * L * 0.085, -ctx.ankleH + upper * 0.55, L * 0.29);
     body.add(knot, f.lace);
   }
   body.smudge(0, -ctx.ankleH + h * 0.04, L * 0.4, L * 0.8, ctx.dirt, 0.30);
@@ -610,24 +639,24 @@ export function buildProp(body, ctx) {
   const h = ctx.hh, { torsoH, chestW, chestD } = ctx;
   const pigeonBody = mix(PAVEMENT.curb, AIR.skyFill, 0.35);
   if (p === 'pigeon') {
-    const X = chestW * 1.16, Y = torsoH * 1.00;
-    const bd = G.sphere(h * 0.21, 12, 9);
-    bd.scale(0.76, 0.88, 1.24);
-    bd.translate(X, Y + h * 0.20, -h * 0.02);
+    const X = chestW * 1.05, Y = torsoH * 1.02;
+    const bd = G.sphere(h * 0.27, 12, 9);
+    bd.scale(0.74, 0.86, 1.24);
+    bd.translate(X, Y + h * 0.24, -h * 0.02);
     body.add(bd, pigeonBody);
-    const hd = G.sphere(h * 0.105, 10, 8);
-    hd.translate(X, Y + h * 0.37, h * 0.11);
+    const hd = G.sphere(h * 0.135, 10, 8);
+    hd.translate(X, Y + h * 0.46, h * 0.14);
     body.add(hd, mix(pigeonBody, CHALK, 0.28));
     const bk = G.cyl(h * 0.004, h * 0.028, h * 0.08, 6);
     bk.rotateX(Math.PI / 2);
-    bk.translate(X, Y + h * 0.355, h * 0.20);
+    bk.translate(X, Y + h * 0.445, h * 0.25);
     body.add(bk, ACCENTS.mustard);
     const eye = G.sphere(h * 0.020, 6, 5);
-    eye.translate(X + h * 0.055, Y + h * 0.395, h * 0.10);
+    eye.translate(X + h * 0.070, Y + h * 0.485, h * 0.13);
     body.add(eye, INK);
     const tl = G.box(h * 0.11, h * 0.022, h * 0.22, h * 0.008, 1);
     tl.rotateX(-0.34);
-    tl.translate(X, Y + h * 0.20, -h * 0.26);
+    tl.translate(X, Y + h * 0.24, -h * 0.32);
     body.add(tl, mix(pigeonBody, AIR.shadowTint, 0.35));
   } else if (p === 'newspaper') {
     const n = G.cyl(h * 0.070, h * 0.075, h * 0.56, 10);
@@ -688,33 +717,33 @@ export function buildProp(body, ctx) {
 
 export const FAMILIES = {
   melon: {
-    label: 'The Melon', heads: 3.10, tall: 4.46,
-    head: { w: 1.24, h: 1.10, d: 1.14, jaw: 0.08, cheek: 0.16, crown: 0.24, chin: 0.0, backFlat: 1.0 },
-    build: 0.50, baggy: 1.05,
+    label: 'The Melon', heads: 3.04, tall: 4.40,
+    head: { w: 1.36, h: 1.14, d: 1.24, jaw: 0.04, cheek: 0.18, crown: 0.26, chin: 0.0, backFlat: 1.0 },
+    build: 0.42, baggy: 1.05,
     hat: { kind: 'newsboy', size: 0.80, tiltX: -0.14, tiltZ: 0.10 },   // a lid perched on a melon
     hair: 'bowl', top: 'shirt', legs: 'knickers', feet: 'boots', susp: true,
     note: 'huge round head, small cap perched on top like a lid',
   },
   fireplug: {
-    label: 'The Fireplug', heads: 2.80, tall: 4.04,
+    label: 'The Fireplug', heads: 2.74, tall: 3.96,
     head: { w: 1.10, h: 0.94, d: 1.04, jaw: 0.0, cheek: 0.26, crown: 0.0, chin: 0.0, backFlat: 1.0 },
-    build: 1.00, baggy: 1.16,
-    hat: { kind: 'flat', size: 1.10, tiltX: 0.16, tiltZ: -0.05 },      // jammed to the eyebrows
+    build: 0.94, baggy: 1.08,
+    hat: { kind: 'flat', size: 1.06, tiltX: 0.11, tiltZ: -0.05 },      // jammed to the eyebrows
     hair: 'crop', top: 'shirt', legs: 'knickers', feet: 'boots', susp: true,
     neck: 0.0, note: 'short and wide, barrel torso, zero neck, best hitter on the block',
   },
   beanpole: {
-    label: 'The Beanpole', heads: 3.90, tall: 5.22,
+    label: 'The Beanpole', heads: 3.96, tall: 5.36,
     head: { w: 0.85, h: 1.14, d: 0.90, jaw: 0.34, cheek: -0.06, crown: 0.04, chin: 0.14, backFlat: 1.0 },
-    build: 0.08, baggy: 0.86,
+    build: 0.00, baggy: 0.82,
     hat: { kind: 'flat', size: 0.94, tiltX: -0.22, tiltY: 0.30 },
     hair: 'crop', top: 'shirt', legs: 'knickers', feet: 'boots', susp: true,
     highWater: 0.30, note: 'all leg, knickers riding high, four inches of bare shin',
   },
   sack: {
-    label: 'The Sack', heads: 3.02, tall: 4.10,
+    label: 'The Sack', heads: 3.02, tall: 4.06,
     head: { w: 1.02, h: 0.99, d: 1.00, jaw: 0.12, cheek: 0.20, crown: 0.06, chin: 0.0, backFlat: 1.0 },
-    build: 0.35, baggy: 1.10,
+    build: 0.30, baggy: 1.10,
     hat: { kind: 'newsboy', size: 1.06, tiltX: 0.10, tiltZ: 0.14 },
     hair: 'bowl', top: 'handmedown', legs: 'knickers', feet: 'boots', susp: false,
     note: 'a small kid entirely inside an adult sweater — a bell with a cap on it',
@@ -729,7 +758,7 @@ export const FAMILIES = {
   bandbox: {
     label: 'The Bandbox', heads: 3.22, tall: 4.62,
     head: { w: 0.89, h: 1.08, d: 0.93, jaw: 0.26, cheek: 0.02, crown: 0.02, chin: 0.02, backFlat: 1.0 },
-    build: 0.34, baggy: 0.80,
+    build: 0.30, baggy: 0.74,
     hat: { kind: 'flat', size: 0.92, tiltX: 0.0 }, hair: 'crop',
     top: 'shirt', legs: 'knickers', feet: 'keds', susp: false, tidy: true, bowtie: true,
     note: 'the one kid with money — the only perfectly tidy silhouette on the field',
@@ -737,15 +766,15 @@ export const FAMILIES = {
   ribbon: {
     label: 'The Ribbon', heads: 3.42, tall: 4.86,
     head: { w: 0.92, h: 1.05, d: 0.93, jaw: 0.28, cheek: 0.12, crown: 0.06, chin: 0.0, backFlat: 1.0 },
-    build: 0.26, baggy: 0.92,
+    build: 0.20, baggy: 0.92,
     hat: { kind: 'none' }, hair: 'ponytail', top: 'dress', legs: 'dress', feet: 'boots', susp: false,
     note: 'plays in a dropped-waist dress with the hem taken up, because she is faster than everybody',
   },
   barefoot: {
     label: 'The Barefoot', heads: 3.00, tall: 4.30,
     head: { w: 1.07, h: 0.97, d: 1.02, jaw: 0.16, cheek: 0.18, crown: 0.05, chin: 0.0, backFlat: 1.0 },
-    build: 0.44, baggy: 1.06,
-    hat: { kind: 'newsboy', size: 1.24, tiltX: 0.20, tiltZ: -0.16 },   // two sizes too big
+    build: 0.52, baggy: 1.10,
+    hat: { kind: 'newsboy', size: 1.15, tiltX: 0.15, tiltZ: -0.16 },   // two sizes too big
     hair: 'bowl', top: 'shirt', legs: 'knickers', feet: 'bare', susp: true, bareLeg: true,
     note: 'no shoes at all, cuffs rolled — his feet are the largest objects in his outline',
   },

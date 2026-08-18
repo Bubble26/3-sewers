@@ -258,7 +258,7 @@ function paint(ctx, F, exName) {
   if (F.brim) {                                    // the brim's own shadow across the brow
     ctx.save();
     ctx.filter = 'blur(5px)';
-    ctx.globalAlpha = 0.42;
+    ctx.globalAlpha = 0.34;
     ctx.fillStyle = F.formShade;
     ctx.beginPath();
     ctx.moveTo(-S * 0.10, -S * 0.10);
@@ -331,11 +331,11 @@ function paint(ctx, F, exName) {
   /* --- nose: a bump, a dot or a comma. Nothing else. -------------------- */
   ctx.save();
   ctx.strokeStyle = F.noseInk;
-  ctx.lineWidth = S * 0.018;
+  ctx.lineWidth = S * 0.023;
   ctx.lineCap = 'round';
   if (F.nose === 'dot') {
     ctx.fillStyle = F.noseInk;
-    ell(ctx, 0.5, 0.672, 0.021, 0.018); ctx.fill();
+    ell(ctx, 0.5, 0.672, 0.025, 0.021); ctx.fill();
   } else if (F.nose === 'comma') {
     ctx.beginPath();
     ctx.moveTo(S * 0.492, S * 0.620);

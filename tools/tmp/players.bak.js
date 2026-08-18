@@ -121,20 +121,10 @@ class Kid {
   /** Additive layer on top of whatever is playing. */
   flavour(name, o) { this.anim.once(name, o); }
 
-  /**
-   * A looping director track. The offset is a TRUE phase offset: the starting step is fired
-   * immediately and the clip is wound forward to match, so five kids on the same cycle at five
-   * offsets read as five consecutive frames of one action rather than five copies of frame 1.
-   */
   setCycle(period, steps, offset = 0) {
     this.cycle = { period, steps };
     this.cycleT = ((offset % period) + period) % period;
-    let idx = 0;
-    for (let i = 0; i < steps.length; i++) if (this.cycleT >= steps[i].t) idx = i;
-    this.cycleStep = idx;
-    steps[idx].do(this);
-    this.anim.t += this.cycleT - steps[idx].t;
-    this.anim.fade = 1; this.anim.prev = null;
+    this.cycleStep = -1;
     return this;
   }
 
@@ -235,11 +225,11 @@ class Kid {
     const stick = this.rig.get('stick');
     if (!tip || !stick || !stick.visible) { this.trail.clear(); return; }
     const len = (this.rig.stickLength || 3.3) * 0.5;
-    this._tipA.set(0, len * 0.52, 0).applyMatrix4(tip.matrixWorld);
-    this._tipB.set(0, len * 1.02, 0).applyMatrix4(tip.matrixWorld);
+    this._tipA.set(0, len * 0.15, 0).applyMatrix4(tip.matrixWorld);
+    this._tipB.set(0, len, 0).applyMatrix4(tip.matrixWorld);
     const v = this._tipB.distanceTo(this._prevTip) / Math.max(dt, 1e-4);
     this._prevTip.copy(this._tipB);
-    this.trail.push(this._tipA, this._tipB, THREE.MathUtils.clamp((v - 34) / 70, 0, 1));
+    this.trail.push(this._tipA, this._tipB, THREE.MathUtils.clamp((v - 26) / 60, 0, 1));
     this.trail.update();
   }
 }
@@ -586,21 +576,21 @@ registerScenario('anim_swing', {
   seed: 22,
   setup: () => {
     const a = cast(5);
-    cam([0.4, 3.1, 45.0], { dist: 16.5, elev: 10, yaw: -15, fov: 50, aim: 0.75 });
-    // Five batters, one swing, five phases: an animation chart you can read left to right.
-    // Cycle and settle are chosen so kid 0 is at the load and kid 4 is at the settle.
-    const P = 1.2;
+    cam([0, 3.0, 45.2], { dist: 15.8, elev: 15, yaw: -15, fov: 50, aim: 0.5 });
+    const P = 1.5;
     a.forEach((k, i) => {
       k.giveStick(); k.showStick(true);
-      const x = -9.4 + i * 4.7, z = 44.2 + (i % 2) * 2.0;
-      k.at(x, z, faceCam(x, z, -0.2));
+      const x = -9.6 + i * 4.8, z = 44.4 + (i % 2) * 2.0;
+      // every batter square to the same imaginary pitcher (off to camera right), so the five
+      // phases read left to right as one continuous arc
+      k.at(x, z, faceCam(x, z, -0.18));
       k.setCycle(P, [
-        { t: 0.0, do: (y) => { y.anim.play('stance', { fade: 0.1 }); y.flavour('waggle', { life: 0.2 }); } },
-        { t: 0.16, do: (y) => y.anim.play('swing', { restart: true, fade: 0.05 }) },
-      ], (P / 5) * (4 - i));
+        { t: 0.0, do: (y) => { y.anim.play('stance', { fade: 0.1 }); y.flavour('waggle', { life: 0.28 }); } },
+        { t: 0.22, do: (y) => y.anim.play('swing', { restart: true, fade: 0.05 }) },
+      ], (P / 5) * i);
     });
   },
-  settle: 0.2,
+  settle: 0.72,
 });
 
 registerScenario('anim_run', {

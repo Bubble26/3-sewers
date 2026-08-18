@@ -1,0 +1,22 @@
+import { chromium } from 'playwright';
+import { readFile, writeFile } from 'node:fs/promises';
+const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const [src, out, x, y, w, h] = process.argv.slice(2);
+const b64 = (await readFile(src)).toString('base64');
+const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] });
+const page = await browser.newPage({ viewport: { width: 800, height: 800 } });
+await page.setContent('<body style="margin:0"><canvas id=c></canvas></body>');
+const png = await page.evaluate(async (a) => {
+  const img = new Image();
+  await new Promise((r) => { img.onload = r; img.src = 'data:image/png;base64,' + a.b64; });
+  const c = document.getElementById('c');
+  const S = 2.4;
+  c.width = a.w * S; c.height = a.h * S;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.drawImage(img, a.x, a.y, a.w, a.h, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png').split(',')[1];
+}, { b64, x: +x, y: +y, w: +w, h: +h });
+await writeFile(out, Buffer.from(png, 'base64'));
+await browser.close();
+console.log('ok');

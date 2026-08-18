@@ -247,7 +247,7 @@ export class Trail {
     }
     this.pos.needsUpdate = true;
     this.col.needsUpdate = true;
-    this.mat.opacity = Math.min(0.62, this.strength);
+    this.mat.opacity = Math.min(0.46, this.strength);
   }
 }
 
@@ -397,8 +397,10 @@ export function bindRig(kid, opts = {}) {
   rig.spec = ud.spec || null;
 
   // ── overlap: every kid carries at least one element that arrives late ──
-  rig.addLag('brim', { k: 14, max: 0.34 });
-  rig.addLag('head', { k: 25, max: 0.18 });
+  // The cap lag is deliberately small: these heads are 30% of the kid and the brim is wide,
+  // so anything past ~8 degrees of forward tilt puts the brim across the eyes.
+  rig.addLag('brim', { k: 17, max: 0.13 });
+  rig.addLag('head', { k: 24, max: 0.13 });
   rig.addLag('chest', { k: 34, max: 0.10 });
   rig.addJiggle('hair', { k: 130, damp: 11, gain: 2.2, max: 0.8 });
   rig.addJiggle('shirt', { k: 105, damp: 10, gain: 2.0, max: 0.7 });
@@ -471,7 +473,7 @@ export function attachStick(rig, o = {}) {
   if (!girdle) return null;
   const shX = armL ? Math.abs(armL.position.x) : rig.headH * 0.45;
   const shY = armL ? armL.position.y : rig.headH * 0.9;
-  const length = o.length || rig.height * 0.78;
+  const length = o.length || rig.height * 0.84;
   const wood = o.color === undefined ? 0xb09468 : o.color;
   const tape = o.tape === undefined ? 0x4a4038 : o.tape;
   const ink = o.ink === undefined ? 0x2a1d1a : o.ink;
@@ -481,11 +483,13 @@ export function attachStick(rig, o = {}) {
 
   const grip = new THREE.Group();
   grip.name = 'grip';
-  grip.position.set(-shX * 0.62, shY * 0.30, shX * 1.25);
+  // Kids face -Z, so the hands go in front; keep them at chest height or the mitts and the
+  // handle end up parked across the face, which at this head size hides the whole performance.
+  grip.position.set(-shX * 0.9, shY * 0.06, -shX * 1.15);
   girdle.add(grip);
   const stick = new THREE.Group(); stick.name = 'stick'; grip.add(stick);
   const half = length * 0.5;
-  const r0 = length * 0.028, r1 = length * 0.022, ow = length * 0.012;
+  const r0 = length * 0.034, r1 = length * 0.027, ow = length * 0.013;
 
   const seg = (parent, rBot, rTop, len, y) => {
     const g = new THREE.CylinderGeometry(rTop, rBot, len, 9);
