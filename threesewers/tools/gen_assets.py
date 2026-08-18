@@ -28,6 +28,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import art_backdrop
+import bat_geometry
 import art_cards
 import art_chars
 import art_night
@@ -72,6 +73,12 @@ def main(out_root=None):
     art_cards.build(chars, art_chars.portrait)
     print("street  ...", flush=True)
     art_backdrop.build(bg, props, chars)
+    # Where the bat is at each frame of the swing is a fact about the art the
+    # game has to know, and it drifts silently every time the kids are
+    # redrawn — it already did once, between a regeneration and a capture.
+    # Measuring it here means it can never be stale.
+    print("bat     ...", flush=True)
+    bat_geometry.build(chars)
 
     print("\n%d props, %d character frames + cards, %d ui, %d backdrops "
           "in %.0fs -> %s"

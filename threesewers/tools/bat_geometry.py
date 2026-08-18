@@ -82,6 +82,11 @@ def build(chars_dir=None, out_path=None):
     chars_dir = chars_dir or os.path.join(ROOT, "assets", "characters")
     out_path = out_path or os.path.join(ROOT, "data", "bat_geometry.json")
     data = measure(chars_dir)
+    if not data:
+        # Writing an empty file here would silently strip the game of every
+        # bat position and send it back to the fallback constant. A run that
+        # found nothing is a broken run, not an empty result.
+        raise SystemExit("bat_geometry: no swing frames found in %s" % chars_dir)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as fh:
         json.dump(data, fh, indent=1, sort_keys=True)
