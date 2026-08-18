@@ -86,12 +86,18 @@ class View:
         return s * self.xk * 0.5
 
 
-# The two presets the game ships with. Portrait is the reference composition;
-# landscape sits the horizon lower and widens the gain so the same street
-# reads on a short, wide screen.
+# The two presets the game ships with. Both look down the SAME street from the
+# SAME camera, so they share z_far: how fast the world shrinks with distance is
+# a property of the lens, not of the phone's orientation. Landscape once had
+# z_far=10.3, which flattened the street until the batter (16.6% of frame) was
+# barely larger than the pitcher (7.5%) and the whole thing read as top-down.
+# That was a framing bug being paid for in the wrong currency — the batter was
+# falling off the bottom, and squashing the depth hid it. The honest fix is to
+# push the near plane far below the frame and let the batter's feet crop, which
+# is what the reference art does.
 PORTRAIT = View("portrait", 720, 1200,
                 horizon_f=0.250, near_f=1.88, z_far=74.0, xk=9.40, near_y=2400.0)
 LANDSCAPE = View("landscape", 1280, 720,
-                 horizon_f=0.225, near_f=1.02, z_far=10.3, xk=1.86, near_y=2400.0)
+                 horizon_f=0.225, near_f=2.39, z_far=74.0, xk=8.50, near_y=2400.0)
 
 VIEWS = {"portrait": PORTRAIT, "landscape": LANDSCAPE}

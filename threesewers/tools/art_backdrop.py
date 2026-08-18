@@ -178,6 +178,23 @@ def _vignette(img, strength=0.72):
     return out
 
 
+def _dim(spr, colour, amount):
+    """Tint a sprite toward a colour WITHOUT eating its cutout.
+
+    Image.blend mixes every channel, alpha included, so blending an RGBA
+    sprite toward an opaque colour lifts the transparent surround to
+    alpha=amount*255 and paints a translucent rectangle over the sprite's
+    whole bounding box. Every spectator on the kerb was standing in a dark
+    box because of this. Tint the colour, keep the original alpha.
+    """
+    a = spr.getchannel("A")
+    out = Image.blend(spr.convert("RGB"),
+                      Image.new("RGB", spr.size, tuple(colour[:3])), amount)
+    out = out.convert("RGBA")
+    out.putalpha(a)
+    return out
+
+
 def _paste(base, sprite, sx, sy, scale, anchor="bottom"):
     if scale <= 0.002:
         return
@@ -246,7 +263,7 @@ def build_backdrop(view, props_dir, chars_dir=None, rs=2, seed=3):
             return
         sx, sy, s = view.project(world_x, world_y, height)
         if tint is not None:
-            spr = Image.blend(spr, Image.new("RGBA", spr.size, tint), 0.55)
+            spr = _dim(spr, tint, 0.55)
         if flat:
             # lying on the cobbles, so it is squashed by the grazing angle
             spr = spr.resize((spr.width, max(2, int(spr.height * 0.52))),
@@ -268,14 +285,12 @@ def build_backdrop(view, props_dir, chars_dir=None, rs=2, seed=3):
                 continue
             sx, sy, s = view.project(wx, wy, 470.0)
             if lit:
-                spr = Image.blend(spr, Image.new("RGBA", spr.size,
-                                                 (255, 206, 140, 255)), 0.55)
+                spr = _dim(spr, (255, 206, 140), 0.55)
             else:
-                spr = Image.blend(spr, Image.new("RGBA", spr.size, night), 0.62)
+                spr = _dim(spr, night, 0.62)
             _paste(img, spr, sx * rs, sy * rs, s * view.xk * ART * rs, "center")
             sx, sy, s = view.project(wx, wy, 760.0)
-            spr2 = Image.blend(_load_prop(props_dir, "window"),
-                               Image.new("RGBA", spr.size, night), 0.7)
+            spr2 = _dim(_load_prop(props_dir, "window"), night, 0.7)
             _paste(img, spr2, sx * rs, sy * rs, s * view.xk * ART * rs, "center")
 
     # home, and the sewer covers the whole game is counted in
@@ -313,7 +328,7 @@ def build_backdrop(view, props_dir, chars_dir=None, rs=2, seed=3):
             if not os.path.exists(f):
                 continue
             spr = Image.open(f).convert("RGBA")
-            spr = Image.blend(spr, Image.new("RGBA", spr.size, night), 0.42)
+            spr = _dim(spr, night, 0.42)
             sx, sy, s = view.project(wx, wy, 0.0)
             _paste(img, spr, sx * rs, sy * rs, s * view.xk * ART * rs, "bottom")
 
