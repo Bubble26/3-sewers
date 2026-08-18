@@ -990,9 +990,9 @@ function buildMannequin({
        shoulders  1.14 HH   — narrower than the head, which is the whole child cue
        hands      0.62 x head width, mitts, no anatomy. Limbs are tubes.            */
   const HH = 1.30;
-  const hipY = HH * 1.20;
+  const hipY = HH * 1.10;
   const chestY = hipY + HH * 1.00;
-  const headY = chestY + HH * 0.15 + HH * 0.50;
+  const headY = chestY + HH * 0.12 + HH * 0.54;
   const kneeY = HH * 0.70;
   const bootH = HH * 0.20;
   const bootTop = 0.02 + bootH;
@@ -1043,7 +1043,7 @@ function buildMannequin({
   const sweater = meshOf(new THREE.CapsuleGeometry(HH * 0.325, HH * 0.40, 4, 12), woolM, 0, chestY - HH * 0.34, 0);
   sweater.scale.set(1.0, 1, 0.84);
   g.add(sweater);
-  const hem = meshOf(new THREE.CylinderGeometry(HH * 0.355, HH * 0.345, HH * 0.12, 14), woolM, 0, hipY + HH * 0.06, 0);
+  const hem = meshOf(new THREE.CylinderGeometry(HH * 0.335, HH * 0.325, HH * 0.11, 14), woolM, 0, hipY + HH * 0.05, 0);
   hem.scale.set(1.0, 1, 0.86);
   g.add(hem);
   const collar = meshOf(new THREE.CylinderGeometry(HH * 0.185, HH * 0.215, HH * 0.07, 12), shirtM, 0, chestY + HH * 0.055, 0);
@@ -1077,32 +1077,32 @@ function buildMannequin({
   const head = new THREE.Group();
   head.position.set(0, headY, 0);
   head.rotation.set(0.04, -0.34, 0.05);
-  const skull = meshOf(new THREE.SphereGeometry(HH * 0.50, 22, 16), skinM, 0, 0, 0);
+  const skull = meshOf(new THREE.SphereGeometry(HH * 0.56, 22, 16), skinM, 0, 0, 0);
   skull.scale.set(1, 1.0, 0.95);
   head.add(skull);
   for (const s of [-1, 1]) {
-    const e = meshOf(new THREE.SphereGeometry(HH * 0.115, 10, 8), skinM, s * HH * 0.47, -HH * 0.03, -0.03);
+    const e = meshOf(new THREE.SphereGeometry(HH * 0.125, 10, 8), skinM, s * HH * 0.525, -HH * 0.03, -0.03);
     e.scale.set(0.42, 1, 0.85);
     head.add(e);
   }
   // hair shows below the cap line, front and sides, so the cap reads as a separate object
-  const hair = meshOf(new THREE.SphereGeometry(HH * 0.508, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.40), hairM, 0, 0, 0);
+  const hair = meshOf(new THREE.SphereGeometry(HH * 0.568, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.40), hairM, 0, 0, 0);
   hair.scale.set(1.01, 1.02, 0.98);
   head.add(hair);
-  const fringe = meshOf(new THREE.SphereGeometry(HH * 0.145, 10, 8), hairM, HH * 0.14, HH * 0.30, HH * 0.40);
+  const fringe = meshOf(new THREE.SphereGeometry(HH * 0.155, 10, 8), hairM, HH * 0.15, HH * 0.34, HH * 0.45);
   fringe.scale.set(1.5, 0.55, 0.5);
   head.add(fringe);
   // the cap: 1.3x the head's plan area, a lid on top, with a hard brim edge (§5.2)
-  const cap = meshOf(new THREE.SphereGeometry(HH * 0.545, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.36), capM, 0, HH * 0.055, -HH * 0.04);
+  const cap = meshOf(new THREE.SphereGeometry(HH * 0.605, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.36), capM, 0, HH * 0.065, -HH * 0.045);
   cap.scale.set(1.14, 0.80, 1.22);
   head.add(cap);
-  const brim = meshOf(new THREE.CylinderGeometry(HH * 0.44, HH * 0.40, 0.07, 20, 1, false, -1.05, 2.1), capM, 0, HH * 0.235, HH * 0.20);
+  const brim = meshOf(new THREE.CylinderGeometry(HH * 0.48, HH * 0.44, 0.075, 20, 1, false, -1.05, 2.1), capM, 0, HH * 0.265, HH * 0.22);
   brim.scale.set(1.15, 1, 1.35);
   brim.rotation.x = -0.30;
   head.add(brim);
-  head.add(meshOf(new THREE.SphereGeometry(0.055, 8, 6), capM, 0, HH * 0.40, -HH * 0.04));
+  head.add(meshOf(new THREE.SphereGeometry(0.058, 8, 6), capM, 0, HH * 0.44, -HH * 0.045));
   const face = new THREE.Mesh(
-    new THREE.SphereGeometry(HH * 0.512, 24, 18, Math.PI * 0.22, Math.PI * 0.56, Math.PI * 0.20, Math.PI * 0.60),
+    new THREE.SphereGeometry(HH * 0.572, 24, 18, Math.PI * 0.22, Math.PI * 0.56, Math.PI * 0.20, Math.PI * 0.60),
     new THREE.MeshBasicMaterial({ map: faceTexture(skinStep, seed), transparent: true, alphaTest: 0.4, depthWrite: false, fog: true }),
   );
   face.scale.set(1, 1.0, 0.95);
@@ -1114,7 +1114,7 @@ function buildMannequin({
   if (bat) {
     const stick = new THREE.Group();
     stick.position.set(0, -HH * 0.40, 0);
-    stick.rotation.set(-1.15, 0, 0.30);
+    stick.rotation.set(-1.34, -0.30, 0.52);
     const wood = mix(ACCENTS.tan, CLOTH[2], 0.42);
     stick.add(meshOf(new THREE.CylinderGeometry(0.062, 0.076, 3.1, 9), toon(wood, { key: 'stick' }), 0, 1.30, 0));
     stick.add(meshOf(new THREE.CylinderGeometry(0.088, 0.088, 0.62, 9), toon(soot(CLOTH[3], 0.26), { key: 'tape' }), 0, 0.02, 0));

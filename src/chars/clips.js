@@ -436,15 +436,15 @@ C('slide', {
   dur: 1.65,
   keys: [
     { t: 0.0, pose: { base: { py: -0.1 }, chest: { rx: -16 }, legL: { rx: 40 }, kneeL: [-14, 0, 0], legR: { rx: -30 }, kneeR: [-40, 0, 0], armL: { rx: -40 }, armR: { rx: 40 } } },
-    // launch: hips drop, leading leg fires forward
-    { t: 0.14, ease: 'whip', pose: { base: { py: -1.02, rx: 44, pz: -0.3 }, hips: { rx: 8 }, chest: { rx: -26, ry: -10 }, neck: { rx: 22 }, legL: { rx: 66, rz: -6 }, kneeL: [-6, 0, 0], footL: [26, 0, 0], legR: { rx: 4, rz: 26 }, kneeR: [-124, 0, 0], armL: { rx: 128, rz: -46 }, elbL: [30, 0, 0], armR: { rx: 120, rz: 52 }, elbR: [26, 0, 0], shirt: [40, 0, 0] } },
-    // THE HELD SKID — the poster frame. Leading leg horizontal, arms up and clear.
-    { t: 0.34, ease: 'hold', pose: { base: { py: -1.30, rx: 54, pz: -0.16 }, hips: { rx: 10 }, chest: { rx: -30, ry: -14 }, neck: { rx: 26, ry: 12 }, legL: { rx: 82, rz: -8 }, kneeL: [-2, 0, 0], footL: [32, 0, 0], legR: { rx: 6, rz: 28 }, kneeR: [-132, 0, 0], armL: { rx: 142, rz: -58 }, elbL: [22, 0, 0], armR: { rx: 134, rz: 64 }, elbR: [18, 0, 0] } },
-    { t: 0.70, ease: 'hold', pose: { base: { py: -1.33, rx: 56, pz: -0.1 }, hips: { rx: 10 }, chest: { rx: -32, ry: -18 }, neck: { rx: 28, ry: 16 }, legL: { rx: 86, rz: -9 }, kneeL: [0, 0, 0], footL: [34, 0, 0], legR: { rx: 4, rz: 29 }, kneeR: [-134, 0, 0], armL: { rx: 148, rz: -62 }, elbL: [18, 0, 0], armR: { rx: 138, rz: 68 }, elbR: [16, 0, 0] } },
-    // hand on the chalk, a beat of stillness
-    { t: 0.98, ease: 'hold', pose: { base: { py: -1.26, rx: 48 }, chest: { rx: -26, ry: -22 }, neck: { rx: 24, ry: 20 }, legL: { rx: 70, rz: -6 }, kneeL: [-18, 0, 0], legR: { rx: 8, rz: 26 }, kneeR: [-118, 0, 0], armL: { rx: 152, rz: -40 }, elbL: [14, 0, 0], armR: { rx: 62, rz: 72 }, elbR: [60, 0, 0] } },
+    // launch: hips drop, leading leg fires out in front
+    { t: 0.14, ease: 'whip', pose: { base: { py: -0.98, rx: 36, pz: -0.3 }, hips: { rx: 6 }, chest: { rx: -14, ry: -10 }, neck: { rx: 16 }, legL: { rx: 104, rz: -8 }, kneeL: [-16, 0, 0], footL: [26, 0, 0], legR: { rx: 74, rz: 24 }, kneeR: [-112, 0, 0], armL: { rx: 34, rz: -92 }, elbL: [30, 0, 0], armR: { rx: 34, rz: 96 }, elbR: [26, 0, 0], shirt: [40, 0, 0] } },
+    // THE HELD SKID — the poster frame: hips on the road, leading leg horizontal, arms wide
+    { t: 0.34, ease: 'hold', pose: { base: { py: -1.26, rx: 46, pz: -0.16 }, hips: { rx: 8 }, chest: { rx: -12, ry: -14 }, neck: { rx: 20, ry: 12 }, legL: { rx: 132, rz: -10 }, kneeL: [-8, 0, 0], footL: [32, 0, 0], legR: { rx: 96, rz: 26 }, kneeR: [-124, 0, 0], armL: { rx: 42, rz: -122 }, elbL: [20, 0, 0], armR: { rx: 42, rz: 128 }, elbR: [16, 0, 0] } },
+    { t: 0.70, ease: 'hold', pose: { base: { py: -1.30, rx: 48, pz: -0.1 }, hips: { rx: 8 }, chest: { rx: -14, ry: -18 }, neck: { rx: 22, ry: 16 }, legL: { rx: 138, rz: -11 }, kneeL: [-4, 0, 0], footL: [34, 0, 0], legR: { rx: 98, rz: 27 }, kneeR: [-128, 0, 0], armL: { rx: 46, rz: -130 }, elbL: [16, 0, 0], armR: { rx: 46, rz: 134 }, elbR: [14, 0, 0] } },
+    // hand down on the chalk, a beat of stillness
+    { t: 0.98, ease: 'hold', pose: { base: { py: -1.22, rx: 40 }, chest: { rx: -10, ry: -22 }, neck: { rx: 18, ry: 20 }, legL: { rx: 116, rz: -8 }, kneeL: [-26, 0, 0], legR: { rx: 88, rz: 24 }, kneeR: [-112, 0, 0], armL: { rx: 56, rz: -142 }, elbL: [12, 0, 0], armR: { rx: 12, rz: 42 }, elbR: [60, 0, 0] } },
     // pick yourself up
-    { t: 1.28, ease: 'out', pose: { base: { py: -0.74, rx: 20 }, chest: { rx: -38 }, neck: { rx: 30 }, legL: { rx: 40 }, kneeL: [-62, 0, 0], legR: { rx: 12, rz: 16 }, kneeR: [-84, 0, 0], armL: { rx: 70, rz: -28 }, elbL: [50, 0, 0], armR: { rx: 40, rz: 34 }, elbR: [64, 0, 0] } },
+    { t: 1.28, ease: 'out', pose: { base: { py: -0.72, rx: 18 }, chest: { rx: -34 }, neck: { rx: 26 }, legL: { rx: 52 }, kneeL: [-70, 0, 0], legR: { rx: 30, rz: 16 }, kneeR: [-92, 0, 0], armL: { rx: 40, rz: -60 }, elbL: [50, 0, 0], armR: { rx: 26, rz: 34 }, elbR: [64, 0, 0] } },
     { t: 1.65, ease: 'settle', pose: { base: { py: -0.12 }, chest: { rx: -10 }, neck: { rx: 6 }, kneeL: [-18, 0, 0], kneeR: [-16, 0, 0], armL: { rx: 6, rz: -12 }, elbL: [34, 0, 0], armR: { rx: 6, rz: 12 }, elbR: [34, 0, 0] } },
   ],
   events: [{ t: 0.14, name: 'dust' }, { t: 0.36, name: 'dust' }],

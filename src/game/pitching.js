@@ -134,7 +134,7 @@ export const PITCHES = {
   },
   wobble: {
     id: 'wobble', label: 'WOBBLER', spoken: 'the wobbler', crow: 'Where\'s it goin\'?',
-    note: 'thrown with the fingernails — nobody knows, him included',
+    note: 'fingernails. Nobody knows. Him included.',
     flight: 1.02, lift: 1.00, side: 0, wildness: 1.9, cost: 0.75,
     spin: [0.4, 0.3, 0], face: 'squint', wander: { amp: 0.92, f1: 2.7, f2: 4.3 },
     delivery: 'pitch:wobble',
@@ -142,7 +142,7 @@ export const PITCHES = {
   },
   loft: {
     id: 'loft', label: 'LOFTER', spoken: 'a lofter', crow: 'Out of the sun!',
-    note: 'up over the laundry line and down on his head',
+    note: 'over the laundry line, down on your head',
     flight: 1.44, lift: 1.00, side: 0, wildness: 1.25, cost: 0.6,
     spin: [7, 0, 0], face: 'grin',
     delivery: 'pitch:loft',
@@ -853,16 +853,16 @@ function cardTexture(title, sub, num) {
   for (let i = 0; i <= 14; i++) g[i ? 'lineTo' : 'moveTo'](40 + i * ((W - 80) / 14), 180 + R.range(-2, 2));
   g.stroke();
 
-  g.font = `italic 400 46px ${F}`;
+  g.font = `italic 400 44px ${F}`;
   g.fillStyle = css(0x4a3a30);
   const words = sub.split(' ');
-  let line = '', y = 236;
+  let line = '', y = 228, lines = 0;
   for (const wd of words) {
     const test = line ? `${line} ${wd}` : wd;
-    if (g.measureText(test).width > W - 76 && line) { g.fillText(line, 38, y); y += 52; line = wd; }
+    if (g.measureText(test).width > W - 76 && line) { g.fillText(line, 38, y); y += 50; line = wd; if (++lines >= 2) break; }
     else line = test;
   }
-  if (line) g.fillText(line, 38, y);
+  if (line && lines < 3) g.fillText(line, 38, y);
 
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -1233,7 +1233,7 @@ let diagram = null;
 /** Where the chalk diagram is hung: broadside across the block, past the manhole. */
 const DIA = { z: 30, half: 20.5 };
 
-function chalkDot() { return new THREE.SphereGeometry(0.13, 8, 6); }
+function chalkDot() { return new THREE.SphereGeometry(0.105, 8, 6); }
 
 /**
  * WHAT HE'S GOT — the five paths, chalked in the air across the block so you can see
@@ -1247,27 +1247,30 @@ function buildDiagram(app) {
   const g = new THREE.Group();
   g.name = 'pitch_types_diagram';
   // built along +Z like a real pitch, then swung broadside: release at -X, plate at +X
+  // +X is screen-LEFT from a camera looking up the street, so the hand goes at +X
   const lane = new THREE.Group();
-  lane.rotation.y = -Math.PI / 2;
-  lane.position.set(DIA.half, 0, DIA.z);
+  lane.rotation.y = Math.PI / 2;
+  lane.position.set(-DIA.half, 0, DIA.z);
   g.add(lane);
 
   const geo = chalkDot();
   const dotMat = MAT.chalk({ fog: true });
   const inkMat = MAT.outline(INK, 3.2);
-  const STEP = 1 / 30;
+  const STEP = 1 / 22;
 
   const rows = PITCH_ORDER.map((id, i) => {
     const type = PITCHES[id];
-    const depth = (i - 2) * 1.15;                     // stagger in depth so nothing stacks
-    const p0 = new THREE.Vector3(depth, 4.15, PT.moundZ - PT.release.stride);
-    const cross = new THREE.Vector3(depth, [2.85, 2.45, 2.70, 2.95, 1.70][i], PT.plateZ);
+    // strictly coplanar: five curves out of ONE hand is a diagram, five curves at five
+    // depths is a cloud. They separate in the middle of the flight, which is where the
+    // eye reads a pitch anyway.
+    const p0 = new THREE.Vector3(0, 4.30, PT.moundZ - PT.release.stride);
+    const cross = new THREE.Vector3(0, [3.15, 2.35, 2.80, 3.05, 1.55][i], PT.plateZ);
     const p = solve(type, p0, cross, { aim: cross, hand: 1, phase: 1.1 + i * 1.7 });
     return { id, type, p, i };
   });
 
   for (const r of rows) {
-    const n = Math.min(64, Math.max(8, Math.round(r.p.flight / STEP)));
+    const n = Math.min(34, Math.max(8, Math.round(r.p.flight / STEP)));
     const dots = new THREE.InstancedMesh(geo, dotMat, n);
     const ink = new THREE.InstancedMesh(geo, inkMat, n);
     const d = new THREE.Object3D();
@@ -1298,23 +1301,6 @@ function buildDiagram(app) {
     })();
   }
 
-  // the ground line, so five arcs in the air have something to be above
-  const rail = new THREE.Group();
-  const railDot = new THREE.InstancedMesh(geo, dotMat, 46);
-  const railInk = new THREE.InstancedMesh(geo, inkMat, 46);
-  const d2 = new THREE.Object3D();
-  for (let k = 0; k < 46; k++) {
-    const u = k / 45;
-    d2.position.set(-DIA.half + u * DIA.half * 2, 0.06, DIA.z + 1.2);
-    d2.scale.setScalar(k % 6 === 0 ? 1.5 : 0.75);
-    d2.updateMatrix();
-    railDot.setMatrixAt(k, d2.matrix); railInk.setMatrixAt(k, d2.matrix);
-  }
-  railDot.instanceMatrix.needsUpdate = true; railInk.instanceMatrix.needsUpdate = true;
-  railDot.renderOrder = 4; railInk.renderOrder = 3;
-  rail.add(railInk); rail.add(railDot);
-  g.add(rail);
-
   // the chalk ring at the plate end — the same shape the batter sees every pitch
   const zone = new THREE.Mesh(new THREE.PlaneGeometry(PT.ring.feet, PT.ring.feet), new THREE.MeshBasicMaterial({
     map: ringTexture(), transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide, fog: false,
@@ -1331,18 +1317,19 @@ function buildDiagram(app) {
       new THREE.PlaneGeometry(W, H),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide }),
     );
-    const cx = -DIA.half + 4.0 + r.i * 8.3;
-    const cy = 15.6 + (r.i % 2 ? 1.15 : 0);
-    card.position.set(cx, cy, DIA.z - 1.6);
+    const cx = DIA.half - 4.2 - r.i * 8.2;
+    const cy = 15.4 + (r.i % 2 ? 1.25 : 0);
+    card.position.set(cx, cy, DIA.z - 1.4);
     card.renderOrder = 8;
     card.userData.billboard = true;
     card.userData.tilt = (r.i % 2 ? 1 : -1) * 0.032;
     g.add(card);
 
-    // the leader: chalk ticks from the card down to the arc it is talking about
-    const to = new THREE.Vector3(DIA.half - r.apexLocal.z, r.apexLocal.y, DIA.z + r.apexLocal.x);
-    const from = new THREE.Vector3(cx, cy - H * 0.5, DIA.z - 1.2);
-    const nn = 9;
+    // the leader: chalk ticks straight down from the card to its own arc
+    const hit = nearestOnPath(r.p, cx);
+    const to = new THREE.Vector3(cx, hit + 0.5, DIA.z - 0.2);
+    const from = new THREE.Vector3(cx, cy - H * 0.5 - 0.15, DIA.z - 0.2);
+    const nn = Math.max(2, Math.min(9, Math.round((from.y - to.y) / 0.62)));
     const lead = new THREE.InstancedMesh(geo, dotMat, nn);
     const leadInk = new THREE.InstancedMesh(geo, inkMat, nn);
     const d3 = new THREE.Object3D();
@@ -1364,6 +1351,20 @@ function buildDiagram(app) {
   g.visible = false;
   return diagram;
 }
+
+/** The height of a diagram path at a world x, so a leader can drop straight onto it. */
+function nearestOnPath(p, worldX) {
+  let bestY = 4, bestD = 1e9;
+  for (let k = 0; k <= 60; k++) {
+    pathAt(p, (k / 60) * p.flight, _w);
+    const wx = -DIA.half + w2x(_w);
+    const d = Math.abs(wx - worldX);
+    if (d < bestD) { bestD = d; bestY = _w.y; }
+  }
+  return bestY;
+}
+/** local z (down the lane) becomes world +X after the lane is swung broadside */
+const w2x = (v) => v.z;
 
 function faceCards(app) {
   if (!diagram) return;
