@@ -1,7 +1,7 @@
 {
  "run_started": "2026-08-17",
- "round": 1,
- "headline": "Round 1 \u2014 an independent critic scored game feel 3/10 on captured frames and found the moment of contact is a lie: the bat's barrel sweeps to x=569 while the ball crosses at 585-695, so they never touch. Fixed the geometry, the swing timing and the ball's path; landscape camera rebuilt (depth ratio 2.2x \u2192 5.0x, matching portrait).",
+ "round": 2,
+ "headline": "Round 2 \u2014 two independent critics scored the two things the game rests on at 3/10 each, with pixel measurements. Contact was a lie (23px between bat and ball); the hop the game is NAMED for gave minus seventeen milliseconds to react. Both rebuilt at the source. Audio, front-end and impact art all landed and are wired in.",
  "bars": [
   {
    "sys": "Audio",
@@ -42,20 +42,20 @@
  "subsystems": [
   {
    "name": "Audio",
-   "status": "fail",
-   "score": 0,
+   "status": "work",
+   "score": 7,
    "bar": "Every event has a cue; 1920s megaphone announcer",
-   "note": "ZERO audio exists. No AudioStreamPlayer anywhere, no assets/audio, no bus config. Brief lists megaphone patter as must-have.",
-   "gap": "Entire subsystem absent",
+   "note": "Was zero. Now 85 files \u2014 33 sfx, 6 announcer patter pools, 5 music cues, four buses, an Audio autoload \u2014 and ~50 hooks wired through the match. Verified end to end by filming 30s of a real game with Godot's movie writer and analysing the captured audio: peak 0.68 no clipping, 296/299 windows non-silent, pitch cycle plainly visible in the envelope. Builder could not hear it either \u2014 all judgement was from spectrograms.",
+   "gap": "Discrete sfx sit low against the announcer; needs a listening critic, not a spectrogram",
    "shots": []
   },
   {
    "name": "Game feel / juice",
    "status": "work",
-   "score": 4,
+   "score": 6,
    "bar": "Hit-stop, shake, particles, trail at contact",
-   "note": "Independent critic: 3/10. Confirmed real: hit-stop (3 frames @q0.96). Confirmed broken: bat never touched ball (23.3px gap); bounce had zero visual event; impact flash was the street-lamp prop reused, bleaching the ball out for 7 frames; shake was white noise; SOCK! card hid the struck ball for 4 frames; ball parked at the plate for 4 frames like a tee. Now fixed: batter moved 662\u2192714 so the barrel sweeps through the plate, lane spread narrowed 55\u219212 to fit the bat, swing lead added so the bat arrives on time, ball steered onto the barrel instead of parking, shake made a directional damped jolt, shadow no longer hides under the ball, flash moved under the ball, card delayed 220ms, camera kick 2%\u219215%. Authored impact art is being drawn to replace the lamp prop.",
-   "gap": "Needs re-capture and a second independent critic pass",
+   "note": "Critic 3/10 found the bat never touched the ball \u2014 and the deeper cause was that I had measured Tommy, the roster's only left-hander, and signed the geometry backwards. tools/bat_geometry.py now measures the rendered swing per kid and the game reads it. Gap at contact: 23.3px before, 0px now. The lamp-prop flash is replaced with 12 authored sprites, drawn hollow so the ball keeps its outline through the hit.",
+   "gap": "Batter still has no contact reaction pose; needs a second critic pass",
    "shots": [
     {
      "f": "contact_portrait.png",
@@ -94,8 +94,8 @@
    "status": "work",
    "score": 5,
    "bar": "Punch-Out!! tells",
-   "note": "Bounce ballistics differ per pitch type; never verified frame-by-frame that a human can read them before committing.",
-   "gap": "Unmeasured \u2014 no capture proving tells are readable",
+   "note": "Independent analysis: 3/10. Fast and spinner rebounded 1.4% apart and both took 220ms stone-to-plate \u2014 the same pitch twice. After the swing lead the ideal press landed 70ms AFTER the bounce, so usable read time was MINUS 17ms: watching the hop guaranteed a whiff. Now: read time 250/330/350ms, crossing heights 71/110/38px, the drop uniquely falling, release timing differs per type as a wind-up tell, and the swing picks the frame whose barrel matches the ball's height.",
+   "gap": "Needs re-measurement by a fresh analyst; lanes still add noise without being an input",
    "shots": []
   },
   {
@@ -110,10 +110,10 @@
   {
    "name": "Front-end",
    "status": "work",
-   "score": 4,
+   "score": 7,
    "bar": "Candy-store rack, silent-film",
-   "note": "Title uses daylight aged-paper; game is night gothic \u2014 incoherent.",
-   "gap": "Title/select world does not match the game world",
+   "note": "Rebuilt as a place rather than a menu: the corner outside the candy store after dark, composed from the same prop tiles as the match street and relit with the same gas lamps. Card rack with drag-scroll, quirk ribbons, iris wipes.",
+   "gap": "Rack is browsable but static \u2014 Backyard Baseball's kids mug at you; these do not",
    "shots": []
   },
   {
@@ -138,23 +138,23 @@
  "gaps": [
   {
    "pri": "P0",
-   "t": "Audio subsystem entirely absent \u2014 no sound of any kind (builder running)"
-  },
-  {
-   "pri": "P0",
-   "t": "Bounce \u2014 the core mechanic \u2014 has no visual event; hop apex measured at 2 screen px"
+   "t": "Both core loops rebuilt but neither re-graded \u2014 critics needed on the new build"
   },
   {
    "pri": "P1",
-   "t": "Impact art still the reused street-lamp prop (authoring in progress)"
+   "t": "Batter has no contact reaction; swing reads stiff"
   },
   {
    "pri": "P1",
-   "t": "Batter has no contact reaction pose; swing reads stiff"
+   "t": "Discrete sfx sit low under the announcer (levels, not wiring)"
   },
   {
    "pri": "P1",
-   "t": "Front-end (daylight paper) incoherent with night game (builder running)"
+   "t": "Roster cards static \u2014 no idle animation on the select screen"
+  },
+  {
+   "pri": "P2",
+   "t": "Lanes add lateral noise but are not a player input"
   },
   {
    "pri": "P2",
@@ -162,6 +162,26 @@
   }
  ],
  "log": [
+  {
+   "t": "R2",
+   "m": "Batting rebuilt: read time after the bounce goes from -17ms to 250/330/350ms; the three hops are now genuinely different events."
+  },
+  {
+   "t": "R2",
+   "m": "Swing now picks the animation frame whose barrel matches the ball's height, so a high spinner is met early and high, a dying drop late and low."
+  },
+  {
+   "t": "R2",
+   "m": "Second critic: batting scored 3/10 \u2014 the hop the game is named for was unreadable AND unactionable."
+  },
+  {
+   "t": "R2",
+   "m": "Audio wired and verified by filming a real game and analysing the captured audio track."
+  },
+  {
+   "t": "R2",
+   "m": "Audio, front-end and impact FX all delivered by parallel builders; 12 authored FX sprites replace the reused street-lamp prop."
+  },
   {
    "t": "R1",
    "m": "Contact rebuilt: batter repositioned, swing lead added, ball steered onto the barrel. SIM OK unchanged at 13.8 runs / 146 HRs \u2014 presentation cannot touch the sim, by construction."

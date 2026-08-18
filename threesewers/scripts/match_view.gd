@@ -117,6 +117,7 @@ class Kid extends Node2D:
 	var _fps := 8.0
 	var _loop := true
 	var _t := 0.0
+	var _hold := 0.0          # keep the last frame this long before resting
 
 	func _init(id: String) -> void:
 		kid_id = id
@@ -134,6 +135,7 @@ class Kid extends Node2D:
 	var depth_mul := 1.0              # extra size trim, e.g. background kids
 	var _facing := 1.0
 	var _lean := 0.0
+	var squash := Vector2.ONE     # recoil, folded into the projected scale
 
 	# Art is authored at 2x for retina, and animations use different canvas
 	# widths, so the offset is derived per texture: bottom edge on the node
@@ -150,7 +152,7 @@ class Kid extends Node2D:
 		var pr := Tuning.project(wpos, 0.0)
 		position = Vector2(pr.x, pr.y)
 		var sc := Tuning.sprite_scale(pr.z) * depth_mul
-		spr.scale = Vector2(sc * _facing, sc)
+		spr.scale = Vector2(sc * _facing * squash.x, sc * squash.y)
 		if shadow != null:
 			shadow.scale = Vector2(sc, sc) * 0.78
 		z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0))
@@ -163,9 +165,13 @@ class Kid extends Node2D:
 		_lean = lean_deg * (_facing if lean_deg != 0.0 else 1.0)
 		spr.rotation_degrees = _lean
 
+	func hold_last(seconds: float) -> void:
+		_hold = seconds
+
 	func play(a: String, fps := 8.0, loop := true, start := 0) -> void:
 		if anim == a and _loop and loop:
 			return
+		_hold = 0.0
 		anim = a
 		_fps = fps
 		_loop = loop
@@ -189,10 +195,16 @@ class Kid extends Node2D:
 		if _loop:
 			idx %= _frames.size()
 		elif idx >= _frames.size():
-			if rest_anim != "" and anim != rest_anim:
+			# A follow-through that snaps straight back to a rest pose reads
+			# as if nothing happened. Holding the finish is the reaction.
+			if _hold > 0.0 and _t < float(_frames.size()) / _fps + _hold:
+				idx = _frames.size() - 1
+			elif rest_anim != "" and anim != rest_anim:
+				_hold = 0.0
 				play(rest_anim)
 				return
-			idx = _frames.size() - 1
+			else:
+				idx = _frames.size() - 1
 		_set_tex(_frames[idx])
 		frame_usec += Time.get_ticks_usec() - _t0
 
@@ -568,6 +580,16 @@ func _apply_ball() -> void:
 	var sc := Tuning.sprite_scale(pr.z)
 	ball_spr.scale = Vector2(BALL_SCALE, BALL_SCALE) * sc
 	ball.z_index = int(clampf(pr.z * 4096.0, 0.0, 4000.0)) + 1
+	# The batter is the one thing between the camera and the pitch, and their
+	# head sat squarely in the ball's descent: measured, the ball vanished for
+	# 55-77ms INSIDE the decision window on every pitch type — a fifth of the
+	# read time, at the worst possible moment. The ball ends its flight at
+	# world y 2350 against the batter's 2352, so the two are the same depth
+	# and their draw order is an arbitrary tie anyway; the incoming pitch wins
+	# it. Scale still sells the distance.
+	if _ball_mode == "pitch" and batter_node != null \
+			and is_instance_valid(batter_node):
+		ball.z_index = maxi(ball.z_index, batter_node.z_index + 1)
 	# The shadow stays on the ground, so it is projected without the height.
 	# It is the only cue for how high the ball is, and it used to vanish
 	# underneath the ball at exactly the moment that matters — the bounce.
@@ -1178,18 +1200,33 @@ func _resolve_pitch() -> void:
 	if String(ev.get("kind", "")) == "in_play":
 		var q := float(ev.get("quality", 0.5))
 		mark("contact q=%.2f" % q)
+		_batter_react(q)
 		Audio.sfx_world("bat_crack" if q > 0.55 else "bat_thud",
 			bw.x, -7.0 + 8.0 * q)
 		_fx_contact(bw, bh, clampf(q, 0.15, 1.0))
 		shake(5.0 + 15.0 * q, Vector2(-1.0, 0.3))
 		_view_kick(0.05 + 0.10 * q)
 	elif String(ev.get("kind", "")) == "foul":
+		_batter_react(0.2)
 		Audio.sfx_world("bat_thud", bw.x, -4.0)
 		_fx_contact(bw, bh, 0.25)
 		shake(3.5, Vector2(-1.0, 0.3))
 	pitch_resolved.emit(ev)
 
 # ---------------------------------------------------------------- hit timeline
+# The swing used to run straight through as one uninterrupted animation,
+# so a kid who had just crushed one looked exactly like a kid who had just
+# dribbled one. Now the finish is held in proportion to how well it was hit,
+# and the whole body takes the recoil.
+func _batter_react(quality: float) -> void:
+	if batter_node == null or not is_instance_valid(batter_node):
+		return
+	batter_node.hold_last(0.10 + 0.30 * quality)
+	var punch := 0.06 + 0.14 * quality
+	batter_node.squash = Vector2(1.0 + punch, 1.0 - punch * 0.55)
+	var tw := create_tween().set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(batter_node, "squash", Vector2.ONE, 0.34 + 0.20 * quality)
+
 func _launch_hit(play: Dictionary) -> void:
 	_h_from = bw
 	_h_carry = float(play["carry"])

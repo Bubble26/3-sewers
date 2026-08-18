@@ -1,0 +1,25 @@
+FILM 68 bounce
+FILM 135 bounce
+FILM 210 bounce
+FILM 285 bounce
+FILM 293 contact q=0.17
+FILM 293 stop_in 0.048
+FILM 294 stop_out
+FILM 436 bounce
+FILM 503 bounce
+FILM 512 contact q=0.66
+FILM 512 stop_in 0.085
+FILM 514 stop_out
+FILM 626 bounce
+FILM 637 contact q=0.77
+FILM 637 stop_in 0.093
+FILM 639 stop_out
+FILM 715 bounce
+FILM 777 bounce
+FILM 784 contact q=0.62
+FILM 784 stop_in 0.082
+FILM 786 stop_out
+FILM 866 bounce
+FILM 878 contact q=0.96
+FILM 878 stop_in 0.107
+FILM 881 stop_out
