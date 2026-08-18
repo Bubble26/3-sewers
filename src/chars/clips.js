@@ -426,23 +426,28 @@ C('run_stop', {
   events: [{ t: 0.12, name: 'skid' }],
 });
 
-/** Slide into a chalk base — leading leg out, trailing leg tucked, a long held skid. */
+/**
+ * Slide into a chalk base. The whole read is a LONG DIAGONAL: hips on the road, the leading
+ * leg straight out in front, the trailing leg folded under, the torso back and both arms up
+ * out of the way. A slide with the legs under the body reads as sitting down, which is what
+ * the first pass of this clip did on a contact sheet.
+ */
 C('slide', {
-  dur: 1.55,
+  dur: 1.65,
   keys: [
     { t: 0.0, pose: { base: { py: -0.1 }, chest: { rx: -16 }, legL: { rx: 40 }, kneeL: [-14, 0, 0], legR: { rx: -30 }, kneeR: [-40, 0, 0], armL: { rx: -40 }, armR: { rx: 40 } } },
     // launch: hips drop, leading leg fires forward
-    { t: 0.14, ease: 'whip', pose: { base: { py: -0.95, rx: 34, pz: -0.3 }, hips: { rx: 10 }, chest: { rx: -34, ry: -10 }, neck: { rx: 30 }, legL: { rx: 46 }, kneeL: [-8, 0, 0], footL: [-30, 0, 0], legR: { rx: -6, rz: 24 }, kneeR: [-116, 0, 0], armL: { rx: 128, rz: 34 }, elbL: [30, 0, 0], armR: { rx: 120, rz: -40 }, elbR: [26, 0, 0], shirt: [40, 0, 0] } },
-    // the held skid — this is the poster frame
-    { t: 0.34, ease: 'hold', pose: { base: { py: -1.14, rx: 40, pz: -0.16 }, hips: { rx: 12 }, chest: { rx: -40, ry: -14 }, neck: { rx: 36, ry: 10 }, legL: { rx: 52 }, kneeL: [-4, 0, 0], footL: [-34, 0, 0], legR: { rx: -10, rz: 26 }, kneeR: [-122, 0, 0], armL: { rx: 140, rz: 38 }, elbL: [24, 0, 0], armR: { rx: 132, rz: -44 }, elbR: [20, 0, 0] } },
-    { t: 0.66, ease: 'hold', pose: { base: { py: -1.16, rx: 42, pz: -0.1 }, hips: { rx: 12 }, chest: { rx: -42, ry: -18 }, neck: { rx: 38, ry: 14 }, legL: { rx: 54 }, kneeL: [-2, 0, 0], footL: [-36, 0, 0], legR: { rx: -12, rz: 27 }, kneeR: [-124, 0, 0], armL: { rx: 146, rz: 40 }, elbL: [20, 0, 0], armR: { rx: 136, rz: -46 }, elbR: [18, 0, 0] } },
+    { t: 0.14, ease: 'whip', pose: { base: { py: -1.02, rx: 44, pz: -0.3 }, hips: { rx: 8 }, chest: { rx: -26, ry: -10 }, neck: { rx: 22 }, legL: { rx: 66, rz: -6 }, kneeL: [-6, 0, 0], footL: [26, 0, 0], legR: { rx: 4, rz: 26 }, kneeR: [-124, 0, 0], armL: { rx: 128, rz: -46 }, elbL: [30, 0, 0], armR: { rx: 120, rz: 52 }, elbR: [26, 0, 0], shirt: [40, 0, 0] } },
+    // THE HELD SKID — the poster frame. Leading leg horizontal, arms up and clear.
+    { t: 0.34, ease: 'hold', pose: { base: { py: -1.30, rx: 54, pz: -0.16 }, hips: { rx: 10 }, chest: { rx: -30, ry: -14 }, neck: { rx: 26, ry: 12 }, legL: { rx: 82, rz: -8 }, kneeL: [-2, 0, 0], footL: [32, 0, 0], legR: { rx: 6, rz: 28 }, kneeR: [-132, 0, 0], armL: { rx: 142, rz: -58 }, elbL: [22, 0, 0], armR: { rx: 134, rz: 64 }, elbR: [18, 0, 0] } },
+    { t: 0.70, ease: 'hold', pose: { base: { py: -1.33, rx: 56, pz: -0.1 }, hips: { rx: 10 }, chest: { rx: -32, ry: -18 }, neck: { rx: 28, ry: 16 }, legL: { rx: 86, rz: -9 }, kneeL: [0, 0, 0], footL: [34, 0, 0], legR: { rx: 4, rz: 29 }, kneeR: [-134, 0, 0], armL: { rx: 148, rz: -62 }, elbL: [18, 0, 0], armR: { rx: 138, rz: 68 }, elbR: [16, 0, 0] } },
     // hand on the chalk, a beat of stillness
-    { t: 0.92, ease: 'hold', pose: { base: { py: -1.1, rx: 36 }, chest: { rx: -34, ry: -22 }, neck: { rx: 34, ry: 20 }, legL: { rx: 44 }, kneeL: [-18, 0, 0], legR: { rx: -4, rz: 24 }, kneeR: [-110, 0, 0], armL: { rx: 150, rz: 26 }, elbL: [14, 0, 0], armR: { rx: 60, rz: -50 }, elbR: [60, 0, 0] } },
+    { t: 0.98, ease: 'hold', pose: { base: { py: -1.26, rx: 48 }, chest: { rx: -26, ry: -22 }, neck: { rx: 24, ry: 20 }, legL: { rx: 70, rz: -6 }, kneeL: [-18, 0, 0], legR: { rx: 8, rz: 26 }, kneeR: [-118, 0, 0], armL: { rx: 152, rz: -40 }, elbL: [14, 0, 0], armR: { rx: 62, rz: 72 }, elbR: [60, 0, 0] } },
     // pick yourself up
-    { t: 1.2, ease: 'out', pose: { base: { py: -0.72, rx: 16 }, chest: { rx: -40 }, neck: { rx: 34 }, legL: { rx: 34 }, kneeL: [-60, 0, 0], legR: { rx: 12, rz: 16 }, kneeR: [-80, 0, 0], armL: { rx: 70, rz: 20 }, elbL: [50, 0, 0], armR: { rx: 40, rz: -30 }, elbR: [64, 0, 0] } },
-    { t: 1.55, ease: 'settle', pose: { base: { py: -0.12 }, chest: { rx: -10 }, neck: { rx: 6 }, kneeL: [-18, 0, 0], kneeR: [-16, 0, 0], armL: { rx: 6, rz: 12 }, elbL: [34, 0, 0], armR: { rx: 6, rz: -12 }, elbR: [34, 0, 0] } },
+    { t: 1.28, ease: 'out', pose: { base: { py: -0.74, rx: 20 }, chest: { rx: -38 }, neck: { rx: 30 }, legL: { rx: 40 }, kneeL: [-62, 0, 0], legR: { rx: 12, rz: 16 }, kneeR: [-84, 0, 0], armL: { rx: 70, rz: -28 }, elbL: [50, 0, 0], armR: { rx: 40, rz: 34 }, elbR: [64, 0, 0] } },
+    { t: 1.65, ease: 'settle', pose: { base: { py: -0.12 }, chest: { rx: -10 }, neck: { rx: 6 }, kneeL: [-18, 0, 0], kneeR: [-16, 0, 0], armL: { rx: 6, rz: -12 }, elbL: [34, 0, 0], armR: { rx: 6, rz: 12 }, elbR: [34, 0, 0] } },
   ],
-  events: [{ t: 0.14, name: 'dust' }],
+  events: [{ t: 0.14, name: 'dust' }, { t: 0.36, name: 'dust' }],
 });
 
 /** Dive. Full extension held for a quarter second, then a landing squash and a slide-out. */
@@ -583,14 +588,14 @@ C('cheer_jump', {
 C('cheer_wave', {
   dur: 1.5, loop: true,
   keys: [
-    { t: 0.0, ease: 'out', pose: { base: { py: -0.04, sy: -0.03 }, hips: { rz: 5 }, chest: { rx: 4, rz: -8, ry: -6 }, neck: { rx: 16, ry: -8 }, armL: { rx: 10, rz: -150 }, elbL: [12, 0, 0], armR: { rx: 22, rz: 34 }, elbR: [44, 0, 0], kneeL: [-16, 0, 0], kneeR: [-22, 0, 0] } },
-    { t: 0.24, ease: 'whip', pose: { base: { py: 0.06 }, hips: { rz: -4 }, chest: { rx: 8, rz: 10, ry: 8 }, neck: { rx: 20, ry: 10 }, armL: { rx: 10, rz: -126, sy: 0.12 }, elbL: [4, 0, 0], armR: { rx: 34, rz: 40 }, elbR: [56, 0, 0], kneeL: [-22, 0, 0], kneeR: [-14, 0, 0], shirt: [22, 0, 0] } },
-    { t: 0.48, ease: 'whip', pose: { base: { py: 0.04 }, hips: { rz: 5 }, chest: { rx: 8, rz: -10, ry: -8 }, neck: { rx: 20, ry: -10 }, armL: { rx: 10, rz: -168, sy: 0.12 }, elbL: [8, 0, 0], armR: { rx: 20, rz: 30 }, elbR: [40, 0, 0], kneeL: [-14, 0, 0], kneeR: [-22, 0, 0], shirt: [-22, 0, 0] } },
-    { t: 0.72, ease: 'whip', pose: { base: { py: 0.06 }, hips: { rz: -4 }, chest: { rx: 8, rz: 10, ry: 8 }, neck: { rx: 20, ry: 10 }, armL: { rx: 10, rz: -128, sy: 0.14 }, elbL: [2, 0, 0], armR: { rx: 36, rz: 42 }, elbR: [58, 0, 0], kneeL: [-24, 0, 0], kneeR: [-12, 0, 0] } },
+    { t: 0.0, ease: 'out', pose: { base: { py: -0.04, sy: -0.03 }, hips: { rz: 5 }, chest: { rx: 4, rz: -8, ry: -6 }, neck: { rx: 16, ry: -8 }, armL: { rx: 10, rz: -152 }, elbL: [12, 0, 0], armR: { rx: 22, rz: 34 }, elbR: [44, 0, 0], kneeL: [-16, 0, 0], kneeR: [-22, 0, 0] } },
+    { t: 0.24, ease: 'whip', pose: { base: { py: 0.06 }, hips: { rz: -4 }, chest: { rx: 8, rz: 10, ry: 8 }, neck: { rx: 20, ry: 10 }, armL: { rx: 10, rz: -158, sy: 0.12 }, elbL: [4, 0, 0], armR: { rx: 34, rz: 40 }, elbR: [56, 0, 0], kneeL: [-22, 0, 0], kneeR: [-14, 0, 0], shirt: [22, 0, 0] } },
+    { t: 0.48, ease: 'whip', pose: { base: { py: 0.04 }, hips: { rz: 5 }, chest: { rx: 8, rz: -10, ry: -8 }, neck: { rx: 20, ry: -10 }, armL: { rx: 10, rz: -140, sy: 0.12 }, elbL: [8, 0, 0], armR: { rx: 20, rz: 30 }, elbR: [40, 0, 0], kneeL: [-14, 0, 0], kneeR: [-22, 0, 0], shirt: [-22, 0, 0] } },
+    { t: 0.72, ease: 'whip', pose: { base: { py: 0.06 }, hips: { rz: -4 }, chest: { rx: 8, rz: 10, ry: 8 }, neck: { rx: 20, ry: 10 }, armL: { rx: 10, rz: -160, sy: 0.14 }, elbL: [2, 0, 0], armR: { rx: 36, rz: 42 }, elbR: [58, 0, 0], kneeL: [-24, 0, 0], kneeR: [-12, 0, 0] } },
     // a beat where the arm comes down and he shouts up at the fourth floor instead
     { t: 1.0, ease: 'out', pose: { base: { py: -0.06 }, hips: { rz: 6 }, chest: { rx: -6, rz: -6, ry: -14 }, neck: { rx: 28, ry: -18 }, armL: { rx: 40, rz: -86 }, elbL: [86, 0, 0], armR: { rx: 40, rz: 90 }, elbR: [90, 0, 0], kneeL: [-20, 0, 0], kneeR: [-20, 0, 0] } },
     { t: 1.22, ease: 'hold', pose: { base: { py: -0.08 }, hips: { rz: 6 }, chest: { rx: -8, rz: -5, ry: -16 }, neck: { rx: 30, ry: -20 }, armL: { rx: 44, rz: -92 }, elbL: [92, 0, 0], armR: { rx: 44, rz: 96 }, elbR: [94, 0, 0], kneeL: [-24, 0, 0], kneeR: [-18, 0, 0] } },
-    { t: 1.5, ease: 'out', pose: { base: { py: -0.04, sy: -0.03 }, hips: { rz: 5 }, chest: { rx: 4, rz: -8, ry: -6 }, neck: { rx: 16, ry: -8 }, armL: { rx: 10, rz: -150 }, elbL: [12, 0, 0], armR: { rx: 22, rz: 34 }, elbR: [44, 0, 0], kneeL: [-16, 0, 0], kneeR: [-22, 0, 0] } },
+    { t: 1.5, ease: 'out', pose: { base: { py: -0.04, sy: -0.03 }, hips: { rz: 5 }, chest: { rx: 4, rz: -8, ry: -6 }, neck: { rx: 16, ry: -8 }, armL: { rx: 10, rz: -152 }, elbL: [12, 0, 0], armR: { rx: 22, rz: 34 }, elbR: [44, 0, 0], kneeL: [-16, 0, 0], kneeR: [-22, 0, 0] } },
   ],
   events: [{ t: 0.02, name: 'face:grin' }, { t: 1.02, name: 'face:yell' }],
 });
@@ -616,20 +621,20 @@ C('mobbed', {
 });
 
 /**
- * The other half of the mob: a kid piling ON. Leans into the middle with both arms reaching
- * up and forward for a shoulder, and bounces on the spot. The lean lives in the chest, not
- * the root — tipping the whole kid over reads as falling down rather than crowding in, which
- * is exactly how the first pass of this clip looked on a contact sheet.
+ * The other half of the mob: a kid piling ON. Bounces on the spot leaning into the middle,
+ * arms thrown up and forward for a shoulder. The lean lives in the chest, not the root —
+ * tipping the whole kid over reads as falling down rather than crowding in, which is exactly
+ * how the first pass of this clip looked on a contact sheet.
  */
 C('mob_pile', {
   dur: 1.18, loop: true,
   keys: [
-    { t: 0.0, ease: 'out', pose: { base: { py: -0.30, pz: -0.18, rx: -5, sy: -0.08, sx: 0.05, sz: 0.05 }, hips: { rx: -6 }, chest: { rx: -20, rz: 6 }, neck: { rx: 26, ry: -8 }, armL: { rx: -96, rz: -40 }, armR: { rx: -96, rz: 40 }, elbL: [40, 0, 0], elbR: [40, 0, 0], legL: { rx: 22, rz: -12 }, legR: { rx: -14, rz: 12 }, kneeL: [-44, 0, 0], kneeR: [-56, 0, 0] } },
-    { t: 0.16, ease: 'whip', pose: { base: { py: 0.66, pz: -0.36, rx: -9, sy: 0.13, sx: -0.065, sz: -0.065 }, hips: { rx: -9 }, chest: { rx: -8, rz: -6 }, neck: { rx: 30, ry: 10 }, armL: { rx: -128, rz: -56 }, armR: { rx: -128, rz: 56 }, elbL: [16, 0, 0], elbR: [16, 0, 0], legL: { rx: -18, rz: -10 }, legR: { rx: -26, rz: 10 }, kneeL: [-70, 0, 0], kneeR: [-84, 0, 0], footL: [-26, 0, 0], footR: [-26, 0, 0], shirt: [36, 0, 0], brim: [18, 0, 0] } },
-    { t: 0.32, ease: 'hold', pose: { base: { py: 0.84, pz: -0.42, rx: -11, sy: 0.09, sx: -0.045, sz: -0.045 }, hips: { rx: -10 }, chest: { rx: -4, rz: 8 }, neck: { rx: 32, ry: -12 }, armL: { rx: -138, rz: -64 }, armR: { rx: -132, rz: 50 }, elbL: [10, 0, 0], elbR: [14, 0, 0], legL: { rx: -24, rz: -12 }, legR: { rx: -32, rz: 12 }, kneeL: [-82, 0, 0], kneeR: [-92, 0, 0], footL: [-30, 0, 0], footR: [-30, 0, 0] } },
-    { t: 0.50, ease: 'whip', pose: { base: { py: -0.44, pz: -0.22, rx: -4, sy: -0.15, sx: 0.09, sz: 0.09 }, hips: { rx: -4 }, chest: { rx: -32, rz: -8 }, neck: { rx: 20, ry: 14 }, armL: { rx: -66, rz: -34 }, armR: { rx: -66, rz: 34 }, elbL: [58, 0, 0], elbR: [58, 0, 0], legL: { rx: 26, rz: -14 }, legR: { rx: 20, rz: 14 }, kneeL: [-72, 0, 0], kneeR: [-76, 0, 0], brim: [-24, 0, 0], shirt: [-30, 0, 0] } },
-    { t: 0.72, ease: 'out', pose: { base: { py: -0.22, pz: -0.26, rx: -7, sy: -0.05, sx: 0.03, sz: 0.03 }, hips: { rx: -7 }, chest: { rx: -16, rz: 5 }, neck: { rx: 28, ry: -6 }, armL: { rx: -108, rz: -46 }, armR: { rx: -108, rz: 46 }, elbL: [30, 0, 0], elbR: [30, 0, 0], legL: { rx: 18, rz: -12 }, legR: { rx: -10, rz: 12 }, kneeL: [-40, 0, 0], kneeR: [-50, 0, 0] } },
-    { t: 1.18, ease: 'out', pose: { base: { py: -0.30, pz: -0.18, rx: -5, sy: -0.08, sx: 0.05, sz: 0.05 }, hips: { rx: -6 }, chest: { rx: -20, rz: 6 }, neck: { rx: 26, ry: -8 }, armL: { rx: -96, rz: -40 }, armR: { rx: -96, rz: 40 }, elbL: [40, 0, 0], elbR: [40, 0, 0], legL: { rx: 22, rz: -12 }, legR: { rx: -14, rz: 12 }, kneeL: [-44, 0, 0], kneeR: [-56, 0, 0] } },
+    { t: 0.0, ease: 'out', pose: { base: { py: -0.34, pz: -0.10, sy: -0.10, sx: 0.06, sz: 0.06 }, hips: { rx: -4 }, chest: { rx: -14, rz: 6 }, neck: { rx: 20, ry: -8 }, armL: { rx: -34, rz: -88 }, armR: { rx: -34, rz: 88 }, elbL: [40, 0, 0], elbR: [40, 0, 0], legL: { rx: 16, rz: -14 }, legR: { rx: 16, rz: 14 }, kneeL: [-70, 0, 0], kneeR: [-70, 0, 0] } },
+    { t: 0.16, ease: 'whip', pose: { base: { py: 0.72, pz: -0.26, sy: 0.14, sx: -0.07, sz: -0.07 }, hips: { rx: -7 }, chest: { rx: -6, rz: -6 }, neck: { rx: 26, ry: 10 }, armL: { rx: -26, rz: -136 }, armR: { rx: -26, rz: 136 }, elbL: [14, 0, 0], elbR: [14, 0, 0], legL: { rx: -14, rz: -10 }, legR: { rx: -22, rz: 10 }, kneeL: [-62, 0, 0], kneeR: [-78, 0, 0], footL: [-26, 0, 0], footR: [-26, 0, 0], shirt: [36, 0, 0], brim: [18, 0, 0] } },
+    { t: 0.32, ease: 'hold', pose: { base: { py: 0.92, pz: -0.32, sy: 0.09, sx: -0.045, sz: -0.045 }, hips: { rx: -9 }, chest: { rx: -2, rz: 8 }, neck: { rx: 28, ry: -12 }, armL: { rx: -22, rz: -150 }, armR: { rx: -30, rz: 142 }, elbL: [6, 0, 0], elbR: [12, 0, 0], legL: { rx: -20, rz: -12 }, legR: { rx: -30, rz: 12 }, kneeL: [-74, 0, 0], kneeR: [-88, 0, 0], footL: [-30, 0, 0], footR: [-30, 0, 0] } },
+    { t: 0.50, ease: 'whip', pose: { base: { py: -0.50, pz: -0.14, sy: -0.17, sx: 0.10, sz: 0.10 }, hips: { rx: -3 }, chest: { rx: -30, rz: -8 }, neck: { rx: 14, ry: 14 }, armL: { rx: -50, rz: -62 }, armR: { rx: -50, rz: 62 }, elbL: [58, 0, 0], elbR: [58, 0, 0], legL: { rx: 22, rz: -16 }, legR: { rx: 22, rz: 16 }, kneeL: [-92, 0, 0], kneeR: [-92, 0, 0], footL: [14, 0, 0], footR: [14, 0, 0], brim: [-24, 0, 0], shirt: [-30, 0, 0] } },
+    { t: 0.72, ease: 'out', pose: { base: { py: -0.26, pz: -0.14, sy: -0.06, sx: 0.035, sz: 0.035 }, hips: { rx: -5 }, chest: { rx: -12, rz: 5 }, neck: { rx: 22, ry: -6 }, armL: { rx: -30, rz: -108 }, armR: { rx: -30, rz: 108 }, elbL: [30, 0, 0], elbR: [30, 0, 0], legL: { rx: 14, rz: -13 }, legR: { rx: 14, rz: 13 }, kneeL: [-62, 0, 0], kneeR: [-62, 0, 0] } },
+    { t: 1.18, ease: 'out', pose: { base: { py: -0.34, pz: -0.10, sy: -0.10, sx: 0.06, sz: 0.06 }, hips: { rx: -4 }, chest: { rx: -14, rz: 6 }, neck: { rx: 20, ry: -8 }, armL: { rx: -34, rz: -88 }, armR: { rx: -34, rz: 88 }, elbL: [40, 0, 0], elbR: [40, 0, 0], legL: { rx: 16, rz: -14 }, legR: { rx: 16, rz: 14 }, kneeL: [-70, 0, 0], kneeR: [-70, 0, 0] } },
   ],
   events: [{ t: 0.02, name: 'face:yell' }, { t: 0.50, name: 'land' }],
 });
@@ -679,45 +684,6 @@ C('sulk', {
   ],
 });
 
-/**
- * Being mobbed at the plate. Arms up in the V, and four smaller people shoving him around:
- * the root rolls and slides, the cap gets knocked, the head whips from one shoulder to the
- * other. The stagger is deliberately off-beat from the crew's jumps so the group never
- * pulses as one animation.
- */
-C('mobbed', {
-  dur: 1.5, loop: true,
-  keys: [
-    { t: 0.0, ease: 'out', pose: { base: { py: 0.06, rz: 6, px: 0.10 }, hips: { rz: -5 }, chest: { rx: 12, rz: -8 }, neck: { rx: 30, ry: -16 }, armL: { rx: 172, rz: 48, sy: 0.26 }, armR: { rx: 172, rz: -48, sy: 0.26 }, elbL: [14, 0, 0], elbR: [14, 0, 0], kneeL: [-18, 0, 0], kneeR: [-24, 0, 0] } },
-    { t: 0.22, ease: 'snap', pose: { base: { py: 0.34, rz: -9, px: -0.16, sy: 0.06, sx: -0.03, sz: -0.03 }, hips: { rz: 7 }, chest: { rx: 20, rz: 11 }, neck: { rx: 38, ry: 20 }, armL: { rx: 188, rz: 40, sy: 0.34 }, armR: { rx: 188, rz: -56, sy: 0.34 }, elbL: [2, 0, 0], elbR: [2, 0, 0], kneeL: [-8, 0, 0], kneeR: [-6, 0, 0], footL: [-24, 0, 0], footR: [-24, 0, 0], brim: [-20, 0, 0], shirt: [30, 0, 0] } },
-    { t: 0.46, ease: 'snap', pose: { base: { py: 0.10, rz: 10, px: 0.18 }, hips: { rz: -8 }, chest: { rx: 8, rz: -13 }, neck: { rx: 26, ry: -24 }, armL: { rx: 168, rz: 56, sy: 0.24 }, armR: { rx: 176, rz: -38, sy: 0.28 }, elbL: [22, 0, 0], elbR: [10, 0, 0], kneeL: [-28, 0, 0], kneeR: [-10, 0, 0], brim: [14, 0, 0] } },
-    { t: 0.72, ease: 'snap', pose: { base: { py: 0.40, rz: -6, px: -0.10, sy: 0.07, sx: -0.035, sz: -0.035 }, hips: { rz: 6 }, chest: { rx: 22, rz: 8 }, neck: { rx: 40, ry: 14 }, armL: { rx: 190, rz: 44, sy: 0.36 }, armR: { rx: 190, rz: -52, sy: 0.36 }, elbL: [0, 0, 0], elbR: [0, 0, 0], kneeL: [-6, 0, 0], kneeR: [-8, 0, 0], footL: [-26, 0, 0], footR: [-26, 0, 0], shirt: [-24, 0, 0] } },
-    { t: 0.98, ease: 'snap', pose: { base: { py: 0.04, rz: 8, px: 0.14 }, hips: { rz: -6 }, chest: { rx: 10, rz: -10 }, neck: { rx: 28, ry: -18 }, armL: { rx: 170, rz: 52, sy: 0.22 }, armR: { rx: 178, rz: -44, sy: 0.28 }, elbL: [18, 0, 0], elbR: [8, 0, 0], kneeL: [-22, 0, 0], kneeR: [-16, 0, 0], brim: [-12, 0, 0] } },
-    { t: 1.24, ease: 'snap', pose: { base: { py: 0.30, rz: -10, px: -0.18, sy: 0.05 }, hips: { rz: 8 }, chest: { rx: 18, rz: 12 }, neck: { rx: 36, ry: 22 }, armL: { rx: 186, rz: 38, sy: 0.32 }, armR: { rx: 186, rz: -58, sy: 0.32 }, elbL: [4, 0, 0], elbR: [4, 0, 0], kneeL: [-10, 0, 0], kneeR: [-6, 0, 0], footL: [-20, 0, 0], footR: [-20, 0, 0] } },
-    { t: 1.5, ease: 'out', pose: { base: { py: 0.06, rz: 6, px: 0.10 }, hips: { rz: -5 }, chest: { rx: 12, rz: -8 }, neck: { rx: 30, ry: -16 }, armL: { rx: 172, rz: 48, sy: 0.26 }, armR: { rx: 172, rz: -48, sy: 0.26 }, elbL: [14, 0, 0], elbR: [14, 0, 0], kneeL: [-18, 0, 0], kneeR: [-24, 0, 0] } },
-  ],
-  events: [{ t: 0.02, name: 'face:yell' }, { t: 0.76, name: 'face:grin' }],
-});
-
-/**
- * The other half of the mob: a kid piling ON. Leans hard into the middle, both arms forward
- * to grab a shoulder, bouncing on the spot. Read as a wedge pointing at the star.
- */
-C('mob_pile', {
-  dur: 1.18, loop: true,
-  keys: [
-    { t: 0.0, ease: 'out', pose: { base: { py: -0.30, pz: -0.20, rx: -12, sy: -0.08, sx: 0.05, sz: 0.05 }, hips: { rx: -8 }, chest: { rx: -22, rz: 6 }, neck: { rx: 34, ry: -8 }, armL: { rx: 124, rz: 34, sy: 0.14 }, armR: { rx: 124, rz: -34, sy: 0.14 }, elbL: [40, 0, 0], elbR: [40, 0, 0], legL: { rx: 22, rz: -12 }, legR: { rx: -14, rz: 12 }, kneeL: [-44, 0, 0], kneeR: [-56, 0, 0] } },
-    { t: 0.16, ease: 'whip', pose: { base: { py: 0.62, pz: -0.44, rx: -20, sy: 0.12, sx: -0.06, sz: -0.06 }, hips: { rx: -12 }, chest: { rx: -10, rz: -6 }, neck: { rx: 42, ry: 10 }, armL: { rx: 152, rz: 40, sy: 0.28 }, armR: { rx: 152, rz: -40, sy: 0.28 }, elbL: [18, 0, 0], elbR: [18, 0, 0], legL: { rx: -18, rz: -10 }, legR: { rx: -26, rz: 10 }, kneeL: [-70, 0, 0], kneeR: [-84, 0, 0], footL: [-26, 0, 0], footR: [-26, 0, 0], shirt: [36, 0, 0], brim: [18, 0, 0] } },
-    { t: 0.32, ease: 'hold', pose: { base: { py: 0.78, pz: -0.50, rx: -24, sy: 0.08, sx: -0.04, sz: -0.04 }, hips: { rx: -14 }, chest: { rx: -6, rz: 8 }, neck: { rx: 46, ry: -12 }, armL: { rx: 162, rz: 46, sy: 0.30 }, armR: { rx: 158, rz: -36, sy: 0.30 }, elbL: [10, 0, 0], elbR: [14, 0, 0], legL: { rx: -24, rz: -12 }, legR: { rx: -32, rz: 12 }, kneeL: [-82, 0, 0], kneeR: [-92, 0, 0], footL: [-30, 0, 0], footR: [-30, 0, 0] } },
-    { t: 0.50, ease: 'whip', pose: { base: { py: -0.42, pz: -0.24, rx: -10, sy: -0.14, sx: 0.09, sz: 0.09 }, hips: { rx: -6 }, chest: { rx: -32, rz: -8 }, neck: { rx: 26, ry: 14 }, armL: { rx: 96, rz: 30 }, armR: { rx: 96, rz: -30 }, elbL: [58, 0, 0], elbR: [58, 0, 0], legL: { rx: 26, rz: -14 }, legR: { rx: 20, rz: 14 }, kneeL: [-72, 0, 0], kneeR: [-76, 0, 0], brim: [-24, 0, 0], shirt: [-30, 0, 0] } },
-    { t: 0.72, ease: 'out', pose: { base: { py: -0.22, pz: -0.28, rx: -14, sy: -0.05, sx: 0.03, sz: 0.03 }, hips: { rx: -9 }, chest: { rx: -18, rz: 5 }, neck: { rx: 36, ry: -6 }, armL: { rx: 132, rz: 36, sy: 0.16 }, armR: { rx: 132, rz: -36, sy: 0.16 }, elbL: [34, 0, 0], elbR: [34, 0, 0], legL: { rx: 18, rz: -12 }, legR: { rx: -10, rz: 12 }, kneeL: [-40, 0, 0], kneeR: [-50, 0, 0] } },
-    { t: 1.18, ease: 'out', pose: { base: { py: -0.30, pz: -0.20, rx: -12, sy: -0.08, sx: 0.05, sz: 0.05 }, hips: { rx: -8 }, chest: { rx: -22, rz: 6 }, neck: { rx: 34, ry: -8 }, armL: { rx: 124, rz: 34, sy: 0.14 }, armR: { rx: 124, rz: -34, sy: 0.14 }, elbL: [40, 0, 0], elbR: [40, 0, 0], legL: { rx: 22, rz: -12 }, legR: { rx: -14, rz: 12 }, kneeL: [-44, 0, 0], kneeR: [-56, 0, 0] } },
-  ],
-  events: [{ t: 0.02, name: 'face:yell' }, { t: 0.50, name: 'land' }],
-});
-
-// ── signature moments ───────────────────────────────────────────────────────
-/** CAR! Everything stops on one frame. Held for well over a second. */
 C('freeze', {
   dur: 2.4,
   keys: [

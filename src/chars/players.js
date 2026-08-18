@@ -68,6 +68,7 @@ class Kid {
     this.speed = 0; this.maxSpeed = T.run.speed;
     this.target = null; this.arrive = null; this.hardStop = false;
     this.runDist = arng.range(0, 5);
+    this.glide = 0;
     this.state = 'idle';
     this.lock = 0;                       // seconds a one-shot owns the body
     this.idleClip = IDLES[index % IDLES.length];
@@ -98,9 +99,9 @@ class Kid {
     const P = APP.puffs;
     if (!P) return;
     _v.set(this.pos.x, 0.12, this.pos.y);
-    if (name === 'skid') P.burst(_v, 9, 3.0);
-    else if (name === 'dust') P.burst(_v, 15, 3.4);
-    else if (name === 'land') P.burst(_v, 6, 2.1);
+    if (name === 'skid') { P.burst(_v, 22, 4.2); this.glide = Math.max(this.glide || 0, this.speed * 0.5); }
+    else if (name === 'dust') P.burst(_v, 30, 5.0);
+    else if (name === 'land') P.burst(_v, 12, 2.6);
   }
 
   setFace(name, hold = 0) {
@@ -146,6 +147,8 @@ class Kid {
     const cl = CLIPS[name];
     if (!cl) return;
     this.anim.play(name, { fade: o.fade === undefined ? 0.1 : o.fade, restart: true, speed: o.speed || 1 });
+    // a kid who leaves his feet keeps travelling: without this the slide is a mime of a slide
+    if (o.glide !== false && (name === 'slide' || name === 'dive')) this.glide = Math.max(this.speed, o.glide || 0);
     this.state = o.state || 'act';
     this.lock = (o.lock === undefined ? cl.dur / (o.speed || 1) : o.lock);
     this.after = o.after || null;
@@ -213,6 +216,16 @@ class Kid {
       }
     } else if (this.speed > 0) {
       this.speed = Math.max(0, this.speed - T.run.accel * 2 * dt);
+    }
+
+    // skid: friction, not braking. Feet are off the ground, so it decays slowly and the kid
+    // travels several feet on his hip — which is the entire read of a slide.
+    if (this.glide > 0) {
+      this.glide = Math.max(0, this.glide - 13 * dt);
+      const step = this.glide * dt;
+      this.pos.x += Math.sin(this.face) * step;
+      this.pos.y += Math.cos(this.face) * step;
+      if (this.lock <= 0) this.glide = 0;
     }
 
     this.group.position.set(this.pos.x, 0, this.pos.y);
@@ -289,11 +302,11 @@ class Kid {
     const stick = this.rig.get('stick');
     if (!tip || !stick || !stick.visible) { this.trail.clear(); return; }
     const len = (this.rig.stickLength || 3.3) * 0.5;
-    this._tipA.set(0, len * 0.02, 0).applyMatrix4(tip.matrixWorld);
-    this._tipB.set(0, len * 1.05, 0).applyMatrix4(tip.matrixWorld);
+    this._tipA.set(0, len * 0.58, 0).applyMatrix4(tip.matrixWorld);
+    this._tipB.set(0, len * 1.06, 0).applyMatrix4(tip.matrixWorld);
     const v = this._tipB.distanceTo(this._prevTip) / Math.max(dt, 1e-4);
     this._prevTip.copy(this._tipB);
-    this.trail.push(this._tipA, this._tipB, THREE.MathUtils.clamp((v - 16) / 44, 0, 1));
+    this.trail.push(this._tipA, this._tipB, THREE.MathUtils.clamp((v - 26) / 58, 0, 1));
     this.trail.update();
   }
 }
@@ -314,6 +327,23 @@ function chalkMarks(scene) {
   for (const b of BASES) ring(b.x, b.z, 2.3, 0.34);
   ring(HOME.x, HOME.z, 2.6, 0.36);
   scene.add(g);
+  return g;
+}
+
+/** A single extra chalk bag for the locomotion reel, so the slide slides INTO something. */
+function reelBase(scene, x, z) {
+  let g = scene.getObjectByName('reel_base');
+  if (g) return g;
+  g = new THREE.Group();
+  g.name = 'reel_base';
+  const mat = new THREE.MeshBasicMaterial({ color: CHALK, transparent: true, opacity: 0.78, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(1.9, 2.35, 4, 1), mat);
+  ring.rotation.x = -Math.PI / 2; ring.rotation.z = Math.PI / 4;
+  ring.position.set(x, 0.035, z);
+  ring.renderOrder = 1;
+  g.add(ring);
+  scene.add(g);
+  g.visible = false;
   return g;
 }
 
@@ -540,10 +570,12 @@ export default registerSystem({
   /** Scenarios other than ours must find the street exactly as they left it. */
   onScenario(name, app) {
     arng.reset(4711);
+    const rb = app.scene.getObjectByName('reel_base');
+    if (rb) rb.visible = name === 'anim_run';
     this.mode = name && name.startsWith('anim_') ? 'demo' : 'game';
     this.hitstop = 0;
     for (const k of this.kids) {
-      k.cycle = null; k.cycleStep = -1; k.lock = 0; k.target = null; k.speed = 0;
+      k.cycle = null; k.cycleStep = -1; k.lock = 0; k.target = null; k.speed = 0; k.glide = 0;
       k.anim.stopLayers(); k._drive = null; k.gait = 'run'; k.maxSpeed = T.run.speed;
       k.group.visible = true; k.rig.resetSprings();
       if (k.trail) k.trail.clear();
@@ -598,7 +630,7 @@ const sys = () => APP.get('players');
  * numbers below sit inside both bands, which is what stops an animation reel from turning
  * into a set of cropped torsos the way the first pass did.
  */
-function cam(at, { dist = 21, elev = 26, yaw = -22, fov = 44, aim = 0 } = {}) {
+function cam(at, { dist = 21, elev = 21, yaw = -22, fov = 44, aim = 0 } = {}) {
   const e = elev * Math.PI / 180, y = yaw * Math.PI / 180;
   const h = dist * Math.cos(e);
   APP.camera.position.set(at[0] + Math.sin(y) * h, at[1] + dist * Math.sin(e), at[2] - Math.cos(y) * h);
@@ -615,7 +647,7 @@ function cast(n) {
   const out = [];
   for (const k of pool) {
     if (out.length >= n) break;
-    k.cycle = null; k.cycleStep = -1; k.lock = 0; k.target = null; k.speed = 0; k.state = 'idle';
+    k.cycle = null; k.cycleStep = -1; k.lock = 0; k.target = null; k.speed = 0; k.glide = 0; k.state = 'idle';
     k.anim.stopLayers(); k.group.visible = true;
     k.idleClip = IDLES[out.length % IDLES.length];
     k.restClip = k.idleClip;
@@ -644,14 +676,17 @@ registerScenario('anim_idle', {
   seed: 21,
   setup: () => {
     const a = cast(5);
-    cam([0.4, 2.7, 45.6], { dist: 21.5, elev: 25, yaw: -23, fov: 43, aim: 0.35 });
-    const spot = [[-7.4, 43.2], [-3.6, 46.6], [0.5, 43.0], [4.5, 46.4], [8.0, 42.8]];
+    cam([0.2, 2.6, 44.6], { dist: 19.5, elev: 19, yaw: -24, fov: 43, aim: 0.5 });
+    const spot = [[-6.9, 42.4], [-3.3, 45.6], [0.4, 42.2], [4.2, 45.4], [7.6, 42.0]];
     const rest = ['idle', 'idle_slouch', 'idle_bounce', 'idle', 'idle_slouch'];
     const mood = ['neutral', 'squint', 'grin', 'smug', 'neutral'];
+    // three-quarter, and no two the same way round: a kid square-on to the lens loses both
+    // arms and both legs to foreshortening, which is exactly what killed the first pass
+    const turn = [0.86, -0.72, 0.55, -0.92, 0.78];
     a.forEach((k, i) => {
       const [x, z] = spot[i];
       k.showStick(i === 2);
-      k.at(x, z, faceCam(x, z, (i - 2) * 0.16));
+      k.at(x, z, faceCam(x, z, turn[i]));
       k.idleClip = rest[i];
       k.restClip = rest[i];
       k.baseFace = mood[i];
@@ -677,23 +712,26 @@ registerScenario('anim_swing', {
   seed: 22,
   setup: () => {
     const a = cast(5);
-    cam([0.2, 2.8, 45.4], { dist: 22.5, elev: 24, yaw: -18, fov: 44, aim: 0.45 });
+    cam([0.2, 2.7, 44.8], { dist: 21, elev: 19, yaw: -16, fov: 44, aim: 0.55 });
     const P = 1.25;
-    const spot = [[-8.2, 43.0], [-2.8, 45.8], [2.6, 43.0], [8.0, 45.8]];
+    const spot = [[-7.6, 42.4], [-2.6, 45.4], [2.4, 42.4], [7.4, 45.4]];
+    // Batters stand PROFILE to the lens. A swing is hips-before-hands and a bat arc; both of
+    // those are invisible head-on and unmissable from the side, which is why every baseball
+    // photograph ever taken of a swing is shot from third base.
     for (let i = 0; i < 4; i++) {
       const k = a[i];
       const [x, z] = spot[i];
       k.giveStick(); k.showStick(true);
-      k.at(x, z, faceCam(x, z, -0.34));
+      k.at(x, z, faceCam(x, z, 1.02));
       k.restClip = 'stance';
       k.setCycle(P, [
         { t: 0.0, do: (y) => { y.anim.play('stance', { fade: 0.08 }); y.flavour('waggle', { life: 0.16 }); } },
         { t: 0.14, do: (y) => y.anim.play('swing', { restart: true, fade: 0.04 }) },
       ], (P / 4) * i + 0.30);
     }
-    // the catcher, low and near, so the frame has a second silhouette family in it
+    // the catcher, squatting, so the frame carries a second silhouette family
     const c = a[4];
-    c.at(-11.2, 39.4, faceCam(-11.2, 39.4, 0.42));
+    c.at(-8.4, 50.0, faceCam(-8.4, 50.0, 0.5));
     c.restClip = 'crouch';
     c.anim.play('crouch', { at: 0.9, fade: 0 });
   },
@@ -709,32 +747,40 @@ registerScenario('anim_run', {
   seed: 23,
   setup: () => {
     const a = cast(6);
-    cam([1.0, 2.9, 46.4], { dist: 24, elev: 26, yaw: -14, fov: 46, aim: 0.4 });
+    cam([1.2, 2.6, 45.0], { dist: 21, elev: 17, yaw: -12, fov: 43, aim: 0.65 });
     const treadmill = (k, lane, x0) => {
       k.at(x0, lane, YAW(1, 0));
       k.speed = T.run.speed;
-      k.goTo(30, lane, { speed: T.run.speed, onArrive: (y) => treadmill(y, lane, -20) });
+      k.goTo(30, lane, { speed: T.run.speed, onArrive: (y) => treadmill(y, lane, -22) });
     };
-    for (let i = 0; i < 4; i++) {
+    // Three at full tilt on one lane, a quarter-cycle apart, so a single frame is three
+    // points of one stride and a contact sheet is the whole cycle four times over.
+    for (let i = 0; i < 3; i++) {
       const k = a[i];
-      const lane = 43.4 + i * 2.4;
-      k.runDist = i * (CLIPS.run.meta.stride * k.scale) / 4;
+      k.runDist = i * (CLIPS.run.meta.stride * k.scale) / 3;
       k._steps = undefined;
-      treadmill(k, lane, -10.5 + i * 5.6);
+      treadmill(k, 46.6, -11.6 + i * 5.6);
     }
-    // the hard stop: full speed, both feet plant, everything above the knees keeps going
+    // one launching from a standstill: the reel has to show acceleration, not just the loop
+    const e = a[3];
+    e.setCycle(2.6, [
+      { t: 0.0, do: (x) => { x.at(-13.0, 49.8, YAW(1, 0)); x.speed = 0; x.runDist = 0; x._steps = undefined; x.goTo(22, 49.8, { speed: T.run.speed }); } },
+    ], 0.0);
+    // the hard stop on the back lane: both feet plant, everything above the knees keeps going
     const s = a[4];
-    s.setCycle(3.2, [
-      { t: 0.0, do: (x) => { x.at(-14, 53.4, YAW(1, 0)); x.speed = T.run.speed; x.goTo(0.5, 53.4, { speed: T.run.speed, hard: true }); } },
-    ], 1.12);
-    // and the slide into the chalk, front and centre where it is biggest
+    s.setCycle(2.6, [
+      { t: 0.0, do: (x) => { x.at(-8.8, 52.6, YAW(1, 0)); x.speed = T.run.speed; x.goTo(-0.2, 52.6, { speed: T.run.speed, hard: true }); } },
+    ], 0.0);
+    // and the slide, on the front lane, aimed at an actual chalk bag
+    const BX = 2.6, BZ = 41.2;
+    reelBase(APP.scene, BX, BZ).visible = true;
     const d = a[5];
-    d.setCycle(3.2, [
-      { t: 0.0, do: (x) => { x.at(-2.5, 39.0, YAW(9, 2.5)); x.speed = T.run.speed; x.goTo(9.0, 41.9, { speed: T.run.speed }); } },
-      { t: 0.60, do: (x) => { x.target = null; x.act('slide', { state: 'slide' }); } },
-    ], 0.72);
+    d.setCycle(2.6, [
+      { t: 0.0, do: (x) => { x.at(-8.0, BZ, YAW(1, 0)); x.speed = T.run.speed; x.goTo(BX + 4.5, BZ, { speed: T.run.speed }); } },
+      { t: 0.30, do: (x) => { x.target = null; x.act('slide', { state: 'slide' }); } },
+    ], 0.0);
   },
-  settle: 0.3,
+  settle: 0.55,
 });
 
 /**
@@ -747,28 +793,28 @@ registerScenario('anim_celebrate', {
   seed: 24,
   setup: () => {
     const a = cast(7);
-    cam([0, 2.9, 12.6], { dist: 20.5, elev: 25, yaw: -20, fov: 45, aim: 0.85 });
+    cam([0.4, 2.7, 12.2], { dist: 17.5, elev: 20, yaw: -19, fov: 45, aim: 1.15 });
     const star = a[0];
-    star.at(0, 12.4, faceCam(0, 12.4, 0.12));
+    star.at(0, 12.2, faceCam(0, 12.2, 0.16));
     star.setCycle(9, [{ t: 0, do: (x) => x.anim.play('mobbed', { fade: 0.2 }) }], 0.4);
 
     // three piling on, at three phases, so no two are airborne on the same frame
-    const pile = [[-3.6, 10.2, 0.00], [3.9, 10.6, 0.42], [-1.0, 15.6, 0.78]];
+    const pile = [[-3.0, 10.4, 0.00], [3.2, 10.8, 0.42], [-0.6, 14.9, 0.78]];
     pile.forEach((p, i) => {
       const k = a[1 + i];
-      k.at(p[0], p[1], YAW(0 - p[0], 12.4 - p[1]));
+      k.at(p[0], p[1], YAW(0 - p[0], 12.2 - p[1]));
       k.setCycle(9, [{ t: 0, do: (x) => x.anim.play('mob_pile', { fade: 0.2 }) }], p[2]);
     });
     // one bouncing clear of the scrum, one waving the whole block over
     const j = a[4];
-    j.at(8.4, 15.4, faceCam(8.4, 15.4, -0.30));
+    j.at(6.6, 15.6, faceCam(6.6, 15.6, -0.34));
     j.setCycle(9, [{ t: 0, do: (x) => x.anim.play('cheer_jump', { fade: 0.2 }) }], 0.61);
     const w = a[5];
-    w.at(-8.0, 16.2, faceCam(-8.0, 16.2, 0.28));
+    w.at(-6.4, 15.2, faceCam(-6.4, 15.2, 0.30));
     w.setCycle(9, [{ t: 0, do: (x) => x.anim.play('cheer_wave', { fade: 0.2 }) }], 0.9);
-    // the other bench: the taunt and the sulk, out at the edges where they read as a reaction
+    // the other bench: the kid who lost, out at the edge where he reads as a reaction shot
     const s = a[6];
-    s.at(12.6, 21.0, faceCam(12.6, 21.0, -0.42));
+    s.at(9.4, 8.2, faceCam(9.4, 8.2, -0.46));
     s.setCycle(9, [{ t: 0, do: (x) => x.anim.play('sulk', { fade: 0.2 }) }], 1.4);
   },
   settle: 0.9,
@@ -779,7 +825,7 @@ registerScenario('anim_pitch', {
   seed: 25,
   setup: () => {
     const a = cast(4);
-    cam([0, 2.8, 45.2], { dist: 21, elev: 25, yaw: -27, fov: 43, aim: 0.4 });
+    cam([0, 2.8, 45.2], { dist: 21, elev: 21, yaw: -27, fov: 43, aim: 0.4 });
     const spot = [[-7.4, 43.0], [-2.6, 46.2], [2.4, 43.0], [7.4, 46.2]];
     a.forEach((k, i) => {
       const [x, z] = spot[i];
@@ -800,7 +846,7 @@ registerScenario('anim_field', {
   seed: 26,
   setup: () => {
     const a = cast(4);
-    cam([0, 2.8, 45.6], { dist: 22.5, elev: 25, yaw: -20, fov: 45, aim: 0.5 });
+    cam([0, 2.8, 45.6], { dist: 22.5, elev: 21, yaw: -20, fov: 45, aim: 0.5 });
     const acts = ['dive', 'jump_catch', 'fumble', 'throw'];
     const spot = [[-8.6, 42.2], [-2.8, 46.0], [2.8, 42.2], [8.6, 46.0]];
     a.forEach((k, i) => {
@@ -821,7 +867,7 @@ registerScenario('anim_car', {
   seed: 27,
   setup: () => {
     const a = cast(6);
-    cam([0, 2.9, 45.8], { dist: 24, elev: 26, yaw: -24, fov: 46, aim: 0.4 });
+    cam([0, 2.9, 45.8], { dist: 24, elev: 22, yaw: -24, fov: 46, aim: 0.4 });
     const spots = [[-8.6, 42.4], [-4.2, 47.4], [0.6, 42.6], [5.0, 47.6], [9.4, 43.0], [-12.0, 48.2]];
     a.forEach((k, i) => {
       const sp = spots[i];
@@ -844,7 +890,7 @@ registerScenario('anim_argue', {
   seed: 28,
   setup: () => {
     const a = cast(4);
-    cam([-0.4, 2.8, 46.4], { dist: 19.5, elev: 24, yaw: -30, fov: 43, aim: 0.4 });
+    cam([-0.4, 2.8, 46.4], { dist: 19.5, elev: 20, yaw: -30, fov: 43, aim: 0.4 });
     const [p, q, r, s] = a;
     p.at(-2.0, 45.2, YAW(4.0, 1.1)); q.at(2.0, 46.3, YAW(-4.0, -1.1));
     p.setCycle(6, [{ t: 0, do: (x) => x.anim.play('argue_jab', { fade: 0.2 }) }], 0.9);

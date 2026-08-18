@@ -163,7 +163,7 @@ export const FACADE = {
 export const SPECULAR = {
   glass: 0x54626a,               // plate and sash glass, the dark side of a pane
   glassSky: 0x9db6cc,            // what a pane reflects: a slab of upper sky, flattened
-  glassSpec: 0xe6eef2,           // the hard hot streak — the only near-chalk value in the world
+  glassSpec: 0xd7e0e6,           // the hard hot streak, held at L* 87 so chalk keeps the top
   gold: 0xd9a441,                // gold-leaf lettering on a doctor's window
   goldShade: 0x8f6a24,
   wetAsphalt: 0x7f6d5c,
@@ -284,9 +284,9 @@ export function ramp(hex) {
  * Law 1 / §4.4.1 — soot is a function of HEIGHT. 0% at the curb, 100% at the cornice, and the
  * play plane is the cleanest part of the world. Pass a height in feet.
  */
-export function sootAtHeight(hex, y, { curb = 2, cornice = 56, max = 0.34 } = {}) {
+export function sootAtHeight(hex, y, { curb = 2, cornice = 56, max = 0.34, power = 2 } = {}) {
   const t = clamp((y - curb) / (cornice - curb), 0, 1);
-  return soot(hex, max * t * t);       // squared: the first two floors stay nearly clean
+  return soot(hex, max * t ** power);  // super-linear: the first two floors stay nearly clean
 }
 
 /**

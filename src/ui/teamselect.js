@@ -28,7 +28,7 @@ import { mix, inkOf, hexCSS, LEATHER } from '../chars/wardrobe.js';
 import { chalkStroke } from '../world/props.js';
 import {
   screen, cardCanvas, bustCanvas, cardShadow, pavement, slab, chalk, slabW, wrap, say,
-  fitSlab, fitChalk,
+  fitSlab, fitChalk, chalkHead,
 } from '../chars/portraits.js';
 import { ROSTER, getKid, POOL, CAPTAINS, pickValue, STAT_KEYS } from '../chars/roster.js';
 
@@ -132,6 +132,7 @@ class Draft {
     this.human = false;          // becomes true the moment somebody touches a control
     this.wait = 0;
     this.done = false;
+    this.lastPicked = null;
     this.flash = 0;
     this.moods = new Map();
     this.pushLine();
@@ -180,6 +181,9 @@ class Draft {
     const rest = this.picks.slice(this.i + 1).filter((p) => p.id !== id);
     const missing = SEATS.filter((s) => !this.taken.has(s) && s !== id && !rest.some((p) => p.id === s));
     for (const m of missing) rest.push({ c: 0, id: m });
+    // nobody picks Junior until there is nobody else, no matter who is picking
+    const junior = rest.findIndex((p) => p.id === 'dom');
+    if (junior >= 0 && junior !== rest.length - 1) rest.push(...rest.splice(junior, 1));
     let turn = this.captain();
     for (const p of rest) { turn = 1 - turn; p.c = turn; }
     this.picks.length = this.i + 1;
@@ -195,6 +199,7 @@ class Draft {
     this.teams[p.c].push(p.id);
     this.taken.add(p.id);
     this.revealed.add(p.id);
+    this.lastPicked = p.id;
     bus.emit('roster:picked', { id: p.id, team: p.c, order: this.i });
     this.i++;
     if (this.i >= this.picks.length) { this.done = true; this.lines = [{ who: 2, text: "That's everybody. PLAY BALL." }]; return; }
@@ -267,11 +272,11 @@ const L = {
   header: { x: 0, y: 8, w: DW, h: 88 },
   colL: { x: 22, y: 104, w: 268, h: 764 },
   colR: { x: DW - 22 - 268, y: 104, w: 268, h: 764 },
-  focus: { x: 320, y: 108, w: 250, h: 459 },
-  notes: { x: 308, y: 578, w: 276, h: 182 },
+  focus: { x: 322, y: 108, w: 240, h: 440 },
+  notes: { x: 306, y: 560, w: 278, h: 206 },
   pool: { x: 606, y: 108, w: 690, cols: 5, rows: 3, gx: 12, gy: 13 },
   ribbon: { x: 600, y: 772, w: 700, h: 104 },
-  hint: { x: 300, y: 868, w: 1000, h: 30 },
+  hint: { x: 300, y: 858, w: 1000, h: 30 },
 };
 const CHIP = {
   w: (L.pool.w - L.pool.gx * (L.pool.cols - 1)) / L.pool.cols,
@@ -352,6 +357,38 @@ function manicule(g, x, y, s, angle = 0) {
   g.restore();
 }
 
+/**
+ * A striped canvas awning valance. Every ground-floor shop on the block had one
+ * (PERIOD §2.6) and they are where a brown street keeps its chroma (Law 4).
+ */
+function awning(g, x, y, w, h) {
+  const a = ACCENTS.red, b = mix(CLOTH[0], CHALK, 0.25);
+  const stripe = w / 46;
+  g.save();
+  g.beginPath();
+  g.moveTo(x, y);
+  g.lineTo(x + w, y);
+  g.lineTo(x + w, y + h * 0.62);
+  for (let i = 46; i >= 0; i--) {
+    const sx = x + i * stripe;
+    g.quadraticCurveTo(sx + stripe * 0.5, y + h * 1.06, sx, y + h * 0.62);
+  }
+  g.closePath();
+  g.save(); g.clip();
+  for (let i = 0; i <= 46; i++) {
+    g.fillStyle = C(i % 2 ? a : b);
+    g.fillRect(x + i * stripe, y - 2, stripe + 1, h * 1.2);
+  }
+  // the awning is above the play plane, so it is the sooted end of the value ramp
+  const gr = g.createLinearGradient(0, y, 0, y + h * 1.1);
+  gr.addColorStop(0, 'rgba(42,29,26,0.42)');
+  gr.addColorStop(1, 'rgba(42,29,26,0.04)');
+  g.fillStyle = gr; g.fillRect(x, y - 2, w, h * 1.2);
+  g.restore();
+  g.strokeStyle = C(INK); g.lineWidth = 2.2; g.stroke();
+  g.restore();
+}
+
 /** A torn scrap with a line on it. Text always sits on a physical ground (§6.4). */
 function scrap(g, x, y, w, h, seed, tint) {
   const r = new RNG(seed);
@@ -407,14 +444,33 @@ function paintSelect(g, W, H) {
   const S = Math.min(W / DW, H / DH);
   const ox = (W - DW * S) / 2, oy = (H - DH * S) / 2;
 
-  pavement(g, W, H, 19);
-  // the roadway runs along the bottom of the frame: the game is about to happen there
+  // sidewalk, roadway, sidewalk: the picking happens in the road, and the two sides
+  // get chalked on the flags where they always were (PERIOD §3.1)
+  pavement(g, W, H, 19, { potsy: false });
+  // each captain's half of the road, washed in his own colour of chalk. Law 4: no
+  // 128px of a frame may be all low-saturation, and a brown street cannot pay that
+  // bill on its own.
+  for (const [side, id] of [[0, CAPTAINS[0]], [1, CAPTAINS[1]]]) {
+    const acc = ACCENTS[getKid(id).art.accent];
+    const x0 = side === 0 ? 0 : ox + 1298 * S;
+    const w0 = side === 0 ? ox + 302 * S : W - (ox + 1298 * S);
+    g.save();
+    g.globalAlpha = 0.22;
+    const wash = g.createLinearGradient(side === 0 ? 0 : x0 + w0, 0, side === 0 ? x0 + w0 : x0, 0);
+    wash.addColorStop(0, C(acc));
+    wash.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = wash; g.fillRect(x0, 0, w0, H);
+    g.restore();
+    chalkStroke(g, [[side === 0 ? x0 + w0 - 4 : x0 + 4, 0], [side === 0 ? x0 + w0 - 4 : x0 + 4, H]], 3.4, 500 + side, 0.40, C(CHALK));
+  }
+  // the crown of the road, brightest ground in the frame
   g.save();
-  const roadY = H * 0.90;
-  g.fillStyle = C(PAVEMENT.curb); g.fillRect(0, roadY - H * 0.018, W, H * 0.02);
-  g.fillStyle = C(PAVEMENT.asphaltSun); g.fillRect(0, roadY, W, H - roadY);
-  g.fillStyle = C(soot(PAVEMENT.asphaltSun, 0.14));
-  for (let i = 0; i < 40; i++) { const x = (i / 40) * W; g.fillRect(x, roadY, W / 90, H - roadY); }
+  const cg = g.createLinearGradient(ox + 300 * S, 0, ox + 1300 * S, 0);
+  cg.addColorStop(0, 'rgba(0,0,0,0)');
+  cg.addColorStop(0.5, C(PAVEMENT.blockCrown));
+  cg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.globalAlpha = 0.20; g.fillStyle = cg;
+  g.fillRect(ox + 300 * S, 0, 1000 * S, H);
   g.restore();
 
   g.save();
@@ -429,7 +485,8 @@ function paintContent(g) {
 
   /* ---- header ------------------------------------------------------------ */
   const hd = L.header;
-  scrap(g, DW * 0.30, hd.y, DW * 0.40, hd.h * 0.80, 3);
+  awning(g, 0, -6, DW, 46);
+  scrap(g, DW * 0.30, hd.y, DW * 0.40, hd.h * 0.94, 3);
   for (const s of [0, 1]) {
     g.save();
     g.translate(DW * 0.30 + s * DW * 0.40, hd.y + hd.h * 0.40);
@@ -444,9 +501,16 @@ function paintContent(g) {
     weight: 0.20, serif: 7, jitter: 1.2, seed: 11,
     shadow: { dx: 2.4, dy: 2.8, color: C(mix(ACCENTS.red, INK, 0.5)) },
   });
-  fitChalk(g, 'MULBERRY ST. · HALF PAST THREE · LOSER FIELDS FIRST', DW / 2, hd.y + hd.h * 0.86, 16, DW * 0.30, {
-    color: C(mix(FACADE.brickShade, INK, 0.45)), tracking: 0.16, condense: 0.84, weight: 0.13, seed: 12, alpha: 0.9,
+  fitChalk(g, 'MULBERRY ST. · HALF PAST THREE · LOSER FIELDS FIRST', DW / 2, hd.y + hd.h * 0.70, 15, DW * 0.28, {
+    color: C(mix(FACADE.brickShade, INK, 0.42)), tracking: 0.16, condense: 0.84, weight: 0.13, seed: 12, alpha: 0.95,
   });
+  // somebody's chalk, from this morning, which nobody has rubbed out
+  g.save();
+  g.globalAlpha = 0.30;
+  g.translate(DW * 0.093, DH * 0.945); g.rotate(-0.05);
+  chalk(g, 'SOCKS IS A BUM', 0, 0, 22, { align: 'center', color: C(CHALK), tracking: 0.14, condense: 0.82, weight: 0.15, seed: 401, alpha: 0.9 });
+  chalkStroke(g, [[-92, -8], [92, -12]], 3, 402, 0.9, C(CHALK));
+  g.restore();
 
   /* ---- the two columns --------------------------------------------------- */
   paintColumn(g, 0);
@@ -454,7 +518,7 @@ function paintContent(g) {
 
   /* ---- the pool ---------------------------------------------------------- */
   const cur = d.current();
-  const focusId = d.hover && !d.taken.has(d.hover) ? d.hover : cur;
+  const focusId = (d.hover && !d.taken.has(d.hover) ? d.hover : cur) || d.lastPicked;
   for (let i = 0; i < SEATS.length; i++) {
     const id = SEATS[i];
     if (d.taken.has(id) && !(d.picks[d.i] && d.picks[d.i].id === id)) { paintGone(g, id, i); continue; }
@@ -485,7 +549,16 @@ function paintContent(g) {
     cardShadow(g, 0, 0, f.w, f.h, 1.5);
     g.drawImage(cardCanvas(focusId, Math.round(f.w), Math.round(f.h), { detail: 'full', mood: d.moodOf(focusId) }), 0, 0);
     g.restore();
-    paintNotes(g, focusId);
+    if (d.done && focusId === d.lastPicked) {
+      g.save();
+      g.translate(f.x + f.w / 2, f.y + f.h + 30);
+      g.rotate(-0.03);
+      fitChalk(g, 'LAST PICKED. AS USUAL.', 0, 0, 24, f.w * 1.06, {
+        color: C(mix(CHALK, ACCENTS.mustard, 0.35)), tracking: 0.13, condense: 0.82, weight: 0.15, seed: 610, alpha: 1,
+      });
+      g.restore();
+    }
+    paintNotes(g, focusId, d.done ? 46 : 0);
   }
 
   /* ---- the ribbon: the argument ------------------------------------------ */
@@ -494,8 +567,8 @@ function paintContent(g) {
   /* ---- the curb: how you work it ---------------------------------------- */
   const hint = L.hint;
   fitChalk(g, "ARROWS: LOOK 'EM OVER · ENTER OR TAP: CALL HIS NAME · HE DON'T GET A SAY",
-    DW / 2, hint.y + 24, 19, hint.w, {
-      color: C(CHALK), tracking: 0.15, condense: 0.84, weight: 0.13, seed: 56, alpha: 0.85,
+    DW / 2, hint.y + 22, 20, 990, {
+      color: C(CHALK), tracking: 0.15, condense: 0.84, weight: 0.15, seed: 56, alpha: 1,
     });
 
   /* ---- the pointing hand ------------------------------------------------- */
@@ -503,11 +576,11 @@ function paintContent(g) {
     const i = d.seatIndex(cur);
     const b = seatBox(i);
     const lift = d.phase === 'consider' ? 0 : 1;
-    const px = b.x - 26 + Math.sin(t * 6) * 3;
-    const py = b.y + b.h * 0.5;
+    const px = b.x - 46 + Math.sin(t * 6) * 4;
+    const py = b.y + b.h * 0.46;
     g.save();
     g.globalAlpha = d.phase === 'settle' ? 0.35 : 1;
-    manicule(g, px, py, 46 + lift * 5, 0);
+    manicule(g, px, py, 76 + lift * 8, 0.04);
     g.restore();
     // the chalk ring the caller scuffs round his man
     if (d.phase !== 'consider') {
@@ -622,18 +695,20 @@ function paintGone(g, id, i) {
   const team = draft.teams[0].includes(id) ? 0 : 1;
   const accent = ACCENTS[getKid(CAPTAINS[team]).art.accent];
   g.save();
-  g.globalAlpha = 0.42;
-  const box = [[b.x + 4, b.y + 4], [b.x + b.w - 4, b.y + 6], [b.x + b.w - 6, b.y + b.h - 4], [b.x + 6, b.y + b.h - 6], [b.x + 4, b.y + 4]];
-  chalkStroke(g, box, 2.6, 300 + i, 0.8, C(CHALK));
+  g.globalAlpha = 0.40;
+  chalkStroke(g, [
+    [b.x + 5, b.y + 5], [b.x + b.w - 5, b.y + 7], [b.x + b.w - 7, b.y + b.h - 5], [b.x + 7, b.y + b.h - 7], [b.x + 5, b.y + 5],
+  ], 2.4, 300 + i, 0.8, C(CHALK));
   g.restore();
+  // the kid himself, in chalk, because a hole in the line-up should still be somebody
+  chalkHead(g, kid, b.x + b.w * 0.5, b.y + b.h * 0.365, b.h * 0.30, { seed: 12 + i, alpha: 0.58 });
   g.save();
-  g.globalAlpha = 0.62;
-  chalk(g, kid.nick, b.x + b.w / 2, b.y + b.h * 0.50, 21, {
-    align: 'center', color: C(CHALK), tracking: 0.10, condense: 0.80, weight: 0.15, seed: 320 + i, alpha: 0.9,
+  chalk(g, kid.nick, b.x + b.w / 2, b.y + b.h * 0.80, 20, {
+    align: 'center', color: C(CHALK), tracking: 0.10, condense: 0.80, weight: 0.15, seed: 320 + i, alpha: 0.78,
   });
-  chalkStroke(g, [[b.x + 12, b.y + b.h * 0.46], [b.x + b.w - 12, b.y + b.h * 0.42]], 3.4, 340 + i, 0.9, C(CHALK));
-  chalk(g, team === 0 ? 'SOCKS' : 'LEGS', b.x + b.w / 2, b.y + b.h * 0.70, 14, {
-    align: 'center', color: C(mix(accent, CHALK, 0.55)), tracking: 0.14, condense: 0.8, weight: 0.14, seed: 360 + i, alpha: 0.95,
+  chalkStroke(g, [[b.x + 14, b.y + b.h * 0.755], [b.x + b.w - 14, b.y + b.h * 0.735]], 3.2, 340 + i, 0.85, C(CHALK));
+  chalk(g, team === 0 ? 'SOCKS' : 'LEGS', b.x + b.w / 2, b.y + b.h * 0.94, 14, {
+    align: 'center', color: C(mix(accent, CHALK, 0.5)), tracking: 0.14, condense: 0.8, weight: 0.14, seed: 360 + i, alpha: 0.95,
   });
   g.restore();
 }
@@ -708,48 +783,54 @@ function paintChip(g, id, i, t) {
   }
 }
 
-function paintNotes(g, id) {
+function paintNotes(g, id, dy = 0) {
   const kid = getKid(id);
-  const n = L.notes;
-  g.save();
-  g.fillStyle = C(mix(PAVEMENT.asphaltShade, INK, 0.34));
-  g.beginPath();
-  g.moveTo(n.x, n.y + 4); g.lineTo(n.x + n.w, n.y); g.lineTo(n.x + n.w - 3, n.y + n.h);
-  g.lineTo(n.x + 2, n.y + n.h - 4); g.closePath();
-  g.fill();
-  g.strokeStyle = C(mix(LEATHER[0], INK, 0.4)); g.lineWidth = 5; g.stroke();
-  g.restore();
-
-  const rows = [
+  const n = { ...L.notes, y: L.notes.y + dy, h: L.notes.h - dy };
+  const all = [
     ['AT THE PLATE', kid.stance.note],
     ['ON THE MOUND', kid.arm.quirk],
     ['SWEARS BY', kid.charm],
-  ];
-  const limit = n.y + n.h - 46;
-  let y = n.y + 24;
-  for (const [label, text] of rows) {
-    const lines = wrap(text, 12.5, n.w - 28, { tracking: 0.08, condense: 0.74 }).slice(0, 3);
-    if (y + 14 + lines.length * 14 > limit) break;
-    chalk(g, label, n.x + 14, y, 13, {
+  ].map(([label, text]) => [label, wrap(text, 12.5, n.w - 30, { tracking: 0.08, condense: 0.74 }).slice(0, 3)]);
+
+  // measure, keep only the rows that fit, then cut the slate to those rows: an
+  // overflowing slate and a half-empty slate are the same bug wearing two hats
+  const rows = [];
+  let need = 22 + 42;                      // top padding + the hidden-trait footer
+  for (const row of all) {
+    const cost = 14 + row[1].length * 14 + 13;
+    if (need + cost > n.h) break;
+    rows.push(row); need += cost;
+  }
+  const H = Math.max(96, need);
+
+  g.save();
+  g.fillStyle = C(mix(PAVEMENT.asphaltShade, INK, 0.34));
+  g.beginPath();
+  g.moveTo(n.x, n.y + 4); g.lineTo(n.x + n.w, n.y); g.lineTo(n.x + n.w - 3, n.y + H);
+  g.lineTo(n.x + 2, n.y + H - 4); g.closePath();
+  g.fill();
+  g.strokeStyle = C(mix(LEATHER[0], INK, 0.40)); g.lineWidth = 5; g.stroke();
+  g.restore();
+
+  let y = n.y + 22;
+  for (const [label, lines] of rows) {
+    chalk(g, label, n.x + 15, y, 13, {
       color: C(mix(CHALK, ACCENTS.mustard, 0.45)), tracking: 0.16, condense: 0.76, weight: 0.14, seed: 170 + y, alpha: 1,
     });
     for (const line of lines) {
       y += 14;
-      chalk(g, line, n.x + 14, y, 12.5, {
-        color: C(CHALK), tracking: 0.08, condense: 0.74, weight: 0.12, seed: 180 + line.length, alpha: 0.86,
+      chalk(g, line, n.x + 15, y, 12.5, {
+        color: C(CHALK), tracking: 0.08, condense: 0.74, weight: 0.12, seed: 180 + line.length, alpha: 0.88,
       });
     }
-    y += 20;
+    y += 13;
   }
-  // the hidden trait: face down until the block finds out
   const known = draft.revealed.has(id);
-  g.save();
-  chalkStroke(g, [[n.x + 12, n.y + n.h - 34], [n.x + n.w - 12, n.y + n.h - 36]], 2, 191, 0.45, C(CHALK));
-  fitChalk(g, known ? kid.secret.label : 'NOBODY KNOWS THIS YET', n.x + n.w / 2, n.y + n.h - 12, 16, n.w - 28, {
+  chalkStroke(g, [[n.x + 13, n.y + H - 32], [n.x + n.w - 13, n.y + H - 34]], 2, 191, 0.45, C(CHALK));
+  fitChalk(g, known ? kid.secret.label : 'NOBODY KNOWS THIS YET', n.x + n.w / 2, n.y + H - 11, 16, n.w - 30, {
     color: C(known ? mix(CHALK, ACCENTS.mustard, 0.55) : CHALK), tracking: 0.14, condense: 0.80,
     weight: 0.14, seed: 190, alpha: known ? 1 : 0.5,
   });
-  g.restore();
 }
 
 function paintRibbon(g) {

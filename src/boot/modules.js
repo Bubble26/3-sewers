@@ -12,6 +12,8 @@ import '../chars/players.js';
 import '../chars/rig.js';
 // --- gameplay --------------------------------------------------------------
 import '../game/ballview.js';
+import '../game/ballphysics.js';
+import '../game/pitching.js';
 // --- fx / ui / audio -------------------------------------------------------
 import '../fx/particles.js';
 import '../ui/hud.js';

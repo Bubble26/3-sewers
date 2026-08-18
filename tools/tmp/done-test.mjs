@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+import { listen } from '../serve.mjs';
+const { srv, port } = await listen(0);
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader','--use-gl=angle','--enable-unsafe-swiftshader','--no-sandbox','--disable-dev-shm-usage','--hide-scrollbars'] });
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+const logs=[]; page.on('console', m=>{if(m.type()==='error'||m.type()==='warning')logs.push(m.text());});
+await page.goto(`http://127.0.0.1:${port}/index.html?harness=1`, { waitUntil: 'load' });
+await page.waitForFunction(() => globalThis.__SB?.ready);
+await page.evaluate(async () => { await globalThis.__SB.scenario('team_select'); });
+await page.evaluate(() => { for (let i=0;i<60*90;i++) globalThis.__SB.advance(1/60); globalThis.__SB.renderOnce(); });
+await page.screenshot({ path: '/home/user/logicposter/stickball/shots/roster-personality-r1/team_select-done.png' });
+console.log('errors', await page.evaluate(()=>globalThis.__SB.errors), logs);
+await browser.close(); srv.close();

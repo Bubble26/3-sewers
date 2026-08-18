@@ -9,14 +9,20 @@
  *
  * 1. IT TURNS THE FILM CURVE OFF. This is the important one. The palette in §2 is authored as
  *    FINAL DISPLAY VALUES — every check in the bible is written in the L* of a hex, and §14
- *    A1 measures those L* on the rendered frame. A filmic tone curve breaks that contract:
- *    measured through ACES at exposure 1.05, our brick renders at L* 67.6 instead of the
- *    authored 47.5, and the coal haze renders at L* 94 — level with CHALK, which Law 2 says
- *    nothing may reach. So the renderer's tone mapping is switched off while this pass owns
- *    the output, and the pass applies a curve a 1997 sprite artist could have painted instead
- *    (§3.4 bans "a tone-mapping curve that a 1997 sprite artist could not have painted by
- *    hand", which is exactly what ACES is). Turn postfx off and the renderer's own setting is
- *    put back untouched.
+ *    check A1 measures those L* on the RENDERED frame. A filmic tone curve breaks that
+ *    contract: measured on this build, the same frame through ACES puts the sky at L* 75.7
+ *    where the palette authors it at 65-79, and squeezes CHALK (94.9) down to within about
+ *    three points of the sky, which is the exact separation Law 2 exists to protect.
+ *    §3.4 bans "a tone-mapping curve that a 1997 sprite artist could not have painted by
+ *    hand", and ACES is precisely that curve, so it comes off: authored value in, authored
+ *    value out. (Mechanically, three disables per-material tone mapping whenever it renders
+ *    into a render target, so simply owning the composite already does it; the explicit
+ *    NoToneMapping below is for the fallback path, and the renderer's original setting is put
+ *    back the moment this pass steps aside.)
+ *
+ *    THE CONSEQUENCE, stated plainly for the other pieces: any colour that was eyeballed
+ *    through the film curve now renders as it was actually authored. Author against
+ *    palette.js and you land exactly on the bible's numbers.
  *
  * 2. THE POSTER CURVE. Three segments, and the middle one is a straight line:
  *      · FLOOR — §3.4 requires no 64x64 px region of a gameplay frame below L* 26. The lift is
@@ -51,9 +57,9 @@ const yOf = (L) => ((L + 16) / 116) ** 3;
 
 export const PROFILES = {
   /** What ships. A floor, a straight middle, a shoulder. Nothing else. */
-  bible: { floorL: 26.0, floorGain: 1.30, ceilKnee: 0.90, ceilMax: 0.965, chroma: 0.0, vignette: 0.0, grain: 0.0 },
+  bible: { floorL: 26.0, floorGain: 1.60, ceilKnee: 0.90, ceilMax: 0.965, chroma: 0.0, vignette: 0.0, grain: 0.0 },
   /** For an A/B only — everything §3.4 forbids, so a critic can see why it forbids it. */
-  debug: { floorL: 26.0, floorGain: 1.30, ceilKnee: 0.86, ceilMax: 0.95, chroma: 0.10, vignette: 0.35, grain: 0.05 },
+  debug: { floorL: 26.0, floorGain: 1.60, ceilKnee: 0.86, ceilMax: 0.95, chroma: 0.10, vignette: 0.35, grain: 0.05 },
   /** Straight through: the pass still owns the output transform, but grades nothing. */
   flat: { floorL: 0, floorGain: 0, ceilKnee: 1.0, ceilMax: 1.0, chroma: 0, vignette: 0, grain: 0 },
 };
@@ -119,7 +125,10 @@ void main() {
   region *= 0.2;
   float need = max( 0.0, uFloor - region ) * uFloorGain;
   float keep = 1.0 - smoothstep( uFloor * 2.0, uFloor * 5.0, luma( c ) );
-  c += uFill * need * keep;
+  // half of the lift is a gain (which holds the region's chroma) and half is added skylight
+  // (which is what ambient actually is, and which is why our shadows are blue-violet).
+  c *= 1.0 + need * keep * 3.0;
+  c += uFill * need * keep * 0.55;
 
   // --- MIDDLE. Nothing. The play plane and the ball pass through untouched.
 
@@ -268,7 +277,9 @@ export default registerSystem({
     this.savedToneMapping = r.toneMapping;
     this.savedExposure = r.toneMappingExposure;
     const quality = app.flags?.quality ?? 'high';
-    if (globalThis.__SB_NOFX) return;
+    // ?nofx=1 renders straight to the canvas with the renderer's own settings — the A/B
+    // that proves what this pass is and is not doing. Never a default.
+    if (new URLSearchParams(location.search).has('nofx')) return;
     if (quality === 'low' || !r.capabilities?.isWebGL2) return;   // step aside, keep the frame
     try {
       this.fx = new PostFX(r, PROFILES.bible);

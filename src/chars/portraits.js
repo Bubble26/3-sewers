@@ -474,10 +474,14 @@ export function drawPortrait(g, kidRef, box, o = {}) {
     solid(g, hairBack, hairCol, { bounds: { x: cx - hw, y: cy - hh, w: hw * 2, h: hh * 2 }, lw });
     g.save();
     hairBack(); g.clip();
-    g.strokeStyle = C(mix(hairCol, CHALK, 0.34)); g.lineWidth = Math.max(1.4, lw * 1.3);
+    g.strokeStyle = C(mix(hairCol, CHALK, 0.44)); g.lineWidth = Math.max(2.2, lw * 2.2);
+    g.lineCap = 'round';
     curve(g, [
-      [cx - hw * 0.52, cy - hh * 0.30], [cx - hw * 0.22, cy - hh * 0.56], [cx + hw * 0.20, cy - hh * 0.52],
+      [cx - hw * 0.56, cy - hh * 0.24], [cx - hw * 0.26, cy - hh * 0.56], [cx + hw * 0.22, cy - hh * 0.54],
     ]);
+    g.stroke();
+    g.strokeStyle = C(mix(hairCol, CHALK, 0.22)); g.lineWidth = Math.max(1.4, lw * 1.2);
+    curve(g, [[cx + hw * 0.34, cy - hh * 0.44], [cx + hw * 0.50, cy - hh * 0.16]]);
     g.stroke();
     g.restore();
   }
@@ -1022,6 +1026,67 @@ function drawProp(g, prop, ctx) {
   }
 }
 
+/**
+ * The same kid, drawn in chalk on the flagstone: head, cap, ears, plaits. Used for
+ * the hole a kid leaves in the pool when his name gets called, which is the only
+ * way to show a draft emptying without the screen emptying with it.
+ */
+export function chalkHead(g, kidRef, cx, cy, size, o = {}) {
+  const kid = getKid(kidRef);
+  const a = kid.art;
+  const fam = FAMILIES[a.fam] || FAMILIES.melon;
+  const hs = fam.head;
+  const hh = size, unit = hh / (2 * hs.h);
+  const hw = hs.w * unit * 2 * (1 + hs.cheek * 0.30);
+  const col = o.color || C(CHALK);
+  const alpha = o.alpha ?? 0.55;
+  const w = Math.max(1.8, size * 0.030);
+  let seed = (o.seed || 1) * 7;
+  const pts = headOutline(hs, 30).map(([x, y]) => [cx + x * unit, cy + y * unit]);
+  pts.push(pts[0]);
+  chalkStroke(g, pts, w, seed++, alpha, col);
+  // two dots and a line: how a nine-year-old draws a nine-year-old
+  g.save();
+  g.globalAlpha = alpha;
+  g.fillStyle = col;
+  for (const sgn of [-1, 1]) {
+    g.beginPath();
+    g.arc(cx + sgn * hw * 0.17, cy + hh * 0.02, Math.max(1.4, hw * 0.045), 0, TAU);
+    g.fill();
+  }
+  g.restore();
+  chalkStroke(g, [
+    [cx - hw * 0.16, cy + hh * 0.20], [cx, cy + hh * 0.26], [cx + hw * 0.16, cy + hh * 0.20],
+  ], w * 0.9, seed++, alpha, col);
+  const hatK = a.hat === 'none' ? { kind: 'none' } : (fam.hat || { kind: 'none' });
+  if (hatK.kind !== 'none') {
+    const cw = hw * 0.60, top = cy - hh * 0.50 + hh * (BUST[a.fam] || BUST.melon).capY;
+    const ch2 = hh * (hatK.kind === 'newsboy' ? 0.34 : 0.25);
+    chalkStroke(g, [
+      [cx - cw * 1.16, top + hh * 0.10], [cx - cw * 0.30, top - ch2], [cx + cw * 0.45, top - ch2 * 0.94],
+      [cx + cw * 1.02, top + hh * 0.04],
+    ], w, seed++, alpha, col);
+    chalkStroke(g, [[cx - cw * 1.22, top + hh * 0.12], [cx - cw * 0.10, top + hh * 0.20], [cx + cw * 0.96, top + hh * 0.09]], w, seed++, alpha, col);
+  }
+  if (fam.ears > 1.2) {
+    for (const sgn of [-1, 1]) {
+      const ex = cx + sgn * hw * 0.56, ey = cy + hh * 0.03, er = hw * 0.16 * fam.ears;
+      const ring = [];
+      for (let i = 0; i <= 12; i++) { const t = (i / 12) * TAU; ring.push([ex + Math.cos(t) * er * 0.7, ey + Math.sin(t) * er]); }
+      chalkStroke(g, ring, w * 0.85, seed++, alpha, col);
+    }
+  }
+  const hd = HAIRDO[a.hairStyle || fam.hair];
+  if (hd && (hd.tail === 'pig' || hd.tail === 'braid')) {
+    for (const sgn of [-1, 1]) {
+      chalkStroke(g, [
+        [cx + sgn * hw * 0.52, cy - hh * 0.08], [cx + sgn * hw * 0.72, cy + hh * 0.24], [cx + sgn * hw * 0.58, cy + hh * 0.56],
+      ], w * 0.9, seed++, alpha, col);
+    }
+  }
+  return { hw, hh };
+}
+
 /* ============================================================================
    6. Paper — card stock, the halftone ground, the deckle
    ========================================================================= */
@@ -1209,7 +1274,7 @@ export function drawCard(g, kidRef, x, y, w, h, o = {}) {
   // the reputation: the one line you would say about him at the hydrant
   const repSize = h * 0.0285;
   const lead = repSize * 1.30;
-  const repLines = wrap(kid.rep, repSize, pw * 0.98, { tracking: 0.09, condense: 0.78 }).slice(0, 3);
+  const repLines = wrap(kid.rep, repSize, pw * 0.98, { tracking: 0.09, condense: 0.78 }).slice(0, 4);
   let ry = nameY + h * 0.052;
   for (const line of repLines) {
     slab(g, line, x + w / 2, ry, repSize, {
@@ -1246,13 +1311,14 @@ export function drawCard(g, kidRef, x, y, w, h, o = {}) {
     color: C(mix(INK, STOCK, 0.36)), tracking: 0.12, condense: 0.76, weight: 0.16, serif: h * 0.003, jitter: 0.4, seed: seed + 2,
   });
   const num = (ROSTER.indexOf(kid) + 1).toString();
+  const nr = w * (num.length > 1 ? 0.062 : 0.048);
   g.save();
-  g.beginPath(); g.arc(px + pw - w * 0.055, py + w * 0.055, w * 0.048, 0, TAU);
+  g.beginPath(); g.arc(px + pw - nr * 1.1, py + nr * 1.1, nr, 0, TAU);
   g.fillStyle = C(mix(STOCK, CHALK, 0.25)); g.fill();
   g.strokeStyle = C(INK); g.lineWidth = Math.max(1, w * 0.007); g.stroke();
   g.restore();
-  slab(g, num, px + pw - w * 0.055, py + w * 0.055 + w * 0.021, w * 0.055, {
-    align: 'center', color: C(mix(INK, STOCK, 0.10)), tracking: 0, condense: 0.8, weight: 0.20, serif: w * 0.009,
+  slab(g, num, px + pw - nr * 1.1, py + nr * 1.1 + w * 0.021, w * 0.055, {
+    align: 'center', color: C(mix(INK, STOCK, 0.10)), tracking: 0.02, condense: 0.72, weight: 0.20, serif: w * 0.009,
   });
 
   // an earned title runs across the corner, chalked on by whoever was keeping score
@@ -1271,6 +1337,37 @@ export function drawCard(g, kidRef, x, y, w, h, o = {}) {
   }
 
   g.restore();
+}
+
+/** The back of a card: the spares you keep in your pocket to flip against a wall. */
+export function drawCardBack(g, x, y, w, h, seed = 3) {
+  const R = w * 0.035;
+  const r = new RNG(seed);
+  g.save();
+  rr(g, x, y, w, h, R);
+  g.fillStyle = C(mix(STOCK, FACADE.brickShade, 0.10)); g.fill();
+  g.save(); rr(g, x, y, w, h, R); g.clip();
+  stockTexture(g, x, y, w, h, seed + 3);
+  g.globalAlpha = 0.30;
+  g.strokeStyle = C(mix(FACADE.brickShade, INK, 0.2)); g.lineWidth = Math.max(1, w * 0.008);
+  for (let i = -8; i < 16; i++) {
+    g.beginPath();
+    g.moveTo(x + i * w * 0.14, y); g.lineTo(x + i * w * 0.14 + h * 0.5, y + h);
+    g.stroke();
+  }
+  g.restore();
+  g.globalAlpha = 1;
+  rr(g, x + w * 0.09, y + h * 0.10, w * 0.82, h * 0.80, R * 0.6);
+  g.strokeStyle = C(mix(FACADE.brickShade, INK, 0.30)); g.lineWidth = Math.max(1.2, w * 0.012); g.stroke();
+  fitSlab(g, 'THE BLOCK', x + w / 2, y + h * 0.47, h * 0.07, w * 0.62, {
+    color: C(mix(FACADE.brickShade, INK, 0.24)), tracking: 0.12, condense: 0.86, weight: 0.20, serif: h * 0.012, jitter: 1, seed,
+  });
+  fitSlab(g, 'ONE OF SIXTEEN', x + w / 2, y + h * 0.58, h * 0.036, w * 0.62, {
+    color: C(mix(FACADE.brickShade, INK, 0.40)), tracking: 0.14, condense: 0.78, weight: 0.17, serif: h * 0.004, jitter: 0.6, seed: seed + 1,
+  });
+  void r;
+  g.restore();
+  cardEdge(g, x, y, w, h, seed);
 }
 
 /** Ink border and corner wear, drawn last so it sits over everything. */
@@ -1386,7 +1483,7 @@ export const screen = new Screen();
  * Belgian block in patches (Law 1, §2.1). Cards get laid out on it the way a kid
  * lays cards out on it, and the chalk that is already there stays there.
  */
-export function pavement(g, w, h, seed = 4) {
+export function pavement(g, w, h, seed = 4, o = {}) {
   const r = new RNG(seed);
   const base = PAVEMENT.asphaltWarm;
   g.save();
@@ -1421,12 +1518,65 @@ export function pavement(g, w, h, seed = 4) {
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + l, y + l * r.range(-0.3, 0.3)); g.stroke();
   }
   g.restore();
-  // the potsy grid somebody chalked here this morning and nobody has rubbed out
+  // the sun band: the 16-foot ribbon of direct sun a 1:1 canyon lets down at three
+  // o'clock (PERIOD §6.1), baked in rather than lit, and the reason the middle is bright
   g.save();
-  g.globalAlpha = 0.16;
-  const gx = w * 0.055, gy = h * 0.16, cell = w * 0.052;
-  for (let i = 0; i <= 3; i++) chalkStroke(g, [[gx, gy + i * cell], [gx + cell * 2, gy + i * cell]], 3, 200 + i, 0.9, C(CHALK));
-  for (let i = 0; i <= 2; i++) chalkStroke(g, [[gx + i * cell, gy], [gx + i * cell, gy + cell * 3]], 3, 210 + i, 0.9, C(CHALK));
+  g.globalAlpha = 0.30;
+  const bg = g.createLinearGradient(0, h * 0.10, w * 0.30, h * 0.92);
+  bg.addColorStop(0, 'rgba(0,0,0,0)');
+  bg.addColorStop(0.42, C(PAVEMENT.blockCrown));
+  bg.addColorStop(0.58, C(PAVEMENT.blockCrown));
+  bg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h);
+  g.restore();
+  // the potsy grid somebody chalked here this morning and nobody has rubbed out
+  if (o.potsy !== false) {
+    g.save();
+    g.globalAlpha = 0.16;
+    const gx = w * 0.055, gy = h * 0.16, cell = w * 0.052;
+    for (let i = 0; i <= 3; i++) chalkStroke(g, [[gx, gy + i * cell], [gx + cell * 2, gy + i * cell]], 3, 200 + i, 0.9, C(CHALK));
+    for (let i = 0; i <= 2; i++) chalkStroke(g, [[gx + i * cell, gy], [gx + i * cell, gy + cell * 3]], 3, 210 + i, 0.9, C(CHALK));
+    g.restore();
+  }
+}
+
+/**
+ * A bluestone sidewalk with its joints drawn (never tiled), ending in a granite
+ * curb on the `side` given. Mid value, near-neutral, and it exists so the roadway
+ * in the middle can be the brightest ground in the frame (Law 1).
+ */
+export function sidewalkBand(g, x, y, w, h, side = 1, seed = 5) {
+  const r = new RNG(seed);
+  const base = PAVEMENT.sidewalk;
+  g.save();
+  g.fillStyle = C(base); g.fillRect(x, y, w, h);
+  const vg = g.createLinearGradient(x + (side > 0 ? w : 0), 0, x + (side > 0 ? 0 : w), 0);
+  vg.addColorStop(0, C(mix(base, PAVEMENT.blockCrown, 0.30)));
+  vg.addColorStop(1, C(soot(base, 0.22)));
+  g.fillStyle = vg; g.globalAlpha = 0.75; g.fillRect(x, y, w, h);
+  g.globalAlpha = 1;
+  g.strokeStyle = C(soot(base, 0.42)); g.lineWidth = Math.max(1.5, w * 0.006);
+  const fh = h / 5.5;
+  for (let j = 1; j < 6; j++) {
+    const yy = y + j * fh + r.range(-4, 4);
+    g.beginPath(); g.moveTo(x, yy); g.lineTo(x + w, yy + r.range(-4, 4)); g.stroke();
+  }
+  const mx = x + w * 0.52 + r.range(-6, 6);
+  g.beginPath(); g.moveTo(mx, y); g.lineTo(mx + r.range(-6, 6), y + h); g.stroke();
+  g.globalAlpha = 0.14;
+  for (let i = 0; i < 70; i++) {
+    const px = x + r.next() * w, py = y + r.next() * h, l = r.range(6, 26);
+    g.strokeStyle = r.chance(0.5) ? C(PAVEMENT.blockCrown) : C(soot(base, 0.34));
+    g.lineWidth = r.range(0.6, 2.0);
+    g.beginPath(); g.moveTo(px, py); g.lineTo(px + l, py + l * r.range(-0.3, 0.3)); g.stroke();
+  }
+  g.globalAlpha = 1;
+  // granite curb, then the gutter shadow where the sidewalk drops to the road
+  const cw = Math.max(6, w * 0.05);
+  const cx0 = side > 0 ? x + w - cw : x;
+  g.fillStyle = C(PAVEMENT.curb); g.fillRect(cx0, y, cw, h);
+  g.fillStyle = C(soot(PAVEMENT.curb, 0.30));
+  g.fillRect(side > 0 ? cx0 + cw - cw * 0.34 : cx0, y, cw * 0.34, h);
   g.restore();
 }
 
@@ -1477,6 +1627,17 @@ function paintSheet(g, W, H) {
     shadow: { dx: 2.6, dy: 3, color: C(mix(ACCENTS.red, INK, 0.45)) },
   });
 
+  /* two spares from somebody's pocket, face down, in the corners nobody uses */
+  for (const [sx, sy, rot, sc, sd] of [[24, 6, 1.42, 0.44, 5], [DW - 26, 92, -1.62, 0.40, 9]]) {
+    const bw2 = cw * sc, bh2 = bw2 / CARD_ASPECT;
+    g.save();
+    g.translate(sx, sy);
+    g.rotate(rot);
+    cardShadow(g, 0, 0, bw2, bh2, 0.8);
+    drawCardBack(g, 0, 0, bw2, bh2, sd);
+    g.restore();
+  }
+
   /* the cards */
   const r = new RNG(97);
   for (let i = 0; i < ROSTER.length; i++) {
@@ -1498,7 +1659,16 @@ function paintSheet(g, W, H) {
   g.save();
   g.fillStyle = C(PAVEMENT.curb); g.fillRect(0, cy2, DW, DH - cy2);
   g.fillStyle = C(soot(PAVEMENT.curb, 0.26)); g.fillRect(0, cy2, DW, 5);
-  g.fillStyle = C(PAVEMENT.sidewalk); g.fillRect(0, cy2 + 5, DW, DH - cy2 - 5);
+  g.fillStyle = C(mix(PAVEMENT.sidewalk, PAVEMENT.blockCrown, 0.42)); g.fillRect(0, cy2 + 5, DW, DH - cy2 - 5);
+  g.restore();
+  // a chalked Spaldeen and a chalked stick, because somebody always draws them
+  g.save();
+  g.globalAlpha = 0.5;
+  const bx0 = DW * 0.525, by0 = cy2 + (DH - cy2) * 0.52, br = 15;
+  const ring = [];
+  for (let i = 0; i <= 20; i++) ring.push([bx0 + Math.cos((i / 20) * TAU) * br, by0 + Math.sin((i / 20) * TAU) * br]);
+  chalkStroke(g, ring, 3, 88, 0.9, C(CHALK));
+  chalkStroke(g, [[bx0 - br * 0.5, by0 - br * 0.4], [bx0 + br * 0.1, by0 + br * 0.5]], 2.4, 89, 0.8, C(CHALK));
   g.restore();
   const noteY = cy2 + (DH - cy2) * 0.62;
   fitChalk(g, 'SIXTEEN KIDS · ONE STICK · ONE BALL · TILL THE LIGHTS COME ON', DW * 0.27, noteY, 24, DW * 0.46, {

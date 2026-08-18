@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { registerSystem } from '../app.js';
 import { bus } from '../core/bus.js';
 import { RNG } from '../core/rng.js';
-import { AIR, PAVEMENT, FACADE, CHALK, CLOTH, soot, sunlit } from '../render/palette.js';
+import { AIR, PAVEMENT, FACADE, ACCENTS, CHALK, CLOTH, soot, sunlit } from '../render/palette.js';
 
 /* =============================================================================
  * SKY — the strip of air over a 1:1 canyon, late September 1925
@@ -41,11 +41,15 @@ export function mix(a, b, t) {
     | Math.round(ab + (bb - ab) * t));
 }
 export const css = (n) => `#${(n >>> 0).toString(16).padStart(6, '0')}`;
-/** sRGB fractions, for raw ShaderMaterial uniforms that bypass colour management */
-export const v3 = (hex) => new THREE.Vector3(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255);
-/** linear-space triple, for vertex-colour attributes */
+/**
+ * Palette hex -> the LINEAR triple a ShaderMaterial has to be handed.
+ * three appends the linear->sRGB output transform to every non-raw shader, so a
+ * shader that writes hex/255 lands about twelve L* points too bright. Measured,
+ * not assumed: a 0.5 grey uniform reads 188 on the canvas, not 128.
+ */
 const _c = new THREE.Color();
 export function lin(hex) { _c.setHex(hex, THREE.SRGBColorSpace); return [_c.r, _c.g, _c.b]; }
+export const v3 = (hex) => { const l = lin(hex); return new THREE.Vector3(l[0], l[1], l[2]); };
 
 // ─── the block's geometry, as the light needs it ──────────────────────────────
 // These four numbers must agree with world/facade.js (M.facadeX and the corner
@@ -89,16 +93,20 @@ const PRESETS = {
     },
     fog: { color: AIR.haze, near: 130, far: 660 },
     rig: {
-      keyHex: sunlit(0xffffff, 0.30), keyI: 1.26,
-      skyHex: mix(AIR.skyFill, AIR.haze, 0.34), groundHex: AIR.brickBounce, hemiI: 1.16,
-      bounceHex: AIR.brickBounce, bounceI: 0.34,
-      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.45), ambI: 0.27,
+      keyHex: sunlit(0xffffff, 0.32), keyI: 1.82,
+      skyHex: mix(AIR.skyFill, AIR.haze, 0.18), groundHex: AIR.brickBounce, hemiI: 0.60,
+      bounceHex: AIR.brickBounce, bounceI: 1.04, fill2I: 0.98,
+      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.50), ambI: 0.31,
     },
     wash: {
-      sunCol: sunlit(PAVEMENT.asphaltSun, 0.48), sunA: 0.24,
-      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.50), shdA: 0.22,
-      wallSunCol: sunlit(FACADE.brickSun, 0.40), wallSunA: 0.16,
-      wallShdCol: mix(FACADE.brickShade, AIR.shadowTint, 0.55), wallShdA: 0.12,
+      // the sun band is a COLOUR event: warm gold where the sun lands, the
+      // blue-violet of open skylight where it does not, at almost the same value.
+      // saturated warm at the SAME value, not a brighter one: the sun band is a
+      // colour event, and its value gain over the shaded plane stays near 1.45:1.
+      sunCol: mix(sunlit(PAVEMENT.asphaltSun, 0.34), ACCENTS.tan, 0.34), sunA: 0.32,
+      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.30), shdA: 0.20,
+      wallSunCol: sunlit(FACADE.brickSun, 0.44), wallSunA: 0.20,
+      wallShdCol: mix(AIR.shadowTint, AIR.skyFill, 0.30), wallShdA: 0.16,
       shaft: 0.055,
     },
   },
@@ -127,16 +135,16 @@ const PRESETS = {
     },
     fog: { color: sunlit(AIR.haze, 0.50), near: 90, far: 600 },
     rig: {
-      keyHex: sunlit(0xffffff, 0.70), keyI: 1.34,
-      skyHex: mix(AIR.skyFill, AIR.sunTint, 0.26), groundHex: sunlit(AIR.brickBounce, 0.40), hemiI: 1.08,
-      bounceHex: sunlit(AIR.brickBounce, 0.44), bounceI: 0.52,
-      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.60), ambI: 0.28,
+      keyHex: sunlit(0xffffff, 0.76), keyI: 2.05,
+      skyHex: mix(AIR.skyFill, AIR.sunTint, 0.20), groundHex: sunlit(AIR.brickBounce, 0.44), hemiI: 0.52,
+      bounceHex: sunlit(AIR.brickBounce, 0.50), bounceI: 1.26, fill2I: 0.94,
+      ambHex: mix(AIR.skyFill, AIR.brickBounce, 0.62), ambI: 0.32,
     },
     wash: {
-      sunCol: sunlit(PAVEMENT.blockCrown, 0.74), sunA: 0.38,
-      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.62), shdA: 0.28,
-      wallSunCol: sunlit(FACADE.ochre, 0.66), wallSunA: 0.34,
-      wallShdCol: mix(FACADE.brickShade, AIR.shadowTint, 0.62), wallShdA: 0.17,
+      sunCol: mix(sunlit(PAVEMENT.blockCrown, 0.52), ACCENTS.tan, 0.30), sunA: 0.46,
+      shdCol: mix(PAVEMENT.asphaltShade, AIR.shadowTint, 0.42), shdA: 0.26,
+      wallSunCol: sunlit(FACADE.ochre, 0.72), wallSunA: 0.40,
+      wallShdCol: mix(AIR.shadowTint, AIR.skyFill, 0.22), wallShdA: 0.22,
       shaft: 0.11,
     },
   },

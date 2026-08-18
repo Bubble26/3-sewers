@@ -10,9 +10,10 @@ await page.waitForFunction(() => globalThis.__SB && globalThis.__SB.ready, null,
 const CLIPS = process.argv.slice(2);
 const shots = [];
 for (const spec of CLIPS) {
-  const [name, tt] = spec.split('@');
+  const [name, tt] = spec.split('@'); const prof = name.endsWith('*');
   const t = Number(tt || 0);
-  await page.evaluate(async ({ name, t }) => {
+  await page.evaluate(async ({ name, t, prof }) => {
+    globalThis.__PROFILE = prof;
     const SB = globalThis.__SB;
     await SB.scenario('anim_celebrate');
     const app = SB.app;
@@ -22,16 +23,16 @@ for (const spec of CLIPS) {
     k.cycle = null; k.lock = 0; k.target = null; k.speed = 0;
     k.anim.stopLayers();
     k.at(0, 40, 0);
-    k.anim.play(name, { fade: 0, restart: true });
+    k.anim.play(name.replace('*',''), { fade: 0, restart: true });
     k.anim.t = t; k.anim.fade = 1; k.anim.prev = null;
     k.update(1/60);
     const H = k.group.rotation.y;
-    k.group.rotation.y = k.face = k.faceGoal = Math.atan2(-5.6, -11.2);
-    app.camera.position.set(k.pos.x - 5.6, 5.4, k.pos.y - 11.2);
-    app.camera.lookAt(k.pos.x, 2.9, k.pos.y);
+    k.group.rotation.y = k.face = k.faceGoal = Math.atan2(-5.6, -11.2) + (globalThis.__PROFILE ? 1.35 : 0);
+    app.camera.position.set(k.pos.x - 5.6, 3.6, k.pos.y - 11.2);
+    app.camera.lookAt(k.pos.x, 2.2, k.pos.y);
     app.camera.fov = 40; app.camera.updateProjectionMatrix();
     SB.renderOnce();
-  }, { name, t });
+  }, { name, t, prof });
   const buf = await page.screenshot({ type: 'jpeg', quality: 88 });
   shots.push({ spec, d: `data:image/jpeg;base64,${buf.toString('base64')}` });
 }

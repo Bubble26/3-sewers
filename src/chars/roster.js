@@ -329,7 +329,7 @@ export const ROSTER = [
     id: 'ethel',
     name: 'Ethel Randolph', nick: 'Speed', tag: '', call: 'ETH-EL! ETHEL LOUISE!',
     age: 12, sex: 'g', home: 'Black',
-    rep: 'Named at six for being the slowest kid on the block. She is not that any more. The name stayed.',
+    rep: 'Named at six for being the slowest on the block. The name stayed. She did not.',
     stats: { power: 3, contact: 4, speed: 4, arm: 3, fielding: 3, nerve: 2 },
     stance: { name: 'dead still', note: 'Nothing on her moves until the hands do, and then all of it does.' },
     arm: { quirk: 'Windmills the arm twice before she sets. Twice. Even in the field.' },

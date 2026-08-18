@@ -69,6 +69,7 @@ uniform vec2 uAmt;          // (alpha in sun, alpha in shade)
 uniform vec2 uFar;          // (extra shade alpha far off, where the shadow map ends)
 uniform vec3 uCam;
 uniform float uForceShade;  // 1 on a wall the sun can never reach
+uniform float uEdge;
 uniform vec4 uWall;         // facadeX, taxZ0, taxZ1, taxH
 uniform float uWallH;
 varying vec3 vW;
@@ -91,6 +92,11 @@ void main() {
   float beyond = smoothstep(uFar.x, uFar.y, dist);
   vec3 col = mix(uShdCol, uSunCol, occ);
   float a = mix(mix(uAmt.y, 0.62, beyond), uAmt.x, occ);
+  // A drawn core line a foot inside the shade. The bible caps the sun band's
+  // VALUE gain at about 1.45:1, which is a nine-point step and easy to lose in
+  // a patched road; the edge is what a player actually reads, so the edge gets
+  // drawn — the same way every other piece of grime on this block is drawn.
+  a += uEdge * exp(-max(h - yh, 0.0) * 0.9) * (1.0 - occ);
   a *= 1.0 - smoothstep(${FADE_START.toFixed(1)}, ${FADE_END.toFixed(1)}, dist);
   gl_FragColor = vec4(col, a);
 }`;
@@ -107,6 +113,7 @@ function washMaterial(forceShade = 0) {
       uAmt: { value: new THREE.Vector2(0.16, 0.30) },
       uCam: { value: new THREE.Vector3() },
       uForceShade: { value: forceShade },
+      uEdge: { value: 0.16 },
       uFar: { value: new THREE.Vector2(165, 275) },
       uWall: { value: new THREE.Vector4(CANYON.facadeX, CANYON.taxZ0, CANYON.taxZ1, CANYON.taxH) },
       uWallH: { value: CANYON.wallH },
@@ -196,6 +203,123 @@ function shadowProxies() {
   return grp;
 }
 
+/* ─── contact shadows ──────────────────────────────────────────────────────── */
+
+/**
+ * §2.7 is not optional: a soft blue-violet ellipse under every kid, every prop
+ * and the ball, never grey, never black. The characters piece paints its own,
+ * but it places them on the y=0 datum while the crowned roadway stands half a
+ * foot proud of it, so on this block every one of them is buried under the
+ * asphalt and no kid in any frame is grounded at all. Rather than reach into
+ * another piece's file, the rig hides any ellipse it finds below the pavement
+ * and re-draws it at the real road height — and stops doing so the moment that
+ * piece fixes its datum, because the test is "is it buried", not "who made it".
+ */
+class ContactShadows {
+  constructor(scene, cap = 48) {
+    this.cap = cap;
+    this.tracked = [];
+    const g = new THREE.BufferGeometry();
+    this.pos = new Float32Array(cap * 12);
+    this.uv = new Float32Array(cap * 8);
+    this.col = new Float32Array(cap * 16);
+    const idx = new Uint16Array(cap * 6);
+    for (let i = 0; i < cap; i++) {
+      const v = i * 4, o = i * 6;
+      idx[o] = v; idx[o + 1] = v + 1; idx[o + 2] = v + 2;
+      idx[o + 3] = v; idx[o + 4] = v + 2; idx[o + 5] = v + 3;
+      for (const [k, u, vv] of [[0, 0, 0], [1, 1, 0], [2, 1, 1], [3, 0, 1]]) {
+        this.uv[v * 2 + k * 2] = u; this.uv[v * 2 + k * 2 + 1] = vv;
+      }
+    }
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('uv', new THREE.BufferAttribute(this.uv, 2));
+    g.setAttribute('color', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.setDrawRange(0, 0);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 40), 400);
+    this.geo = g;
+    this.mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      map: ellipseTexture(), transparent: true, vertexColors: true, depthWrite: false,
+      fog: false, toneMapped: false, side: THREE.DoubleSide,
+    }));
+    this.mesh.frustumCulled = false;
+    this.mesh.matrixAutoUpdate = false;
+    this.mesh.renderOrder = -3;
+    this.mesh.name = 'light:contactShadows';
+    scene.add(this.mesh);
+    this.tint = new THREE.Color().setHex(AIR.shadowTint, THREE.SRGBColorSpace);
+    this._p = new THREE.Vector3();
+  }
+
+  adopt(mesh) {
+    const root = mesh.parent;
+    if (!root || this.tracked.some((t) => t.mesh === mesh)) return;
+    const par = mesh.geometry.parameters || {};
+    this.tracked.push({ mesh, root, w: par.width || 2.2, d: par.height || 1.6, base: mesh.material.opacity ?? 0.36 });
+  }
+
+  quad(i, x, y, z, w, d, a) {
+    if (i >= this.cap || a <= 0.004) return false;
+    const o = i * 12, hw = w * 0.5, hd = d * 0.5;
+    const P = this.pos;
+    P[o] = x - hw; P[o + 1] = y; P[o + 2] = z - hd;
+    P[o + 3] = x + hw; P[o + 4] = y; P[o + 5] = z - hd;
+    P[o + 6] = x + hw; P[o + 7] = y; P[o + 8] = z + hd;
+    P[o + 9] = x - hw; P[o + 10] = y; P[o + 11] = z + hd;
+    const C = this.col, m = i * 16;
+    for (let k = 0; k < 4; k++) {
+      C[m + k * 4] = this.tint.r; C[m + k * 4 + 1] = this.tint.g;
+      C[m + k * 4 + 2] = this.tint.b; C[m + k * 4 + 3] = a;
+    }
+    return true;
+  }
+
+  update(app) {
+    let n = 0;
+    for (const t of this.tracked) {
+      t.root.getWorldPosition(this._p);
+      const ground = roadHeight(this._p.x);
+      const own = this._p.y + t.mesh.position.y;
+      if (own > ground - 0.06) { t.mesh.visible = true; continue; }   // theirs is fine
+      t.mesh.visible = false;
+      const lift = Math.max(0, ground - this._p.y);
+      const k = 1 - Math.min(1, lift / 9);                            // shrink with height
+      if (this.quad(n, this._p.x, ground + 0.018, this._p.z, t.w * (0.72 + 0.34 * k), t.d * (0.72 + 0.34 * k), t.base * (0.45 + 0.55 * k))) n++;
+    }
+    // the ball, per §2.5: a contact shadow on the ground at all times
+    const bv = app.get('ballview');
+    if (bv && bv.mesh && bv.mesh.visible) {
+      const p = bv.mesh.position;
+      const ground = roadHeight(p.x);
+      const h = Math.max(0, p.y - ground);
+      const k = 1 / (1 + h * 0.16);
+      if (this.quad(n, p.x, ground + 0.024, p.z, 1.5 * k + 0.5, 1.2 * k + 0.4, 0.40 * k)) n++;
+    }
+    this.geo.setDrawRange(0, n * 6);
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.color.needsUpdate = true;
+  }
+}
+
+let ELLIPSE_TEX = null;
+function ellipseTexture() {
+  if (ELLIPSE_TEX) return ELLIPSE_TEX;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 4, 64, 64, 63);
+  grd.addColorStop(0.00, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.52, 'rgba(255,255,255,0.94)');
+  grd.addColorStop(0.80, 'rgba(255,255,255,0.44)');
+  grd.addColorStop(1.00, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  ELLIPSE_TEX = new THREE.CanvasTexture(c);
+  ELLIPSE_TEX.colorSpace = THREE.SRGBColorSpace;
+  return ELLIPSE_TEX;
+}
+
 /* ─── legacy entry point, kept so nothing that imported it breaks ──────────── */
 export function buildLighting(scene) {
   const rig = new Rig(scene);
@@ -222,9 +346,24 @@ class Rig {
     this.key.name = 'light:key';
     scene.add(this.key);
 
+    // The canyon's fill is deliberately NOT mostly overhead. A hemisphere light
+    // dumps almost all of its energy onto up-facing surfaces, which is exactly
+    // the roadway, and a roadway floated up on ambient can never show a sun
+    // band. So the slot of sky overhead is kept modest and most of the fill is
+    // delivered by two nearly horizontal lights that model the SIDES of things:
+    // warm brick bounce off the sunlit north facade, cool skylight off the
+    // shaded south one. Same total on a kid, a quarter as much on the road.
     this.hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1.2);
-    this.hemi.name = 'light:fill';
+    this.hemi.name = 'light:sky';
     scene.add(this.hemi);
+
+    this.fill2 = new THREE.DirectionalLight(0xffffff, 0.8);
+    this.fill2.name = 'light:skylight';
+    this.fill2Target = new THREE.Object3D();
+    this.fill2Target.position.set(30, 4, 26);
+    scene.add(this.fill2Target);
+    this.fill2.target = this.fill2Target;
+    scene.add(this.fill2);
 
     this.bounce = new THREE.DirectionalLight(0xffffff, 0.4);
     this.bounce.name = 'light:bounce';
@@ -260,9 +399,12 @@ class Rig {
     const t = this.keyTarget.position;
     this.key.position.set(t.x + D.x * 190, t.y + D.y * 190, t.z + D.z * 190);
     this.key.updateMatrixWorld();
-    // the bounce comes off the sunlit north facade, so it lives over there and
-    // points back across the roadway into the shade side.
-    this.bounce.position.set(30, 26, 8);
+    // The bounce comes off the sunlit north facade, so it lives over there and
+    // rakes back across the roadway almost horizontally. Keeping it flat is the
+    // point: it models the SIDE of every kid, cart and ash can without spending
+    // any of the roadway's sun-to-shade value budget on an up-facing surface.
+    this.bounce.position.set(72, 10, 6);
+    this.fill2.position.set(-70, 13, 40);
   }
 
   apply(P) {
@@ -274,6 +416,8 @@ class Rig {
     this.hemi.intensity = R.hemiI;
     this.bounce.color.setHex(R.bounceHex, THREE.SRGBColorSpace);
     this.bounce.intensity = R.bounceI;
+    this.fill2.color.setHex(R.skyHex, THREE.SRGBColorSpace);
+    this.fill2.intensity = R.fill2I;
     this.amb.color.setHex(R.ambHex, THREE.SRGBColorSpace);
     this.amb.intensity = R.ambI;
     this.ballKey.color.setHex(R.keyHex, THREE.SRGBColorSpace);
@@ -290,7 +434,7 @@ class Rig {
  * not part of the baked architecture, casts. Outline shells (back-face) and
  * painted contact ellipses never do.
  */
-function markCasters(app) {
+function markCasters(app, contacts) {
   const skip = new Set();
   const street = app.get('street');
   if (street && street.group) street.group.traverse((o) => skip.add(o));
@@ -298,7 +442,8 @@ function markCasters(app) {
   app.scene.traverse((o) => {
     if (!o.isMesh || o.userData.__lit) return;
     o.userData.__lit = 1;
-    if (skip.has(o) || o.name === 'contactShadow') return;
+    if (o.name === 'contactShadow') { if (contacts) contacts.adopt(o); return; }
+    if (skip.has(o)) return;
     const m = o.material;
     if (!m || Array.isArray(m)) return;
     if (m.transparent || m.side === THREE.BackSide || m.colorWrite === false) return;
@@ -337,6 +482,7 @@ export default registerSystem({
     app.scene.add(facadeWashMesh(this.northMat, lots, 1, 'light:northWash'));
     app.scene.add(facadeWashMesh(this.southMat, lots, -1, 'light:southWash'));
 
+    this.contacts = new ContactShadows(app.scene);
     this.apply(SKY.P);
     bus.on('tod', ({ preset }) => this.apply(preset));
     app.lighting = this;
@@ -371,7 +517,8 @@ export default registerSystem({
   },
 
   preRender(app) {
-    if (this.swept < 2) { this.swept++; markCasters(app); }
+    if (this.swept < 2) { this.swept++; markCasters(app, this.contacts); }
+    this.contacts.update(app);
     const c = app.camera.position;
     this.groundMat.uniforms.uCam.value.copy(c);
     this.northMat.uniforms.uCam.value.copy(c);
