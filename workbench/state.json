@@ -1,7 +1,7 @@
 {
  "run_started": "2026-08-17",
- "round": 2,
- "headline": "Round 2 \u2014 both core loops rebuilt after two 3/10 critiques, then a capture caught something worse: every impact effect had been wired, committed and NEVER DRAWN A PIXEL. The loader guessed a prp_ prefix, the art was named fx_, and the lookup returned null in silence. Fixed, guarded by a test, and swept for others of the same class.",
+ "round": 3,
+ "headline": "Round 3 \u2014 the batting re-grade found the deepest failure yet: the read was DECORATIVE. Tapping a fixed 310ms after every bounce scored 56.6% perfect against 71.5% for reading the pitch flawlessly. The mechanic the game is named for bought 2.4 points. Retuned so a single blind rhythm cannot be right about more than one pitch.",
  "bars": [
   {
    "sys": "Audio",
@@ -54,8 +54,8 @@
    "status": "work",
    "score": 6,
    "bar": "Hit-stop, shake, particles, trail at contact",
-   "note": "Critic 3/10 found the bat never touched the ball \u2014 and the deeper cause was that I had measured Tommy, the roster's only left-hander, and signed the geometry backwards. tools/bat_geometry.py now measures the rendered swing per kid and the game reads it. Gap at contact: 23.3px before, 0px now. The lamp-prop flash is replaced with 12 authored sprites, drawn hollow so the ball keeps its outline through the hit.",
-   "gap": "Batter still has no contact reaction pose; needs a second critic pass",
+   "note": "Two bugs of the same shape, both invisible at runtime. The impact sprites were wired, committed and never drew a pixel \u2014 the loader guessed a prp_ prefix against fx_ art and returned null in silence. Then the bounce dust STILL never appeared, because it computed to z 687 against a batter at 1390. The batter stands between the camera and everything, so anything that must be read is now explicitly lifted past them \u2014 dust, grit, and the ball's shadow, which my own earlier fix had buried for 70-270ms after every bounce. Shake was also running at 9Hz, a cycle every 3.3 frames at 30fps, so an amplitude of 5.35 rendered as 1.65 visible pixels.",
+   "gap": "Needs a third critic pass on frames where the effects actually draw",
    "shots": [
     {
      "f": "contact_portrait.png",
@@ -92,10 +92,10 @@
   {
    "name": "Batting readability",
    "status": "work",
-   "score": 5,
+   "score": 6,
    "bar": "Punch-Out!! tells",
-   "note": "Independent analysis: 3/10. Fast and spinner rebounded 1.4% apart and both took 220ms stone-to-plate \u2014 the same pitch twice. After the swing lead the ideal press landed 70ms AFTER the bounce, so usable read time was MINUS 17ms: watching the hop guaranteed a whiff. Now: read time 250/330/350ms, crossing heights 71/110/38px, the drop uniquely falling, release timing differs per type as a wind-up tell, and the swing picks the frame whose barrel matches the ball's height.",
-   "gap": "Needs re-measurement by a fresh analyst; lanes still add noise without being an input",
+   "note": "Second independent analysis: 5/10, up from 3/10. Confirmed repaired: read time after the bounce -17ms -> +250/370/530ms; the batter no longer eats the ball; the prompt is 83.5% honest, up from 49%; the wind-up separates the fast ball 334ms before release. Found still broken and now fixed: the read was not required at all (blind tapping 56.6% perfect vs 71.5% reading); fast and drop sat within 0.14 ball diameters for the whole 200ms after the bounce. Ballistics re-derived by search, not guess \u2014 worst pair now 0.98 diameters apart at bounce+133ms, ideal presses 120/160ms apart against a 108ms perfect window.",
+   "gap": "Spinner and drop wind-ups are pixel-identical at 200ms \u2014 a tempo tell, not a pose tell",
    "shots": []
   },
   {
@@ -144,23 +144,23 @@
  "gaps": [
   {
    "pri": "P0",
-   "t": "Round-2 critics still running \u2014 neither rebuilt loop has been re-graded"
+   "t": "Nothing has verified the game is FUN \u2014 only that it is correct, readable and fair"
+  },
+  {
+   "pri": "P1",
+   "t": "Spinner and drop wind-ups are pixel-identical at 200ms \u2014 same 8 frames at different fps"
+  },
+  {
+   "pri": "P1",
+   "t": "aim_strike narrows the connect window 35% and is invisible to the player"
   },
   {
    "pri": "P1",
    "t": "Discrete sfx sit low under the announcer (levels, not wiring)"
   },
   {
-   "pri": "P1",
-   "t": "Roster faces share one construction; less caricature range than the bar"
-  },
-  {
-   "pri": "P1",
-   "t": "Nothing has verified the game is FUN \u2014 only that it is correct and readable"
-  },
-  {
    "pri": "P2",
-   "t": "Roster cards static \u2014 no idle animation on the select screen"
+   "t": "Roster faces share one construction; less caricature range than the bar"
   },
   {
    "pri": "P2",
@@ -168,6 +168,22 @@
   }
  ],
  "log": [
+  {
+   "t": "R3",
+   "m": "PROCESS FAILURE: commit a150b70's message described six fixes it did not contain \u2014 a concurrent agent rewrote the file between my edits and my blanket `git add -A`. Re-applied as 1500582 and now staging only the files I actually edited."
+  },
+  {
+   "t": "R3",
+   "m": "Batting retuned by search over release height, restitution and bounce-to-plate time, scored on worst-pair separation and constrained to heights the bat can reach."
+  },
+  {
+   "t": "R3",
+   "m": "LEARNED: the batter is nearer the camera than everything, so every readable thing needs an explicit lift past them. Three separate effects had been invisible for exactly this reason."
+  },
+  {
+   "t": "R3",
+   "m": "Batting re-graded 5/10 (from 3/10). The premise is repaired; the read was still optional."
+  },
   {
    "t": "R2",
    "m": "LEARNED: a lookup that returns nothing looks exactly like a frame where nothing was meant to happen. Every impact effect was wired, committed, and had never drawn a pixel. Now guarded by tests/fx_check.gd, and the whole asset surface swept for the same class."
