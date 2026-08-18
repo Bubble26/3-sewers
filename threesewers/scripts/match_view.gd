@@ -15,7 +15,13 @@ const FIELDER_SCALE := 0.8
 # where they stand depends on which way they bat. This used to be a fixed
 # (662, 2352) — 22px from the plate — while the barrel reaches ~76px to the
 # batter's bat side, so the barrel swept clean past the ball every time.
-const BATTER_STANCE := 20.0     # world px the batter stands off the plate
+# How far off the plate the batter stands. 20 put their head band across
+# screen x 132..406 while the pitch descends down x~360, so the ball — and
+# the dust when it hit the stones — played out against the batter's own
+# silhouette with no street behind it: it read as bouncing off his skull.
+# 77 slides that silhouette clear of the lane while keeping the contact
+# point near the middle of the frame, where the action belongs.
+const BATTER_STANCE := 77.0
 const BATTER_Y := 2352.0
 
 # Where the barrel is at the contact frame is a fact about the ART, not a
