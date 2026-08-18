@@ -28,7 +28,11 @@ const SWING_FPS := 20.0
 # A swing is not instant: the bat needs this long to reach the ball, so the
 # player must press BEFORE the crossing, and the timing window is centred on
 # the press moment rather than on the crossing itself.
-const SWING_LEAD_FRAMES := 3.0
+# The bat starts partway into its swing, so the press pays only one frame of
+# latency. A three-frame lead pushed the ideal press to AFTER the bounce,
+# which meant a player watching the hop — the thing the game asks them to
+# watch — was told to react in 178ms and could not.
+const SWING_LEAD_FRAMES := 1.0
 const SWING_LEAD := SWING_LEAD_FRAMES / SWING_FPS
 const PITCH_HAND_OFF := Vector2(0, -40)     # release point above pitcher origin
 const PITCH_BOUNCE_Y := 2278.0              # one-bounce point short of the plate
@@ -37,9 +41,7 @@ const PITCH_BOUNCE_LANE_X := 46.0
 # converge at the plate: a 55px spread there was wider than the bat is thick,
 # so an off-centre lane could not be struck however well it was timed.
 const PITCH_CROSS_LANE_X := 12.0
-const PITCH_TB := 0.22                      # bounce -> plate time
-const PITCH_TB_DROP := 0.3                  # the drop dies off the bounce
-const PITCH_ARC_H := 70.0
+# bounce -> plate time and release height now live in Tuning, per pitch type
 const PITCH_ARC_BOB := 26.0
 const MITT_TIME := 0.12                     # past the plate into the mitt
 const MITT_OFF := Vector2(0, -30)
@@ -67,7 +69,13 @@ const CAM_CHASE_MAX_Y := 2130.0
 const CAM_CHASE_LEAD := 140.0
 const CAM_CHASE_LERP := 6.0
 const CAM_HOME_T := 0.5
-const PITCH_WINDUP_T := 0.45
+# The pitch art holds a painted ball through anim frames 0-5 and lets go at
+# frame 6, so the honest release moment is 6/fps — anything else puts two
+# spaldeens on screen at once and misreports t=0 by 150ms. Winding at a
+# different speed per type therefore makes the RELEASE itself a tell, which
+# is the Punch-Out!! trick: the attack is announced before it is thrown.
+const PITCH_ANIM_FPS := {"fast": 12.0, "spinner": 10.0, "drop": 8.0}
+const PITCH_BALL_OUT_FRAME := 6.0
 const BAR_SPEED := 1.5                      # ping-pong sweeps per second
 const AIM_Q_MID := 0.35                     # timing needed to find the zone, middle lane
 const AIM_Q_EDGE := 0.6                     # corners are riskier
@@ -155,16 +163,18 @@ class Kid extends Node2D:
 		_lean = lean_deg * (_facing if lean_deg != 0.0 else 1.0)
 		spr.rotation_degrees = _lean
 
-	func play(a: String, fps := 8.0, loop := true) -> void:
+	func play(a: String, fps := 8.0, loop := true, start := 0) -> void:
 		if anim == a and _loop and loop:
 			return
 		anim = a
 		_fps = fps
 		_loop = loop
-		_t = 0.0
 		_frames = Game.frames(kid_id, a)
+		# A swing can start partway in, so the press costs one frame of
+		# latency instead of the whole wind-up.
+		_t = float(start) / maxf(fps, 0.001)
 		if not _frames.is_empty():
-			_set_tex(_frames[0])
+			_set_tex(_frames[mini(start, _frames.size() - 1)])
 
 	static var frame_usec := 0
 
@@ -220,7 +230,7 @@ var _pA := Vector2.ZERO
 var _pB := Vector2.ZERO
 var _pC := Vector2.ZERO
 var _ta := 0.6
-var _tb := PITCH_TB
+var _tb := 0.30
 var _cross_t := 0.8
 var _rest_h := 0.7
 var _mitt := Vector2.ZERO
@@ -306,6 +316,8 @@ var _contact_from := Vector2.ZERO
 var _contact_from_h := 0.0
 var _prev_bh := 0.0
 var _rolled := false
+var _arc: Array = []
+var _contact_frames: Array = []
 
 # Under --write-movie the engine runs a fixed timestep, so the frame counter
 # IS the movie frame index. Printing it here is what lets the capture tool
@@ -668,10 +680,11 @@ func run_match() -> void:
 		if randf() < PITCH_PATTER_CHANCE:
 			ticker(Announcer.line("pitch", core.kid_name(core.pitcher_id())))
 			Audio.announce("pitch")
+		var pfps: float = float(PITCH_ANIM_FPS.get(String(pitch["type"]), 10.0))
 		var pk: Kid = fielders.get("P")
 		if pk != null and is_instance_valid(pk):
-			pk.play("pitch", 10.0, false)
-		await _beat(PITCH_WINDUP_T)
+			pk.play("pitch", pfps, false)
+		await _beat(PITCH_BALL_OUT_FRAME / pfps)
 		Audio.sfx("pitch_release")
 		_start_pitch(pitch, plan)
 		var ev: Dictionary = await pitch_resolved
@@ -706,7 +719,7 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	var lane := float(pitch["lane"])
 	var ptype := String(pitch["type"])
 	_ta = float(Tuning.PITCH_TIMES[ptype])
-	_tb = PITCH_TB_DROP if ptype == "drop" else PITCH_TB
+	_tb = float(Tuning.PITCH_TB[ptype])
 	_cross_t = _ta + _tb
 	_rest_h = float(Tuning.BOUNCE_REST[ptype])
 	var pitcher_pos: Vector2 = Tuning.FIELD_POS["P"]
@@ -722,12 +735,12 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 	var cpos: Vector2 = Tuning.FIELD_POS["C"]
 	_mitt = cpos + MITT_OFF
 	# Ballistics. Phase A: a real toss — launch velocity chosen so the ball
-	# leaves the hand at PITCH_ARC_H and meets the cobbles exactly at ta, so
+	# leaves the hand at Tuning.PITCH_ARC_H and meets the cobbles exactly at ta, so
 	# the swing clock (cross_t) is untouched. Phase B: the spaldeen rebounds
 	# with the pitch's liveliness expressed as a rebound apex; the fast one
 	# crosses the plate high on the hop, the drop dies low off the bounce.
-	_v0a = (0.5 * Tuning.BALL_G * _ta * _ta - PITCH_ARC_H) / _ta
-	_v2 = sqrt(2.0 * Tuning.BALL_G * _rest_h * PITCH_ARC_H)
+	_v0a = (0.5 * Tuning.BALL_G * _ta * _ta - Tuning.PITCH_ARC_H) / _ta
+	_v2 = sqrt(2.0 * Tuning.BALL_G * _rest_h * Tuning.PITCH_ARC_H)
 	# the spinner leans away before the bounce, then takes on it — the kick
 	# already lives in _pC.x, so the bow bends opposite for the deception
 	_spin_bow = -spin * 0.35
@@ -736,10 +749,11 @@ func _start_pitch(pitch: Dictionary, plan: Dictionary) -> void:
 			-Tuning.SWING_EARLY, Tuning.SWING_LATE - 0.02)
 	ball.visible = true
 	bw = _pA
-	bh = PITCH_ARC_H
+	bh = Tuning.PITCH_ARC_H
 	_bt = 0.0
 	_contact_t = -1.0
 	_bounced = false
+	_clear_trail()
 	_ball_mode = "pitch"
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -772,11 +786,31 @@ func _load_bat_geometry() -> void:
 func _set_batter_geometry(id: String) -> void:
 	_reach = CONTACT_REACH
 	_contact_h = CONTACT_H
+	_arc = []
+	_contact_frames = []
 	if _bat_geom.has(id):
 		var g: Dictionary = _bat_geom[id]
 		_reach = float(g.get("reach", CONTACT_REACH))
 		_contact_h = float(g.get("height", CONTACT_H))
+		_arc = g.get("arc", [])
+		_contact_frames = g.get("contact_frames", [])
 	_batter_pos = Vector2(Tuning.PLATE.x - signf(_reach) * BATTER_STANCE, BATTER_Y)
+
+# The bat sweeps DOWNWARD, so a pitch arriving high should be met earlier in
+# the swing than one skidding in low. Pick the frame whose barrel is nearest
+# the height the ball will actually be at, and swing to meet it there.
+func _pick_contact_frame(target_h: float) -> int:
+	var best := -1
+	var best_d := 1e9
+	for f0 in _contact_frames:
+		var f := int(f0)
+		if f >= _arc.size() or _arc[f] == null:
+			continue
+		var d: float = absf(float(_arc[f][1]) - target_h)
+		if d < best_d:
+			best_d = d
+			best = f
+	return best
 
 # Where the barrel's sweet spot passes through — everything about the moment of
 # contact is measured from here.
@@ -806,8 +840,19 @@ func _begin_swing() -> void:
 	_contact_t = _bt + SWING_LEAD
 	_contact_from = bw
 	_contact_from_h = bh
+	# Where the ball will be when the bat gets there, so the swing can be
+	# chosen to meet it rather than swiping through a fixed spot in the air.
+	var tau: float = clampf(_contact_t - _ta, 0.0, _tb)
+	var h := maxf(0.0, _v2 * tau - 0.5 * Tuning.BALL_G * tau * tau)
+	var cf := _pick_contact_frame(h)
+	if cf >= 0:
+		_contact_h = float(_arc[cf][1])
+		_reach = float(_arc[cf][0])
 	if batter_node != null and is_instance_valid(batter_node):
-		batter_node.play("swing_back", SWING_FPS, false)
+		# start one frame short of contact: the rest pose is already the
+		# cocked bat, so the swing reads continuous
+		var start := maxi(0, cf - int(SWING_LEAD_FRAMES)) if cf >= 0 else 0
+		batter_node.play("swing_back", SWING_FPS, false, start)
 
 func _process(delta: float) -> void:
 	if not _perf:
@@ -999,7 +1044,7 @@ func _process_ball(delta: float) -> void:
 			var u := _bt / _ta
 			bw = _pA.lerp(_pB, u)
 			bw.x += _spin_bow * 4.0 * u * (1.0 - u)
-			bh = maxf(0.0, PITCH_ARC_H + _v0a * _bt
+			bh = maxf(0.0, Tuning.PITCH_ARC_H + _v0a * _bt
 				- 0.5 * Tuning.BALL_G * _bt * _bt)
 		elif _bt < _cross_t:
 			var tau := _bt - _ta
@@ -1011,6 +1056,7 @@ func _process_ball(delta: float) -> void:
 				shake(6.5, Vector2(0, 1))
 			bw = _pB.lerp(_pC, tau / _tb)
 			bh = maxf(0.0, _v2 * tau - 0.5 * Tuning.BALL_G * tau * tau)
+			_push_trail(true)
 		elif not _vis_committed:
 			var u := minf((_bt - _cross_t) / MITT_TIME, 1.0)
 			bw = _pC.lerp(_mitt, u)
@@ -1087,8 +1133,11 @@ func _build_hops(first_peak: float) -> float:
 		at += frac
 	return total
 
-func _push_trail() -> void:
-	if _h_carry < 0.32:
+# Into the bounce the ball moves 1.3 of its own diameters per frame on a 30Hz
+# device — it strobes, and cannot be tracked by eye. A streak behind it joins
+# the samples up so the path reads even when the ball itself is jumping.
+func _push_trail(force := false) -> void:
+	if not force and _h_carry < 0.32:
 		return
 	_trail.append(ball.position)
 	while _trail.size() > TRAIL_MAX:

@@ -2,16 +2,42 @@ extends Node
 # All feel constants live here. Raise/lower, don't hardcode.
 
 const INNINGS := 3
-const PITCH_TIMES := {"fast": 0.62, "spinner": 0.78, "drop": 0.88}
-const BOUNCE_REST := {"fast": 0.72, "spinner": 0.7, "drop": 0.5}
+# The pitch, and the whole batting game with it.
+#
+# Measured against the Punch-Out!! bar, the old numbers failed the premise:
+# fast and spinner rebounded at 388.8 vs 383.4 px/s — 1.4% apart, four pixels
+# on a hundred-pixel ball — so the hop the game is NAMED for carried no
+# information at all. Worse, bounce->plate was 220ms for both, which after the
+# swing lead left MINUS seventeen milliseconds to react: a player who did what
+# the game asks and watched the hop was guaranteed to be late.
+#
+# Now the three hops are genuinely different events, and every one of them
+# leaves at least 250ms to act:
+#
+#   type     bounce->plate   crosses at   doing
+#   fast        300ms           71px      rising, at its apex — flat and hard
+#   spinner     380ms          110px      rising high, plus the lateral kick
+#   drop        400ms           38px      FALLING — it dies off the stones
+#
+# release times differ too (see PITCH_WINDUP in match_view), so the wind-up
+# itself is a tell before the ball is even out of the hand.
+const PITCH_TIMES := {"fast": 0.52, "spinner": 0.62, "drop": 0.74}
+const PITCH_TB := {"fast": 0.30, "spinner": 0.38, "drop": 0.40}
+const BOUNCE_REST := {"fast": 0.55, "spinner": 0.85, "drop": 0.40}
 const SPIN_KICK := {"fast": 0.0, "spinner": 34.0, "drop": 8.0}
+# The pitcher's hand, in world px off the cobbles. Was 70 — barely knee high,
+# which capped every rebound too low to tell apart.
+const PITCH_ARC_H := 130.0
 # ballistics — one gravity for the whole game, in world px/s^2 (a kid is
 # ~160 world px ≈ 1.4 m, so ~1500 reads just a touch snappier than earth)
 const BALL_G := 1500.0
 const BALL_G_CHOP := 3000.0      # grounders are chopped down hard
 const GROUND_REST := 0.55        # cobble restitution for grounder hops
-const SWING_EARLY := 0.42   # seconds before plate-cross the tap window opens
-const SWING_LATE := 0.24    # seconds after
+# The prompt used to stay lit for 660ms while only ±163ms of that could ever
+# connect — 51% of the window it invited you to swing in was a guaranteed
+# whiff. The window now matches roughly what contact actually tolerates.
+const SWING_EARLY := 0.18   # seconds before the aim point the tap window opens
+const SWING_LATE := 0.18    # seconds after
 const CAM_ZOOM := 0.9
 # Sprites are authored at 2x world size so they stay crisp on a retina phone.
 const ART := 0.5

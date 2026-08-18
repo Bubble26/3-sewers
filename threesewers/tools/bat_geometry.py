@@ -43,25 +43,38 @@ def _tip(path):
 
 
 def measure(chars_dir):
+    """Per kid: the whole swing arc, plus which frame is the fullest extension.
+
+    The arc matters because the bat sweeps DOWNWARD through the swing, so a
+    pitch that arrives high should be met on an earlier frame than one that
+    skids in low. Recording every frame lets the game pick the one whose
+    barrel is actually at the ball's height.
+    """
     out = {}
     for f in sorted(glob.glob(os.path.join(chars_dir, "chr_*_swing_back_0.png"))):
         kid = os.path.basename(f)[4:-len("_swing_back_0.png")]
-        best = None
+        arc, best = [], None
         for i in range(16):
             p = os.path.join(chars_dir, "chr_%s_swing_back_%d.png" % (kid, i))
             if not os.path.exists(p):
                 break
             t = _tip(p)
             if t is None:
+                arc.append(None)
                 continue
-            # contact is the frame where the bat is furthest out
-            if best is None or abs(t[0]) > abs(best[1][0]):
-                best = (i, t)
+            arc.append([round(t[0] * SWEET, 1), round(t[1], 1)])
+            if best is None or abs(t[0]) > abs(arc[best][0]):
+                best = i
         if best is None:
             continue
-        i, (reach, height) = best
-        out[kid] = {"frame": i, "reach": round(reach * SWEET, 1),
-                    "height": round(height, 1)}
+        # Only frames where the bat is genuinely out in front can make contact:
+        # at the top of the swing it is behind the kid's head.
+        full = abs(arc[best][0])
+        swept = [i for i, a in enumerate(arc)
+                 if a is not None and abs(a[0]) > full * 0.55
+                 and (a[0] > 0) == (arc[best][0] > 0)]
+        out[kid] = {"frame": best, "reach": arc[best][0], "height": arc[best][1],
+                    "arc": arc, "contact_frames": swept}
     return out
 
 
