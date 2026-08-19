@@ -1922,14 +1922,15 @@ registerScenario('announcer_sheet', {
           ...col(GOOCH.between, 1), GAGS.ice[1], GAGS.apple[2], GAGS.grounded[1],
         ] },
         { head: 'ONE APIECE, AND THE BLOCK', lines: [
-          KID_LINES.ethel.dot, KID_LINES.jesus.dot, KID_LINES.luz.gooch,
-          KID_LINES.dom.gooch, KID_LINES.bessie.gooch,
+          KID_LINES.ethel.dot, KID_LINES.jesus.dot, KID_LINES.luz.gooch, KID_LINES.bessie.gooch,
           // the two banks §7.5 makes binding: the kids whose roster entry says
           // so call for the ball in the language they call for it at home, and
-          // nobody in the booth ever remarks on it
-          ...col(CHATTER.es, 4), ...col(CHATTER.yi, 4),
+          // nobody in the booth ever remarks on it. Named rather than sampled,
+          // so the sheet always shows a critic that this is really in there.
+          CHATTER.es[0], CHATTER.es[2], CHATTER.es[9],
+          CHATTER.yi[0], CHATTER.yi[2], CHATTER.yi[4],
           ...col(CHATTER.taunt, 2), ...col(CHATTER.call, 1), ...col(CHATTER.back, 2),
-          ...NARRATOR.slice(8, 10), TINY_GAG[1],
+          NARRATOR[8], TINY_GAG[1],
           ...ARGUMENTS[3],
         ] },
       ],
