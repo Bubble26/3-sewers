@@ -1,0 +1,49 @@
+{
+  "wave": "3",
+  "title": "The game",
+  "maxRounds": 4,
+  "pieces": [
+    {
+      "key": "ball-physics",
+      "title": "Ball physics and caroms",
+      "files": ["src/game/ballphysics.js"],
+      "scenarios": ["carom_wall", "carom_fire_escape", "sewer_shot", "deep_fly"],
+      "brief": "You own the Spaldeen. Fill the 'ballphysics' slot in src/game/plugins.js.\n\nA pink rubber ball is not a baseball: it is light, it is fast off the stick, it bounces enormously, and it is the reason stickball is fun. Model it - mass, drag, Magnus lift from spin, and a restitution that makes a ball off the pavement come back up to chest height.\n\nCaroms are the heart of this game. Use src/world/colliders.js: every wall, fire escape, ash can, parked car, window, awning and sewer grate registers itself there with a surface type. Implement swept-sphere collision against them with correct reflection, spin transfer and energy loss per surface, and emit an event for every impact so audio and fx can respond. A ball that rattles down through a fire escape's treads and landings, ticking on each one, is one of the twelve signature moments in the design bible and must actually happen - not be faked.\n\nSpecific behaviours the bible requires: the sewer swallows the ball and the ball is gone; a window breaks and the game stops; laundry kills the ball dead and it drops straight down; an ash can lid clatters; a car fender thunks and the ball squirts sideways; the roof means it is out of play and somebody has to go up for it.\n\nGive the sim a settled() that is honest about when a play is over, and make the ball's trajectory readable - the design bible says the ball is the brightest object in frame and its arc must be legible from the batter's camera at all times.\n\nRegister 'carom_wall', 'carom_fire_escape' and 'sewer_shot' scenarios, each a deterministic setup a critic can judge from a film strip."
+    },
+    {
+      "key": "pitching",
+      "title": "Pitching",
+      "files": ["src/game/pitching.js"],
+      "scenarios": ["pitch_types", "pitch_windup", "pitch"],
+      "brief": "You own the delivery. Fill the 'pitching' slot in src/game/plugins.js.\n\nThis is a twelve-year-old throwing a pink rubber ball down a street, so the pitch set is not a major-league arsenal - it is what a kid can actually do and what a kid claims they can do. Build the honest ones (fastball, change, a wobbling knuckler, a big slow arc, the one that bounces in front of the plate on purpose) and give each a real trajectory with break, not just a speed number.\n\nThe delivery has to have theatre: a set position, a look-in, a windup with anticipation, a leg kick, the release, and a recovery, with the timing the design bible specifies. The pitcher must telegraph enough that a good hitter can read them, because that is what makes hitting feel like a skill instead of a coin flip.\n\nAiming: the pitcher picks a location, and location plus pitch type determines the trajectory the batting piece has to solve. Build the pitcher AI - each kid on the roster pitches differently per their stats and quirks in src/chars/roster.js, they get tired, they lose the plate when rattled, and they will absolutely groove one to the little kid.\n\nExpose what the batting piece needs to judge timing, and what the announcer needs to name the pitch.\n\nRegister 'pitch_types' (a composed frame or strip showing each pitch's path) and 'pitch_windup'."
+    },
+    {
+      "key": "batting-contact",
+      "title": "Batting and contact",
+      "files": ["src/game/batting.js"],
+      "scenarios": ["swing_timing", "contact", "swing_types"],
+      "brief": "You own the swing, which means you own the most important 200 milliseconds in the game. Fill the 'batting' slot in src/game/plugins.js.\n\nThe contact model must reward timing and location together: where the ball is when the barrel arrives decides the launch angle and spray, how close the timing is decides the power, and the result must be legible to the player - early and you pull it foul, late and you slice it toward the stoops, right on it and you square it up. A player who cannot feel why a ball went where it went will not keep playing.\n\nSwing types the design bible calls for: a full cut, a contact swing, a bunt/tap that is a legitimate street-stickball tactic, and the check swing. The kid's stats from src/chars/roster.js modulate the window and the power.\n\nFeel is your responsibility, not just maths: hitstop on square contact, a slight zoom or shake handed to the camera and fx pieces through events, the difference between the sound of a nubber and a sewer shot. Emit rich events so those systems can respond - contact quality, launch angle, exit speed, and whether this one is going a long way.\n\nJudge yourself with tools/film.mjs on the swing and with tools/playthrough.mjs across several seeds: a whole game should produce a believable distribution of outcomes, not 86 hits. Report that distribution.\n\nRegister 'swing_timing' (a strip showing early, on-time and late contact from the same pitch) and 'swing_types'."
+    },
+    {
+      "key": "fielding",
+      "title": "Fielding",
+      "files": ["src/game/fielding.js"],
+      "scenarios": ["field_grounder", "field_fly", "field_relay"],
+      "brief": "You own the eight kids trying to get the ball back. Fill the 'fielding' slot in src/game/plugins.js.\n\nStreet fielding is not baseball fielding: there are no gloves, the ball caroms off buildings, one kid is playing on the sidewalk, one is standing on a stoop, and the little brother in right field is not paying attention. Build positioning that fits a street, chase logic that predicts where a caroming ball is going, a reaction delay per kid from their stats, catching that can fail, dives and jumps and fumbles, and relay throws when the ball is deep.\n\nErrors must be funny rather than punishing, and they must be readable: the player should see why the ball got through. Difficulty comes from the fielders' competence, and the design bible's ethic is that every kid is good at something - so the slow kid has a cannon, the little one is fearless, and the kid who cannot catch will still make one impossible play a game.\n\nDecide plays honestly against the runners: return a result to the sim only when the play is genuinely over, and make close plays actually close.\n\nCoordinate with the baserunning piece purely through the sim and the event bus - do not edit its file.\n\nRegister 'field_grounder', 'field_fly' and 'field_relay', each judgeable from a film strip."
+    },
+    {
+      "key": "baserunning",
+      "title": "Baserunning",
+      "files": ["src/game/baserunning.js"],
+      "scenarios": ["run_single", "run_close_play", "run_slide"],
+      "brief": "You own the runners. Fill the 'baserunning' slot in src/game/plugins.js.\n\nBases are a chalk mark, a fire hydrant and a fender, so running them has its own comedy and its own geometry. Build: runners breaking on contact, holding on a fly, tagging up, the decision to try for two, steals, rundowns, and slides into a chalk base that raise a cloud of dust. Runner speed comes from the roster stats and every kid runs differently.\n\nThe player must be able to take control - send a runner, hold them, dive back - with controls that are obvious and forgiving, and the AI must make sensible decisions when the player does not intervene.\n\nClose plays are the payoff: the throw and the runner must resolve on real positions and real times, not a dice roll, and the result must be visibly true from the camera. When it is genuinely close, that is the moment the whole street argues about, so emit the events that let the rules and announcer pieces make a scene of it.\n\nCoordinate with fielding purely through the sim and the event bus.\n\nRegister 'run_single', 'run_close_play' and 'run_slide'."
+    },
+    {
+      "key": "street-rules",
+      "title": "Street rules and game flow",
+      "files": ["src/game/rules.js", "src/game/flow.js"],
+      "scenarios": ["rule_car", "rule_two_sewers", "rule_do_over"],
+      "brief": "You own what makes this stickball rather than baseball, and you own the shape of a whole game. Fill the 'rules' slot in src/game/plugins.js.\n\nFrom docs/PERIOD-REFERENCE.md section 1, implement the real street rules: distance measured in sewers and the two-sewer hitter as the block's highest praise; fouls defined by the stoops and the fire escapes rather than by chalk lines; the ball off a window; ghost runners when there are not enough kids; do-overs; balls on a roof; and CAR - a car turns onto the block, somebody yells, everybody clears, and the play is dead. That last one is a signature moment and must actually interrupt a live play, then resume gracefully.\n\nOwn the flow: innings, the count, how a game starts and ends, the between-innings beat, mercy and comeback rules that keep it fun, and the argument mechanic when a call is close. Make a whole game the right length - use tools/playthrough.mjs across several seeds and report the distribution of scores, innings length and event counts, then tune until a game reads like a real afternoon on a street rather than a slugfest or a shutout.\n\nYou also own how the twelve signature moments in the design bible get triggered, since most of them are rules events. Make each one reachable and verify at least six of them actually fire during playthroughs.\n\nRegister 'rule_car', 'rule_two_sewers' and 'rule_do_over'."
+    }
+  ]
+}
