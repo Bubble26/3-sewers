@@ -33,6 +33,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 const STATUS = {
   done: { label: 'Signed off', cls: 'ok' },
+  built: { label: 'Built — not yet judged', cls: 'live' },
+  partial: { label: 'Cut short by API outage', cls: 'warn' },
   building: { label: 'On the field', cls: 'live' },
   critique: { label: 'Under critique', cls: 'live' },
   rework: { label: 'Sent back in', cls: 'warn' },

@@ -311,7 +311,7 @@ class ContactShadows {
       const w = t.w * (0.80 + 0.26 * k);
       const len = w * (1.0 + sun * stretch * t.w * 1.05);
       if (this.quad(n, this._p.x, ground + 0.018, this._p.z, w, len, dx, dz,
-        t.base * (0.50 + 0.50 * k) * (1 - 0.22 * sun))) n++;
+        Math.min(0.42, t.base * 1.12) * (0.50 + 0.50 * k) * (1 - 0.14 * sun))) n++;
     }
     // the ball, per §2.5: a contact shadow on the ground at all times
     const bv = app.get('ballview');
@@ -337,8 +337,8 @@ function ellipseTexture() {
   const g = c.getContext('2d');
   const grd = g.createRadialGradient(64, 64, 4, 64, 64, 63);
   grd.addColorStop(0.00, 'rgba(255,255,255,1)');
-  grd.addColorStop(0.52, 'rgba(255,255,255,0.94)');
-  grd.addColorStop(0.80, 'rgba(255,255,255,0.44)');
+  grd.addColorStop(0.62, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.84, 'rgba(255,255,255,0.62)');
   grd.addColorStop(1.00, 'rgba(255,255,255,0)');
   g.fillStyle = grd;
   g.fillRect(0, 0, 128, 128);

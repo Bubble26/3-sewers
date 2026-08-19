@@ -612,19 +612,19 @@ function delivery(name, k) {
       { t: apex, ease: 'out', pose: {
         hips: { ry: 22 * turn, rz: -7 * kick },
         chest: { rx: 6 + (k.lean ?? 0), ry: 46 * turn }, neck: { rx: 8, ry: -52 * turn },
-        armL: { rx: 58, rz: 34 }, elbL: [126, 0, 0], armR: { rx: -34 - 20 * hands, rz: -34 }, elbR: [96, 0, 0],
+        armL: { rx: 58, rz: 34 }, elbL: [126, 0, 0], armR: { rx: -46 - 22 * hands, rz: -62 }, elbR: [44, 0, 0],
         legL: { rx: 118 * kick, rz: 12 }, kneeL: [-124 * kick, 0, 0], footL: [30 * kick, 0, 0],
         legR: { rx: -6, rz: 3 }, kneeR: [-5, 0, 0], footR: [-14 * kick, 0, 0],
-        base: { py: 0.20 * kick, sy: 0.06, sx: -0.03, sz: -0.03 }, brim: [-9, 0, 0], shirt: [-12, 0, 0],
+        base: { py: 0.26 * kick, sy: 0.07, sx: -0.035, sz: -0.035 }, brim: [-9, 0, 0], shirt: [-14, 0, 0],
       } },
       // 3b — held. Only the hair, the brim and the shirttail move.
       { t: apex + hold, ease: 'hold', pose: {
         hips: { ry: 26 * turn, rz: -9 * kick },
         chest: { rx: 8 + (k.lean ?? 0), ry: 52 * turn }, neck: { rx: 10, ry: -58 * turn },
-        armL: { rx: 60, rz: 36 }, elbL: [130, 0, 0], armR: { rx: -40 - 22 * hands, rz: -36 }, elbR: [100, 0, 0],
+        armL: { rx: 60, rz: 36 }, elbL: [130, 0, 0], armR: { rx: -54 - 24 * hands, rz: -68 }, elbR: [36, 0, 0],
         legL: { rx: 124 * kick, rz: 14 }, kneeL: [-130 * kick, 0, 0], footL: [34 * kick, 0, 0],
         legR: { rx: -6, rz: 3 }, kneeR: [-3, 0, 0], footR: [-16 * kick, 0, 0],
-        base: { py: 0.23 * kick, sy: 0.07, sx: -0.035, sz: -0.035 }, brim: [-4, 0, 0], shirt: [-6, 0, 0],
+        base: { py: 0.30 * kick, sy: 0.08, sx: -0.04, sz: -0.04 }, brim: [-4, 0, 0], shirt: [-7, 0, 0],
       } },
       // 4 — stride. Front foot reaches, the arm is STILL BACK. That is the separation.
       { t: 0.82 * d, ease: 'drive', pose: {
@@ -1459,7 +1459,7 @@ registerScenario('pitch_types', {
 // how far into the delivery the still is taken; the film tool overrides it to 0
 let WINDUP_OFFSET = null;
 const WINDUP_AT = () => (WINDUP_OFFSET !== null ? WINDUP_OFFSET
-  : (APP.pitching.releaseT ?? 1.7) - 0.045);
+  : (APP.pitching.apexT ?? 1.3) + PT.apexHold * 0.55);
 globalThis.__SB_WINDUP_AT = (v) => { WINDUP_OFFSET = v; };
 
 registerScenario('pitch_windup', {
@@ -1471,8 +1471,8 @@ registerScenario('pitch_windup', {
     app.pitching.force(null);
     app.clock.advance(WINDUP_AT());
     app.camera.fov = 46;
-    app.camera.position.set(14.9, 8.0, 41.2);
-    app.camera.lookAt(-1.6, 3.0, PT.moundZ + 1.0);
+    app.camera.position.set(13.2, 7.9, 34.2);
+    app.camera.lookAt(-1.9, 4.4, PT.moundZ - 0.6);
     app.camera.updateProjectionMatrix();
   },
   settle: 0,

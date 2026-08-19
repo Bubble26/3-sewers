@@ -46,9 +46,11 @@ const POSTS = [
   { id: 'first', x: 17, z: 33 },
   { id: 'short', x: 8, z: 64 },
   { id: 'third', x: -17, z: 33 },
-  { id: 'left', x: -15, z: 97 },
-  { id: 'center', x: 1, z: 118 },
-  { id: 'right', x: 16, z: 94 },
+  // pulled in from the far block: DESIGN-BIBLE §12 puts a floor of 8% of frame height on
+  // every fielder, and a kid 118 ft up the street is four pixels tall
+  { id: 'left', x: -15, z: 82 },
+  { id: 'center', x: 1, z: 95 },
+  { id: 'right', x: 16, z: 79 },
 ];
 
 // ── one kid ─────────────────────────────────────────────────────────────────
@@ -405,7 +407,11 @@ export default registerSystem({
       if (this.mode !== 'game') return;
       this.pitcher.act('windup', { state: 'windup', lock: 0.9 });
       this.batter.setLook(sim().state.batterIdx % 9);
-      if (this.batter.lock <= 0) { this.batter.act('stance', { state: 'stance', lock: 0.9 }); }
+      if (this.batter.lock <= 0) {
+        // Signature moment: one at-bat in five, he calls his shot at the fire escape first.
+        if (arng.chance(0.2)) this.batter.act('point', { state: 'point', after: (k) => k.anim.play('stance', { fade: 0.2 }) });
+        else this.batter.act('stance', { state: 'stance', lock: 0.9 });
+      }
       for (const f of this.fielders) if (f !== this.pitcher && f !== this.catcher && f.lock <= 0) f.anim.play('ready', { fade: 0.25 });
     });
 
@@ -427,8 +433,11 @@ export default registerSystem({
 
     bus.on('bat:contact', () => {
       if (this.mode !== 'game') return;
-      this.hitstop = 0.075;
+      this.hitstop = 0.075;                         // 4-5 frames of everybody frozen (BYB 5.5)
       this.reactToBall(app, 0.16);
+      // fielders react BEFORE the camera does; the bench reacts before the fielders
+      for (const f of this.fielders) f.setFace('shock', 0.8);
+      this.onDeck.setFace('shock', 1.0);
     });
 
     bus.on('strike', (p) => {
@@ -439,11 +448,13 @@ export default registerSystem({
         this.batter.flavour('fidget_look', { amp: 0.7 });
       }
       if (p.kind !== 'foul') this.catcher.flavour('fidget_chatter', { amp: 0.5 });
+      if (p.kind !== 'foul') { this.catcher.setFace('taunt', 1.4); this.pitcher.setFace('smug', 1.6); }
     });
 
     bus.on('out', () => {
       if (this.mode !== 'game') return;
       this.batter.act('sulk', { state: 'sulk', lock: 1.5 });
+      for (const f of this.fielders.slice(2)) if (f.lock <= 0) { f.setFace('grin', 1.6); if (arng.chance(0.35)) f.flavour('cheer_arms', { life: 0.9, amp: 0.55 }); }
       const f = this.fielders[2 + (arng.int(0, 5))];
       if (f && f.lock <= 0) f.flavour('fidget_pants', { amp: 0.7 });
       this.clearRunners();

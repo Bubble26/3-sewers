@@ -100,7 +100,7 @@ function pigeonPalette(white) {
   const body = white ? mix(CLOTH[3], AIR.skyFill, 0.16) : slate;
   return {
     body,
-    back: soot(body, white ? 0.10 : 0.16),
+    back: soot(body, white ? 0.06 : 0.09),
     belly: mix(body, CLOTH[3], white ? 0.45 : 0.30),
     neck: white ? mix(body, ACCENTS.mustard, 0.14) : mix(body, ACCENTS.teal, 0.42),
     bar: soot(body, white ? 0.26 : 0.42),
@@ -343,7 +343,7 @@ class Smoke {
         p.grow = this.rng.range(1.4, 2.2);
         p.spin = this.rng.range(-0.5, 0.5);
         p.rot = this.rng.range(0, 6.28);
-        p.soot = this.rng.range(0.30, 0.46) * s.heat;
+        p.soot = this.rng.range(0.22, 0.36) * s.heat;
       }
     }
     const w = WIND.speed;
@@ -362,7 +362,7 @@ class Smoke {
   draw(b) {
     // fresh smoke is dark because it is coal; it lightens as it thins, which is
     // both what soot does and what the bible asks distance to do.
-    const near = lin(soot(AIR.haze, 0.44));
+    const near = lin(soot(AIR.haze, 0.30));
     const far = lin(mix(AIR.haze, AIR.skyLower, 0.22));
     const sunTint = lin(sunlit(AIR.haze, 0.30));
     for (const p of this.puffs) {
@@ -419,8 +419,8 @@ class Flock {
         pos: new THREE.Vector3(), vel: new THREE.Vector3(),
         head: 0, roll: 0, flap: rng.range(0, 6.28), flapRate: rng.range(6.4, 8.2),
         white: rng.chance(0.16) ? 1 : 0,
-        size: rng.range(1.44, 1.86),
-        orbit: 0, rad: rng.range(7, 19), yOff: rng.range(-6, 7),
+        size: rng.range(1.85, 2.35),
+        orbit: 0, rad: rng.range(6, 15), yOff: rng.range(-5, 6),
         bob: rng.range(0, 6.28), peck: rng.range(2, 9), settle: 0,
       });
       this.perches[i].taken = i;
@@ -658,7 +658,7 @@ function roofLaundry(block, rng) {
   let made = 0;
   for (const b of chosen) {
     if (made >= 6) break;
-    if (!rng.chance(0.82)) continue;
+    if (made >= 2 && !rng.chance(0.7)) continue;
     made++;
     const deck = corniceTop(b.storeys);
     const y = deck + 8.4;
@@ -815,10 +815,10 @@ registerScenario('atmosphere', {
   seed: 19250922,
   setup: ({ app }) => {
     app.sim.reset(19250922);
-    app.camera.fov = 46;
+    app.camera.fov = 54;
     app.camera.updateProjectionMatrix();
-    app.camera.position.set(-13.5, 5.6, -7);
-    app.camera.lookAt(13, 30, 44);
+    app.camera.position.set(-18.5, 7.2, -19);
+    app.camera.lookAt(6, 21, 32);
   },
   settle: 2.4,
 });

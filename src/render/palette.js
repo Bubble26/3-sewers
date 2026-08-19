@@ -193,7 +193,7 @@ export const FACADE = {
     oxblood: 0x7a2f2a,
     prussian: 0x27456e,
     forest: 0x3c5a2e,
-    plum: 0x5a3450,
+    plum: 0x63395a,
     cream: 0xc6b48a,
     teal: 0x2a5a5e,
     signRed: 0x9e3328,
@@ -280,7 +280,7 @@ export const WOOD = {
   crate: 0xa8834e,
   weathered: 0x8a7150,
   cart: 0x6e4a2e,
-  tarred: 0x4a3a2c,
+  tarred: 0x53412f,
 };
 
 /** What is on a pushcart. Six hues in one 128 px region: Law 4 in a single prop. */
@@ -328,7 +328,7 @@ export function shade(hex, k = 0.72, floorL = FLOOR_FIELD) {
   // therefore given a SHALLOWER band rather than a hole: the floor is raised, which is
   // exactly what "lifted by raising ambient — never by adding a light" means in a ramp.
   // Linear ironwork passes floorL 19 and keeps its full band (Law 2's one exemption).
-  return atLstar(cooled, Math.max(floorL, lstar(dark)));
+  return atLstar(cooled, Math.min(lstar(hex), Math.max(floorL, lstar(dark))));
 }
 
 /**

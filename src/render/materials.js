@@ -52,8 +52,20 @@ export const ART = {
   terminatorPx: 2.4,
   /** Global outline weight multiplier — the one dial for "more/less ink". */
   outlineScale: 1.0,
+  /**
+   * Where the terminator sits. At 0 the band boundary is exactly at the sun's horizon, which
+   * on a street lit from behind the camera puts every camera-facing surface in the lit band
+   * and makes a toon ramp look like flat colour. A small positive bias walks the boundary
+   * into the light so a round form shows the shade band as a crescent, which is what makes
+   * this read as BANDED rather than as unlit. Ambient stays at 72% of key either way, so
+   * BYB §2.5's "ambient never below 55% of key" is untouched — this moves the edge, not the
+   * ratio.
+   */
+  bandBias: 0.11,
+  /** The bounce strip runs from this height to bounceHeight, in feet (§4.1: "a narrow strip"). */
+  bounceLo: 0.7,
   /** Height in feet over which the roadway's warm bounce dies out. */
-  bounceHeight: 4.0,
+  bounceHeight: 5.0,
   /** Drawing-buffer height, refreshed every frame by syncArt(). */
   viewportH: 900,
   /** 'high' | 'medium' | 'low' — set from app.flags.quality. */
@@ -67,8 +79,24 @@ const shared = {
   uTermPx: { value: ART.terminatorPx },
   uViewH: { value: ART.viewportH },
   uBounceH: { value: ART.bounceHeight },
+  uBounceLo: { value: ART.bounceLo },
+  uBias: { value: ART.bandBias },
   uOutlineScale: { value: ART.outlineScale },
 };
+
+/**
+ * DRAW ORDER ON THE GROUND PLANE. Every flat thing we lay on the road is transparent, so
+ * three sorts it by renderOrder and the last one painted wins. Before this table existed the
+ * sun band was painted OVER the contact shadows and the chalk, which deleted both — the kids
+ * floated and the pitch ring went pale, and no amount of tuning the opacities would have
+ * found it. Read it as a paint-layer stack, bottom to top:
+ *
+ *   LAYER.crown    the scoured bright crown of the roadway              (Law 1, material)
+ *   LAYER.light    the sun band and the painted shade shapes            (§3.2, a colour event)
+ *   LAYER.chalk    chalk marks — they sit ON the road, in the sun or not
+ *   LAYER.shadow   contact shadows — nothing is allowed to paint over a contact shadow
+ */
+export const LAYER = { crown: -8, light: -6, chalk: -4, shadow: -2 };
 
 /** Called once per frame by the postfx system. Keeps every cached material honest. */
 export function syncArt(app) {
@@ -91,6 +119,8 @@ export function syncArt(app) {
   shared.uTermPx.value = ART.terminatorPx;
   shared.uViewH.value = ART.viewportH;
   shared.uBounceH.value = ART.bounceHeight;
+  shared.uBounceLo.value = ART.bounceLo;
+  shared.uBias.value = ART.bandBias;
   shared.uOutlineScale.value = ART.outlineScale;
 }
 
@@ -644,6 +674,8 @@ uniform vec3 uSun;
 uniform float uTermPx;
 uniform float uViewH;
 uniform float uBounceH;
+uniform float uBounceLo;
+uniform float uBias;
 uniform float uBounceStr;
 uniform float uBandBias;
 uniform float uOpacity;
@@ -663,7 +695,7 @@ void main() {
   // Band 1/2. Hard terminator, softened by exactly uTermPx pixels — held in SCREEN space so
   // it never turns to mush at distance and never staircases up close.
   float w = max( fwidth( ndl ), 1e-4 ) * uTermPx * 0.5;
-  float lit = smoothstep( -w, w, ndl - uBandBias );
+  float lit = smoothstep( -w, w, ndl - uBandBias - uBias );
 
   vec3 c = uLit;
   float alpha = uOpacity;
@@ -677,12 +709,22 @@ void main() {
   vec3 br = uBounce / max( uLit, vec3( 0.004 ) );
   vec3 col = mix( c * sr, c, lit );
 
-  // Band 3. The warm kick: undersides of forms always, low upward faces near the roadway.
+  // Band 3, §4.1: "a NARROW STRIP on upward-facing surfaces near the ground and on the
+  // underside of forms". The emphasis is the whole point. The previous form ramped smoothly
+  // from the ground to bounceHeight, which turned every ground plane into cream and airbrushed
+  // a soft vertical gradient up every kid — a gradient is the one thing a banded ramp is not.
+  // Now it is a band with an edge:
+  //   · undersides take the kick from the roadway, fading out with height above it
+  //   · upward faces take it only between bounceLo and bounceHeight — and NOT at y = 0,
+  //     because the roadway is the surface doing the bouncing and cannot bounce off itself
   float up = max( n.y, 0.0 );
   float down = max( -n.y, 0.0 );
-  float near = 1.0 - smoothstep( 0.0, uBounceH, vWP.y );
-  float bm = clamp( down * 0.9 + up * near * 0.85, 0.0, 1.0 );
-  bm = smoothstep( 0.30, 0.78, bm ) * uBounceStr;
+  float h = vWP.y;
+  float strip = smoothstep( uBounceLo * 0.35, uBounceLo, h ) * ( 1.0 - smoothstep( uBounceH * 0.70, uBounceH, h ) );
+  float fromRoad = 1.0 - smoothstep( uBounceH * 0.6, uBounceH * 2.6, h );
+  float bmRaw = clamp( down * fromRoad * 0.95 + up * strip * 0.80, 0.0, 1.0 );
+  float bw = max( fwidth( bmRaw ), 0.02 );
+  float bm = smoothstep( 0.34 - bw, 0.34 + bw, bmRaw ) * uBounceStr;
   col = mix( col, c * br, bm );
 
   gl_FragColor = vec4( col, alpha );
@@ -763,14 +805,14 @@ export function toon(color, opts = {}) {
   const {
     map = null, tex = null, repeat = [1, 1], texAmt = 1, bounceStr = 1, bias = 0,
     opacity = 1, transparent = false, side = THREE.FrontSide, depthWrite = true,
-    fog = true, shadeK = 0.72, mapAlpha = false, key = '',
+    fog = true, shadeK = 0.72, shadeFloor = 28, bounceLift = 6, mapAlpha = false, key = '',
   } = opts;
-  const id = `toon:${color}:${map?.uuid || tex?.uuid || 'x'}:${repeat}:${texAmt}:${bounceStr}:${bias}:${opacity}:${side}:${fog}:${shadeK}:${mapAlpha}:${key}`;
+  const id = `toon:${color}:${map?.uuid || tex?.uuid || 'x'}:${repeat}:${texAmt}:${bounceStr}:${bias}:${opacity}:${side}:${fog}:${shadeK}:${shadeFloor}:${bounceLift}:${mapAlpha}:${key}`;
   return cachedMat(id, () => {
     const u = toonUniforms();
     u.uLit.value = new THREE.Color(color);
-    u.uShade.value = new THREE.Color(shade(color, shadeK));
-    u.uBounce.value = new THREE.Color(bounce(color));
+    u.uShade.value = new THREE.Color(shade(color, shadeK, shadeFloor));
+    u.uBounce.value = new THREE.Color(bounce(color, bounceLift));
     u.uBounceStr.value = bounceStr;
     u.uBandBias.value = bias;
     u.uOpacity.value = opacity;
@@ -780,7 +822,7 @@ export function toon(color, opts = {}) {
     u.uTexRepeat.value = new THREE.Vector2(repeat[0], repeat[1]);
     u.uTex.value = map || tex;
     u.uSun = shared.uSun; u.uTermPx = shared.uTermPx; u.uViewH = shared.uViewH;
-    u.uBounceH = shared.uBounceH;
+    u.uBounceH = shared.uBounceH; u.uBounceLo = shared.uBounceLo; u.uBias = shared.uBias;
     const m = new THREE.ShaderMaterial({
       uniforms: u, vertexShader: TOON_VERT, fragmentShader: TOON_FRAG,
       transparent: transparent || opacity < 1 || mapAlpha, side, depthWrite, fog,

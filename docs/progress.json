@@ -1,27 +1,27 @@
 {
   "title": "The Stickball Scoreboard",
-  "tagline": "A 1920s New York stickball game being built in Three.js by a swarm of agents, every piece rebuilt until a fresh critic \u2014 looking only at rendered frames \u2014 prefers it to Backyard Baseball.",
-  "updated": "18 August 2026, 12:54 UTC",
+  "tagline": "A 1920s New York stickball game being built in Three.js by a swarm of agents. Ten pieces are built and rendering; the critique loop that judges them against Backyard Baseball has not run yet \u2014 an API outage killed every critic mid-round.",
+  "updated": "19 August 2026, 01:30 UTC",
   "thumbDir": "shots/board",
   "stats": {
     "pieces": 27,
     "signedOff": 3,
     "rounds": 0,
-    "agents": 5,
-    "phase": "Waves 1 & 2"
+    "agents": 63,
+    "phase": "Paused"
   },
   "waves": [
     {
       "id": "0",
       "title": "Reference & design bible",
-      "state": "signed off",
+      "state": "complete",
       "pieces": [
         {
           "id": "byb-dossier",
           "name": "Backyard Baseball dossier",
           "what": "The quality bar, written down as checkable specifics critics can score a screenshot against.",
           "status": "done",
-          "rounds": 2,
+          "rounds": 1,
           "gap": "Colour numbers are derived from the design language, not measured off real frames \u2014 the proxy blocked all image access."
         },
         {
@@ -29,7 +29,7 @@
           "name": "1925 New York dossier",
           "what": "Tenement anatomy, street furniture, stickball's real rules and slang, with dimensions.",
           "status": "done",
-          "rounds": 2,
+          "rounds": 1,
           "gap": "Kid dialogue is reconstructed from 1940s-60s Spaldeen-era sources; 1925 transcripts were unreachable."
         },
         {
@@ -37,84 +37,92 @@
           "name": "Design bible",
           "what": "Resolves bright-Backyard against sooty-1925: palette, shading, comedy register, 12 signature moments.",
           "status": "done",
-          "rounds": 2
+          "rounds": 1
         }
       ]
     },
     {
       "id": "1",
       "title": "The block",
-      "state": "building",
+      "state": "built, awaiting critique",
       "pieces": [
         {
           "id": "street-architecture",
           "name": "Street architecture",
           "what": "Tenement facades, stoops, fire escapes, cornices, water towers, storefronts, the El.",
-          "status": "building",
-          "rounds": 0
+          "status": "built",
+          "rounds": 1,
+          "gap": "The far end of the street behind the El is a flat run of boxes with painted-on windows."
         },
         {
           "id": "street-surface-props",
           "name": "Surface & props",
           "what": "Belgian block, chalk bases, manhole home plate, hydrant, ash cans, pushcart, Model T, laundry lines.",
-          "status": "building",
-          "rounds": 0
+          "status": "built",
+          "rounds": 1,
+          "gap": "At gameplay distance the roadway still reads as one broad warm tan field, not a paved street."
         },
         {
           "id": "sky-light-atmosphere",
           "name": "Sky, light & air",
           "what": "Late-afternoon canyon light, coal haze, smoke, pigeons, wind, time of day.",
-          "status": "building",
-          "rounds": 0
+          "status": "partial",
+          "rounds": 1,
+          "gap": "Builder wrote sky, atmosphere and the light rig, then died mid-round on a 529. No sun-and-shade diagonal is visible in the frame yet."
         },
         {
           "id": "art-direction-shading",
           "name": "Art direction & shading",
           "what": "The toon/painted look, outlines, colour grade \u2014 how sooty becomes cheerful.",
-          "status": "building",
-          "rounds": 0
+          "status": "partial",
+          "rounds": 1,
+          "gap": "Palette, materials and the output transform landed; the builder died mid-response before its own verification pass."
         }
       ]
     },
     {
       "id": "2",
       "title": "The kids",
-      "state": "building",
+      "state": "built, awaiting critique",
       "pieces": [
         {
           "id": "character-art",
           "name": "Character art",
           "what": "Proportions, faces, expressions, period wardrobe, silhouettes you can tell apart at a glance.",
-          "status": "building",
-          "rounds": 0
+          "status": "built",
+          "rounds": 1,
+          "gap": "Toon bands are baked in each limb\u2019s local space, so shading rotates with a swung arm."
         },
         {
           "id": "animation-vocabulary",
           "name": "Animation vocabulary",
           "what": "Idles, windups, swings, run cycles, slides, dives, catches, celebrations, taunts.",
-          "status": "building",
-          "rounds": 0
+          "status": "partial",
+          "rounds": 1,
+          "gap": "Twenty self-critique passes of clips and rig work landed, then the builder died on a 529 before reporting."
         },
         {
           "id": "roster-personality",
           "name": "Roster & personality",
           "what": "Sixteen neighbourhood kids with stats, attitudes, catchphrases and a team-select screen.",
-          "status": "building",
-          "rounds": 0
+          "status": "built",
+          "rounds": 1,
+          "gap": "Sixteen kids, cigarette-card portraits and the choosin\u2019-up-sides screen. Never judged."
         }
       ]
     },
     {
       "id": "3",
       "title": "The game",
-      "state": "queued",
+      "state": "built, awaiting critique",
       "pieces": [
         {
           "id": "pitching",
           "name": "Pitching",
           "what": "Aim, windup, pitch types, the junk a 12-year-old throws, pitcher AI.",
-          "status": "queued",
-          "rounds": 0
+          "status": "built",
+          "rounds": 1,
+          "gap": "Pitch set, windup theatre and pitcher AI landed. Never judged."
         },
         {
           "id": "batting-contact",
@@ -127,8 +135,9 @@
           "id": "ball-physics",
           "name": "Ball physics & caroms",
           "what": "Spaldeen bounce, wall and fire-escape caroms, stoop ricochets, windows, the sewer shot.",
-          "status": "queued",
-          "rounds": 0
+          "status": "built",
+          "rounds": 1,
+          "gap": "Spaldeen flight, swept-sphere caroms and surface behaviour landed. Never judged."
         },
         {
           "id": "fielding-ai",
@@ -156,7 +165,7 @@
     {
       "id": "4",
       "title": "The show",
-      "state": "queued",
+      "state": "not started",
       "pieces": [
         {
           "id": "camera-direction",
@@ -212,7 +221,7 @@
     {
       "id": "5",
       "title": "The polish",
-      "state": "queued",
+      "state": "not started",
       "pieces": [
         {
           "id": "input-onboarding",
@@ -247,20 +256,16 @@
   ],
   "wire": [
     {
-      "when": "Wave 0",
-      "text": "Design bible settles the central conflict: the period decides what is on screen, Backyard decides how bright, how saturated, how big, how fast and how funny it is."
+      "when": "Paused",
+      "text": "Anthropic API returned 529 Overloaded across 54 of 63 agents. Waves 1, 2 and 3 exhausted their rounds on retries. The work the builders finished is intact and rendering; no critic survived long enough to rule on any of it."
     },
     {
-      "when": "Wave 0",
-      "text": "The pink Spaldeen (#F2828A) is both period-correct and the readability accent \u2014 the most important object on screen is also the most saturated thing in a brown street."
+      "when": "Built",
+      "text": "The block renders with lettered storefronts, fire escapes, the El, pushcarts and an ice truck. Sixteen kids exist with names, stats and portraits. Ball physics and pitching are in. Zero console errors across 30 scenarios."
     },
     {
-      "when": "Wave 0",
-      "text": "Soot is a value shift, never a saturation shift. A builder who ships grey shadows has failed the bible, not the period."
-    },
-    {
-      "when": "Wave 1-2",
-      "text": "Seven builders out: architecture, surface and props, sky and light, art direction, character art, animation, roster."
+      "when": "Next",
+      "text": "Re-run the critique loop first \u2014 nothing has been judged even once. Then batting, fielding, baserunning and street rules, then the whole presentation layer."
     }
   ]
 }
