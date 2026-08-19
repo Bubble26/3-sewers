@@ -147,17 +147,43 @@ WOWED requires: you would genuinely rather look at our frame than the Backyard B
 no axis below 8, and zero console errors. Anything else is NOT_YET. Hesitating means NOT_YET.`;
 }
 
+/**
+ * agent() returns null when the subagent dies on a terminal API error (a 529 during an
+ * outage, say). A dead agent is NOT a completed round — treating it as one is how three
+ * whole waves once burned every round retrying against a down API and finished having
+ * accomplished one round each. Retry with backoff, and only give up after `tries`.
+ */
+async function resilient(prompt, opts, tries = 5) {
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    const out = await agent(prompt, opts);
+    if (out) return out;
+    if (attempt === tries) {
+      log(`${opts.label}: died ${tries} times, giving up on this attempt`);
+      return null;
+    }
+    const waitMin = Math.min(30, 2 ** attempt);
+    log(`${opts.label}: agent died (API error?) — retry ${attempt + 1}/${tries} after ~${waitMin}m`);
+    // Burn time in a cheap agent rather than a sleep, which scripts cannot do.
+    await agent(`Wait quietly, then reply with the single word "ok". Before replying, run this
+in Bash to pause roughly ${waitMin} minutes so an upstream API outage has time to clear:
+  sleep ${waitMin * 60}
+Do nothing else. Do not read files. Do not edit anything.`, { label: `backoff:${opts.label}`, phase: opts.phase, effort: 'low' });
+    }
+  return null;
+}
+
 async function runPiece(p) {
   const rounds = [];
   let brief = p.brief;
   for (let round = 1; round <= MAX; round++) {
-    const build = await agent(builderPrompt(p, round, brief), {
+    const build = await resilient(builderPrompt(p, round, brief), {
       label: `build:${p.key}#${round}`, phase: 'Build', schema: BUILD_SCHEMA,
     });
-    const crit = await agent(criticPrompt(p, round), {
+    if (!build) { rounds.push({ round, error: 'builder unavailable' }); break; }
+    const crit = await resilient(criticPrompt(p, round), {
       label: `critic:${p.key}#${round}`, phase: 'Critique', schema: CRITIC_SCHEMA,
     });
-    if (!crit) { rounds.push({ round, error: 'critic died' }); continue; }
+    if (!crit) { rounds.push({ round, error: 'critic unavailable — round not counted' }); break; }
     rounds.push({ round, verdict: crit.verdict, scores: crit.scores, gap: crit.biggest_gap, blind: crit.blind_test, broken: crit.build_broken });
     log(`${p.key} r${round}: ${crit.verdict} — ${crit.biggest_gap}`);
     if (crit.verdict === 'WOWED' && !crit.build_broken) break;
@@ -171,7 +197,7 @@ phase('Build');
 const results = await parallel(PIECES.map((p) => () => runPiece(p)));
 
 phase('Integrate');
-const integration = await agent(`You are the integrator for wave ${WAVE} ("${args?.title ?? ''}") of the 1920s stickball game.
+const integration = await resilient(`You are the integrator for wave ${WAVE} ("${args?.title ?? ''}") of the 1920s stickball game.
 ${COMMON}
 Several builders just worked in parallel on: ${PIECES.map((p) => p.title).join(', ')}.
 Your job is to make the result feel like ONE game made by ONE team, not modules stapled together.

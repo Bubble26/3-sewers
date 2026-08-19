@@ -1019,3 +1019,71 @@ Pin these above the desk. Each one settles an argument in a sentence.
 * **The cartoon sound is the exaggeration of the real object's sound, never a substitute for it.**
 * **Every gag has a named setup frame and a named payoff frame, or it is a decoration.**
 * **If the honest one-word description is "grim", we have failed, whatever the checklist says.**
+
+---
+
+## 17. THE STAGE MODEL — amendment, binding, supersedes §3.6 of BYB-REFERENCE
+
+**Decision (Ryan, restart): the game is 3D characters played on a 2D stage. It is not a 3D world.**
+
+This overrides every camera and depth instruction written before it, including
+`BYB-REFERENCE §3.6`'s "three-quarter view, 20–35°, FOV 35–55°", which described a 3D camera
+looking into a world. We do not have a world. We have a **stage**.
+
+### 17.1 Why — the measurement that forced this
+
+The perspective build was measured at the pitch, 1600×900: fourteen kids on screen, **five of
+them below the 8%-of-frame-height floor the reference itself sets**, the smallest at **5.1%**
+(46 px). The batter was fine at 23%. Everything up the street was a smudge. Sixteen distinct
+silhouettes, six mouth shapes, period wardrobe down to the mismatched socks — all of it
+invisible at 46 px, which means all of it was wasted.
+
+A street canyon in perspective converges to a vanishing point, and the vanishing point eats the
+cast. Backyard Baseball never had this problem because it never had a canyon. It had a flat
+painted field and characters played across it at a size where you could read their faces.
+
+### 17.2 The projection
+
+* **Long lens, not wide.** Perspective camera at **FOV 20°**, pulled back to suit. This flattens
+  the street to near-parallel and kills the convergence. Anything above FOV 26° is a bug.
+* **The play plane is shallow.** The whole playable street compresses into **≤ 70 units of
+  depth**, not 340. Home plate at z=0, the deepest fielder no further than z=70.
+* **Everything past the play plane is backdrop**, not geometry you can walk into: flat cards at
+  fixed depths — near facades, mid block, far rooftops, the El, sky. Cards may parallax when the
+  camera cuts, and may hold real relief (fire escapes, cornices, signage) as shallow geometry on
+  the card. They are scenery. The ball may hit them; nobody stands behind them.
+
+### 17.3 On-screen scale — hard floors, checked by `tools/measure.mjs`
+
+| Who | Frame height |
+|---|---|
+| Batter, pitcher, catcher | **18–26%** |
+| Every other kid in play | **≥ 12%**, never below, in any framing |
+| The ball | **≥ 9 px** diameter at all times, and always the brightest object |
+
+A frame containing a kid under 12% is a failed frame. Fix it by moving the stage, not the kid.
+
+### 17.4 The camera CUTS. It does not fly.
+
+Two canonical framings, both **locked**:
+
+* **BATTING** — behind and above the batter's shoulder, plate in the lower third, pitcher
+  readable, catcher in frame. This is where most of the game is played.
+* **FIELD** — a wide locked shot of the whole shallow stage, every fielder and every runner
+  visible at once and all of them ≥ 12%.
+
+The camera cuts between them on sim events. Permitted continuous motion, and nothing else: a
+**single-axis pan** to follow a live ball, and a **slow push** on a celebration. No dollying
+through the street, no orbit, no roll, no handheld. `BYB-REFERENCE`'s one [FACT, 1997] stands and
+is the whole rule: *the camera changes by situation, to keep information on screen, and for no
+other reason.*
+
+### 17.5 What this keeps and what it costs
+
+**Keeps, untouched:** the rig, faces, wardrobe, the sixteen-kid roster, portraits, team select,
+the animation vocabulary, ball physics, the collider registry, the palette and the four laws.
+Characters stay real-time 3D meshes with real lighting — that is the "3D characters" half.
+
+**Costs:** the receding canyon composition, free camera movement, and any gameplay idea that
+depends on deep space. The street is now a set, three or four bays wide, dressed to be looked
+at from two angles.

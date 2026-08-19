@@ -76,6 +76,15 @@ cannot be rendered offline is untestable, and untestable counts as unbuilt.
    piece brief says otherwise. Keep the repo self-contained.
 7. `node tools/bundle.mjs` must succeed after your change. `node tools/shoot.mjs` must exit 0.
 
+## The stage model is binding
+
+`docs/DESIGN-BIBLE.md §17` is the newest and highest-priority direction: **3D characters on a
+2D stage.** Long lens (FOV 20°), shallow play plane (≤70 units deep), everything beyond it is a
+flat backdrop card, the camera cuts between two locked framings and never flies, and no kid in
+any frame is under 12% of frame height. It supersedes the camera guidance in `BYB-REFERENCE §3.6`.
+Verify with `node tools/measure.mjs <scenario>` — it reports every kid's on-screen height and
+fails the build if any is under the floor.
+
 ## The bar
 
 Every piece is judged blind against *Backyard Baseball* by a critic with fresh context who
