@@ -8,7 +8,7 @@
  *   node tools/soak.mjs --game 6        # one seeded game written out pitch by pitch
  *
  * A port of tests/sim_test.gd from the Godot stickball project our rules core came
- * from (docs/godot-reference/, docs/PORT-SPEC.md), which published three numbers
+ * from (../threesewers/, docs/PORT-SPEC.md), which published three numbers
  * off 40 CPU-vs-CPU games:
  *
  *     13.8 runs a game (+-2.0) · 3.6 sewer shots a game (+-1.0) ·
@@ -175,9 +175,11 @@ function digest(roster, away, home, seed) {
 }
 
 // ── the two rosters ─────────────────────────────────────────────────────────
-// Their twelve, read straight from the reference dump. It is a test fixture and
-// nothing else: none of it reaches the game, which uses our sixteen.
-const raw = JSON.parse(readFileSync(ROOT + 'docs/godot-reference/characters.json', 'utf8'));
+// Their twelve, read straight from the Godot project's own roster file — the sibling in this
+// repository, not a copy of it, so the control matchup can never drift from the build whose
+// baselines we are checking against. It is a test fixture and nothing else: none of it reaches
+// the game, which uses our sixteen.
+const raw = JSON.parse(readFileSync(ROOT + '../threesewers/data/characters.json', 'utf8'));
 const theirRoster = {};
 for (const [id, c] of Object.entries(raw)) {
   theirRoster[id] = { name: c.name, PWR: c.PWR, CON: c.CON, SPD: c.SPD, ARM: c.ARM, GLV: c.GLV, quirk: c.quirk };

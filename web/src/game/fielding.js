@@ -1270,6 +1270,22 @@ export default registerSystem({
   // Before src/ui/bubbles.js (320), so speech sits on top of chalk.
   order: 310,
 
+  /** The live play, for a probe or a critic: `__SB.app.fielding.play`. */
+  get play() { return current; },
+  /** One line of state, for tools and for anybody debugging a stuck play. */
+  get debug() {
+    const p = current;
+    if (!p) return { play: null };
+    return {
+      t: +p.t.toFixed(2), phase: p.phase, style: p.style,
+      verdict: p.play && p.play.result, kind: p.result && p.result.kind,
+      primary: p.primary && p.primary.home && p.primary.home.id,
+      holder: p.holder && p.holder.home && p.holder.home.id,
+      prompt: p.prompt && { left: +(p.prompt.deadline - p.prompt.t).toFixed(2), targets: p.prompt.targets, choice: p.prompt.choice },
+      call: p.callWord,
+    };
+  },
+
   init(app) {
     app.fielding = this;
     this.comicErrors = true;
