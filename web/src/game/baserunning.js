@@ -74,7 +74,7 @@ import { RNG } from '../core/rng.js';
 import { provide, gameplay } from './plugins.js';
 import { LAYOUT } from './layout.js';
 import { liveMatch } from './core.js';
-import { headingTo } from '../chars/anim.js';
+import { headingTo, faceMirror } from '../chars/anim.js';
 import { CLIPS } from '../chars/clips.js';
 import { CHALK, INK, PAVEMENT, mix } from '../render/palette.js';
 import { makeCanvas, canvasTexture, texMat, roadHeight } from '../world/props.js';
@@ -153,16 +153,32 @@ export const RT = {
   leadCreep: 1.6,             // ... and how much further he steals while nobody looks
   fidgetEvery: [2.4, 5.6],
 
-  /** The lane he is running in — see §2. */
-  laneStep: 2.6,              // feet per segment of the chalked base path
-  laneWidth: 0.95,            // ... and how wide the chalk is
+  /** The line he takes through the bag on a race he is running through. */
   bagInside: 2.6,             // feet to the crown side of the bag a race passes on
 
-  /** Dust. */
-  dustSlide: 30,              // puffs in a slide's rooster tail
-  dustStop: 16,
-  dustStep: 2,
-  dustEvery: 0.105,           // seconds between puffs off a sprinting kid's heels
+  /**
+   * THE LEAN. A kid does not corner upright, and the roll is the cheapest
+   * character in this whole piece: it is the difference between a body sliding
+   * along a spline and a body FIGHTING one. Driven off how fast his own heading
+   * is turning and how fast he is going, so the banana at first banks hard and a
+   * straight line down the chalk does not bank at all.
+   */
+  bank: 0.030,                // radians per (rad/s of turn x ft/s of speed)
+  bankMax: 0.30,              // never past this, or he is a motorcycle
+  bankEase: 8.0,              // radians per second the roll may move
+  slideRoll: 0.80,            // how far a slide rolls its chest toward the lens
+
+  /**
+   * Dust. Fewer, bigger, warmer than the first pass: measured at 1600x900, a
+   * slide plume of thirty four-foot puffs is one grey mass with forty ink
+   * outlines scribbled inside it — bubble wrap, not a cloud. Sixteen puffs with
+   * a 3:1 size spread and a couple of escapees read as ONE SHAPE with a
+   * silhouette, which is the whole of what §2 is asking for.
+   */
+  dustSlide: 20,              // puffs in a slide's rooster tail
+  dustStop: 9,
+  dustStep: 1,
+  dustEvery: 0.085,           // seconds between puffs off a sprinting kid's heels
   smearLife: 4.6,             // seconds a slide's smear stays on the road
 };
 
@@ -338,24 +354,50 @@ function buildPath(from, to, tail, opt = {}) {
    the argument starts.
    ========================================================================= */
 
-const DUST_HI = mix(PAVEMENT.blockCrown, CHALK, 0.46);
-const DUST_MID = mix(PAVEMENT.belgianBlock, CHALK, 0.34);
-const DUST_LO = mix(PAVEMENT.asphaltSun, CHALK, 0.12);
+/**
+ * The three tones of a plume, and they are all ROAD, warmed.
+ *
+ * Round 1 of this file ran the darkest tone off `asphaltSun` at 12% chalk, which
+ * is L* 51 — the road itself — so a third of every plume was road-coloured and
+ * the whole cloud read cold and grey against a warm brown street. All three now
+ * come off the two brightest pavement tones, which keeps the plume in the road's
+ * own hue family while putting its lightest lobes at L* 80, exactly on the Chalk
+ * Ceiling (§2, Law 2) and never over it.
+ */
+const DUST_HI = mix(PAVEMENT.blockCrown, CHALK, 0.55);     // L* 79.9
+const DUST_MID = mix(PAVEMENT.blockCrown, CHALK, 0.33);    // L* 72.6
+const DUST_LO = mix(PAVEMENT.belgianBlock, CHALK, 0.22);   // L* 62.5
 
+/**
+ * ONE PUFF, not one cloud.
+ *
+ * The first pass drew six lobes on every instance, so a single particle was
+ * already a whole cumulus and sixteen of them overlapped into a mass of ink
+ * scribble with no silhouette. This is a puff the way a cartoonist draws one:
+ * a dominant lobe, two shoulders, one small lobe breaking the base line, and a
+ * warm shadow gradient up the underside so it has a top and a bottom before it
+ * is ever lit. Instances vary by scale, aspect and roll, so no two of them in a
+ * plume are the same shape.
+ */
 function puffTexture() {
   const { c, g } = makeCanvas(128, 128);
-  const lobes = [[62, 70, 30], [38, 58, 22], [88, 56, 24], [60, 40, 21], [44, 86, 17], [86, 84, 16]];
-  // ink first, thin, so every lobe carries the outline §2.6 asks of everything else
-  // without a 40 px puff turning into a black bead
+  const lobes = [[62, 56, 33], [34, 74, 23], [92, 72, 20], [58, 90, 15]];
+  // ink first, so every lobe carries the outline §2.6 asks of everything else
   g.fillStyle = '#2a1d1a';
-  for (const [x, y, r] of lobes) { g.beginPath(); g.arc(x, y, r + 3.0, 0, Math.PI * 2); g.fill(); }
+  for (const [x, y, r] of lobes) { g.beginPath(); g.arc(x, y, r + 3.4, 0, Math.PI * 2); g.fill(); }
   g.fillStyle = '#ffffff';
   for (const [x, y, r] of lobes) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
-  // one bite of shade along the bottom so the puff has a top and a bottom
-  g.globalAlpha = 0.34;
-  g.fillStyle = '#7e6a52';
-  g.beginPath(); g.ellipse(62, 88, 36, 14, 0, 0, Math.PI * 2); g.fill();
-  g.globalAlpha = 1;
+  // the underside sits in its own shade. `source-atop` keeps it inside the puff,
+  // so the ink outline is not smeared and the gradient is genuinely a shadow
+  // rather than a second, softer puff drawn over the first.
+  g.globalCompositeOperation = 'source-atop';
+  const grd = g.createLinearGradient(0, 44, 0, 116);
+  grd.addColorStop(0, 'rgba(255,255,255,0)');
+  grd.addColorStop(0.55, 'rgba(196,172,142,0.30)');
+  grd.addColorStop(1, 'rgba(150,124,96,0.66)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  g.globalCompositeOperation = 'source-over';
   return canvasTexture(c);
 }
 
@@ -400,7 +442,8 @@ class Dust {
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
     scene.add(this.mesh);
     this.items = Array.from({ length: count }, () => ({
-      life: 0, max: 1, pos: new THREE.Vector3(), vel: new THREE.Vector3(), size: 1, roll: 0, spin: 0,
+      life: 0, max: 1, pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+      size: 1, roll: 0, spin: 0, ax: 1, ay: 1, tone: 0, chalk: 0,
     }));
     this.dummy = new THREE.Object3D();
     this.col = new THREE.Color();
@@ -423,21 +466,44 @@ class Dust {
     }
   }
 
-  /** n puffs at a point, thrown along `dir` (a Vector3 or null for a plain bloom). */
-  burst(x, y, z, n, power = 4.4, dir = null, size = 1.15, hang = 1) {
+  /**
+   * n puffs at a point, thrown along `dir` (a Vector3, or null for a plain bloom).
+   *
+   * Three things here are the difference between a plume and bubble wrap.
+   *
+   * SIZE IS A POWER LAW. `u^2.1` on the spread means most of a plume is small
+   * and one or two lobes are three times the size of their neighbours, which is
+   * what gives a cloud a silhouette instead of a texture.
+   *
+   * DUST STAYS LOW. Road dust is kicked sideways and BACKWARD, not lofted:
+   * the lateral throw is worth 1.5x the vertical one, so the plume is a fan a
+   * kid slid through rather than a puff of steam standing over him.
+   *
+   * TWO OF THEM GET AWAY. A fifth of the puffs are `satellites` — half size,
+   * twice the throw — so the mass has debris coming off it and its edge is not
+   * a smooth arc of identical bubbles.
+   */
+  burst(x, y, z, n, power = 4.4, dir = null, size = 1.15, hang = 1, opt = {}) {
     let made = 0;
+    const chalk = opt.chalk ? 1 : 0;
     for (const it of this.items) {
       if (it.life > 0) continue;
-      it.max = brng.range(0.46, 0.86) * hang;
+      const sat = brng.next() < 0.22;
+      it.max = brng.range(0.52, 0.98) * hang * (sat ? 0.78 : 1);
       it.life = it.max;
-      it.pos.set(x + brng.range(-0.9, 0.9), y + brng.range(0, 0.9), z + brng.range(-0.9, 0.9));
-      const a = brng.range(0, Math.PI * 2), r = brng.range(0.25, 1) * power;
-      it.vel.set(Math.cos(a) * r * 0.7, brng.range(0.35, 1.05) * power * 0.55, Math.sin(a) * r * 0.7);
-      if (dir) it.vel.addScaledVector(dir, brng.range(0.35, 1.0) * power * 0.62);
-      it.size = size * brng.range(0.48, 1.85);
+      it.pos.set(x + brng.range(-0.8, 0.8), y + brng.range(-0.1, 0.7), z + brng.range(-0.8, 0.8));
+      const a = brng.range(0, Math.PI * 2);
+      const r = brng.range(0.3, 1) * power * (sat ? 2.0 : 1);
+      it.vel.set(Math.cos(a) * r, brng.range(0.18, 0.72) * power * 0.42 * (sat ? 1.7 : 1), Math.sin(a) * r);
+      if (dir) it.vel.addScaledVector(dir, brng.range(0.4, 1.05) * power * 0.7);
+      const u = brng.next();
+      it.size = size * (0.55 + Math.pow(u, 2.1) * 2.6) * (sat ? 0.5 : 1);
+      it.ax = brng.range(0.92, 1.24);
+      it.ay = brng.range(0.78, 1.06);
       it.roll = brng.range(0, Math.PI * 2);
-      it.spin = brng.range(-2.2, 2.2);
+      it.spin = brng.range(-1.7, 1.7);
       it.tone = brng.next();
+      it.chalk = chalk;
       if (++made >= n) break;
     }
     this.dirty = true;
@@ -481,13 +547,22 @@ class Dust {
         if (it.pos.y < g) { it.pos.y = g; it.vel.y = Math.abs(it.vel.y) * 0.18; }
         it.roll += it.spin * dt;
         const u = 1 - it.life / it.max;                 // 0 fresh -> 1 gone
-        // bloom fast, hang, then pop out: chunky dust does not dissolve
-        const s = it.size * (u < 0.22 ? 0.35 + (u / 0.22) * 0.85 : 1.2 - Math.pow((u - 0.22) / 0.78, 2.4) * 1.2);
+        // Bloom fast, hang, then POP OUT. Chunky dust does not dissolve — it
+        // gets to full size in a fifth of its life, holds most of it, and then
+        // goes small quickly enough that a still never catches a ghost of one.
+        const s = it.size * (u < 0.18 ? 0.28 + (u / 0.18) * 0.94
+          : 1.22 - Math.pow((u - 0.18) / 0.82, 2.8) * 1.22);
         this.dummy.position.copy(it.pos);
         this.dummy.quaternion.copy(camQuat);
         this.dummy.rotateZ(it.roll);
-        this.dummy.scale.setScalar(Math.max(0.001, s * 1.32));
-        this.col.setHex(it.tone < 0.30 ? DUST_LO : it.tone < 0.66 ? DUST_MID : DUST_HI);
+        // A puff is never a circle: aspect and roll are per-instance, so sixteen
+        // of them in one plume are sixteen different shapes rather than one
+        // shape at sixteen sizes.
+        const sc = Math.max(0.001, s * 1.32);
+        this.dummy.scale.set(sc * it.ax, sc * it.ay, 1);
+        this.col.setHex(it.chalk
+          ? (it.tone < 0.5 ? CHALK : DUST_HI)
+          : (it.tone < 0.26 ? DUST_LO : it.tone < 0.62 ? DUST_MID : DUST_HI));
         this.mesh.setColorAt(i, this.col);
       } else {
         this.dummy.position.set(0, -999, 0);
@@ -519,141 +594,6 @@ class Dust {
   }
 }
 
-/**
- * The chevrons a runner is running along.
- *
- * This is the piece's answer to the one readability problem a shallow stage
- * hands it: thirteen kids are on screen, the base paths are not painted, and a
- * kid at 15% of frame height sprinting across a busy street is — measured, in
- * round 1 of this piece — genuinely hard to find. BYB never had the problem
- * because BYB had a green field with four white bags on it and nine kids.
- *
- * §11 allows exactly one material for a mark on this roadway, so the answer is
- * chalk: three to seven fresh chevrons scuffed into the asphalt IN FRONT of the
- * runner, pointing at the bag he is going to, brightening in a wave that runs
- * toward it. They are drawn ahead of him and never behind, so they read as
- * "he is going there" rather than as a trail, and they die the moment he
- * arrives.
- *
- * The fade is done in COLOUR rather than in alpha — the chevron is lerped from
- * chalk toward the roadway it is drawn on — because an InstancedMesh gets a
- * per-instance colour for free and a per-instance alpha only through a shader
- * patch. Chalk scuffing back into the road is also what actually happens.
- */
-function laneTexture() {
-  const { c, g } = makeCanvas(128, 40);
-  const R = new RNG(2207);
-  const bar = (w, col, alpha) => {
-    g.save();
-    g.globalAlpha = alpha;
-    g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'butt';
-    g.beginPath();
-    const n = 10;
-    for (let i = 0; i <= n; i++) {
-      const u = i / n;
-      g.lineTo(u * 128, 20 + R.range(-2.6, 2.6));
-    }
-    g.stroke();
-    g.restore();
-  };
-  // ink under, chalk over — one quad carrying the two-sided read of §2.5
-  bar(26, '#2a1d1a', 0.92);
-  bar(13, '#f6f0e2', 1);
-  // the chalk is not new: a couple of scuffs through it
-  g.globalCompositeOperation = 'destination-out';
-  g.globalAlpha = 1;
-  for (let i = 0; i < 3; i++) {
-    const x = R.range(6, 118);
-    g.fillRect(x, 0, R.range(2, 6), 40);
-  }
-  g.globalCompositeOperation = 'source-over';
-  return canvasTexture(c);
-}
-
-class Lane {
-  constructor(scene, count = 132) {
-    const geo = new THREE.PlaneGeometry(1, 1);
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({
-      map: laneTexture(), transparent: true, depthWrite: false,
-      alphaTest: 0.40, toneMapped: false, side: THREE.DoubleSide,
-    });
-    this.mesh = new THREE.InstancedMesh(geo, mat, count);
-    this.mesh.name = 'run_lane';
-    this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 5;
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
-    scene.add(this.mesh);
-    this.n = count;
-    this.dummy = new THREE.Object3D();
-    this.col = new THREE.Color();
-    this.road = new THREE.Color(PAVEMENT.asphaltWarm);
-    this.chalkC = new THREE.Color(CHALK);
-    this.t = 0;
-  }
-
-  /**
-   * Lay this frame's chalk out for every runner who is going somewhere.
-   *
-   * The mark is a LINE, not a row of arrows. Round 3 of this piece drew chevrons
-   * and they died on the ground plane: this camera squashes the road 3.4 to 1, so
-   * a chevron 3 ft deep is 20 px of bracket and reads as debris. A line does not
-   * care — it is the same line however hard you foreshorten it — and a chalked
-   * base path is what a block actually puts on a road.
-   *
-   * It is drawn along the runner's OWN curve, which means it draws the banana:
-   * the bow out of the diamond before the bag and the cut back through it. That
-   * is the single most legible thing this piece owns, because it turns a kid
-   * running away from the lens into a shape across the frame.
-   *
-   * The fade is done in TINT and SIZE and never in alpha, because a per-instance
-   * colour multiplies the texture and the texture carries its own ink outline:
-   * tint it dark and the chalk goes to road while the ink stays ink, which turns
-   * a chalk mark into a painted road stripe.
-   */
-  update(dt, runners) {
-    this.t += dt;
-    let i = 0;
-    for (const r of runners) {
-      if (!r.path) continue;
-      const power = r.lanePower ?? 0;
-      if (power <= 0.02) continue;
-      const end = r.bagS();
-      const step = RT.laneStep;
-      const first = Math.max(1.4, Math.min(r.s - 12.0, end - step * 20));
-      for (let k = 0; k < 26 && i < this.n; k++) {
-        const sv = first + k * step;
-        if (sv > end - 0.4) break;
-        const u = clamp(sv / r.path.len, 0, 1);
-        const q = r.path.curve.getPointAt(u);
-        const tg = r.path.curve.getTangentAt(u);
-        const ahead = sv > r.s;
-        const gone = clamp((r.s - sv) / 13, 0, 1);
-        this.dummy.position.set(q.x, roadHeight(q.x) + 0.085, q.z);
-        this.dummy.rotation.set(0, Math.atan2(tg.x, tg.z) + Math.PI / 2, 0);
-        this.dummy.scale.set(step * 1.16, 1, RT.laneWidth * (ahead ? 1 : 0.94 - 0.3 * gone) * (0.35 + 0.65 * power));
-        this.dummy.updateMatrix();
-        this.mesh.setMatrixAt(i, this.dummy.matrix);
-        const wave = 0.5 + 0.5 * Math.sin(this.t * 5.6 - (sv - first) * 0.30);
-        const bright = (ahead ? 0.84 + 0.16 * wave : 0.80 - 0.18 * gone) * (0.30 + 0.70 * power);
-        this.col.copy(this.road).lerp(this.chalkC, clamp(bright, 0, 1));
-        this.mesh.setColorAt(i, this.col);
-        i++;
-      }
-    }
-    for (; i < this.n; i++) {
-      this.dummy.position.set(0, -999, 0);
-      this.dummy.scale.setScalar(0.0001);
-      this.dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, this.dummy.matrix);
-    }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
-  }
-
-  clear() { this.update(0, []); }
-}
 
 /* ============================================================================
    3. THE LIVE BAG
@@ -927,11 +867,6 @@ class Runner {
 
   step(dt, ctx) {
     this.t += dt;
-    // how much of his chalk lane is still on the road (see Lane): full while he is
-    // running, scuffed out over a beat after he gets there, because a mark that
-    // vanishes on the frame he arrives takes the composition with it
-    const live = this.st === 'run' || this.st === 'slide';
-    this.lanePower = live ? 1 : Math.max(0, (this.lanePower ?? 0) - dt / 0.9);
     if (this.pend && ctx.now >= this.pend.at) { const f = this.pend.fn; this.pend = null; f(); }
     switch (this.st) {
       case 'set': this.stepSet(dt, ctx); break;
@@ -1065,17 +1000,25 @@ class Runner {
       this.stepD = 0;
       bus.emit('run:step', { pos: new THREE.Vector3(this.p.x, 0.2, this.p.z), surface: 'street', pitch: brng.range(0, 0.28) });
     }
-    // ... and the dust is on a CLOCK, not on the stride, because it is the thing
-    // that says "this one is moving" from across a crowded frame and a rope of it
-    // reads where two puffs a stride do not. Thrown backwards off his heels.
+    // THE ROPE. Dust off his heels, on a CLOCK rather than on the stride.
+    //
+    // This is now the whole of how a running kid is found in a crowded frame,
+    // and it replaces the chalk lane the first pass drew ahead of him. That lane
+    // was a bright segmented bar laid over the chalk baseline the street already
+    // has, so it read as a zipper on the road and — worse — as a HUD rail
+    // pointing at a destination, which §15.25 bans outright. Six warm puffs
+    // strung out behind a kid are the same read (a line across the frame with
+    // him at the head of it), they are a real thing a road actually does, and
+    // they say "he is MOVING" where a static rail said "the game wants you to
+    // look here".
     this.dustT = (this.dustT || 0) + dt;
-    if (this.v > 9.5 && ctx.dust && this.dustT >= RT.dustEvery) {
+    if (this.v > 8.5 && ctx.dust && this.dustT >= RT.dustEvery) {
       this.dustT = 0;
-      const back = new THREE.Vector3(-tg.x, 0.16, -tg.z);
-      const hot = clamp((this.v - 9.5) / 11, 0, 1);
+      const back = new THREE.Vector3(-tg.x, 0.30, -tg.z);
+      const hot = clamp((this.v - 8.5) / 11, 0, 1);
       ctx.dust.burst(
-        this.p.x - tg.x * 0.7, roadHeight(this.p.x) + 0.22, this.p.z - tg.z * 0.7,
-        RT.dustStep, 2.0 + hot * 2.4, back, 0.42 + hot * 0.34, 0.62,
+        this.p.x - tg.x * 0.8, roadHeight(this.p.x) + 0.20, this.p.z - tg.z * 0.8,
+        RT.dustStep, 1.5 + hot * 2.0, back, 0.34 + hot * 0.30, 0.74,
       );
     }
 
@@ -1149,6 +1092,7 @@ class Runner {
     this.st = 'slide';
     const d = Math.max(0.8, this.bagS() - this.s);
     this.slideA = clamp((this.v * this.v) / (2 * d), 9, 70);
+    this.slideDustT = 0;
     this.smearId = `${this.id}:${Math.round(ctx.now * 100)}`;
     this.slideFrom = { x: this.p.x, z: this.p.z };
     const k = this.kid;
@@ -1160,8 +1104,13 @@ class Runner {
       k.face = this.faceGoal;
     }
     if (ctx.dust) {
+      // The rooster tail goes BACKWARD and sideways off the hip, not forward
+      // with him: a plume that travels at the runner's own speed is a puff of
+      // steam he is towing, and the one thing a slide has to say in a still is
+      // "he was going faster a moment ago than he is now."
       const tg = this.path.curve.getTangentAt(clamp(this.s / this.path.len, 0, 1));
-      ctx.dust.burst(at.x, at.y, at.z, RT.dustSlide, 6.6, new THREE.Vector3(tg.x, 0.3, tg.z), 1.5, 1.5);
+      ctx.dust.burst(at.x, at.y, at.z, RT.dustSlide, 6.0,
+        new THREE.Vector3(-tg.x * 0.6, 0.34, -tg.z * 0.6), 1.02, 1.7);
     }
     bus.emit('run:slide', { pos: at, headfirst: this.headfirst, who: this.id, name: this.name, bag: this.bagTag, at: +ctx.now.toFixed(3), from: +this.s.toFixed(1), to: +this.bagS().toFixed(1) });
   }
@@ -1178,9 +1127,19 @@ class Runner {
     // as he goes rather than when he stops: a still taken mid-skid needs the
     // four feet of scuffed asphalt behind him or there is nothing in the frame
     // that says he arrived at speed.
-    if (this.v > 4 && ctx.dust) {
-      ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.2, this.p.z, 2, 3.0, null, 1.05, 1.25);
-      if (this.slideFrom) ctx.dust.smear(this.slideFrom.x, this.slideFrom.z, this.p.x, this.p.z, 2.9, this.smearId);
+    // Dust keeps boiling off the hip, but on a CLOCK: emitted every frame (which
+    // is what the first pass did) a 0.35 s skid lays eighteen puffs on top of one
+    // another at the bag, and the cloud ends up sitting exactly where the play is
+    // being decided. Four, thrown back down the path, leave the tag point clear.
+    this.slideDustT = (this.slideDustT || 0) + dt;
+    if (this.v > 4 && ctx.dust && this.slideDustT >= 0.075) {
+      this.slideDustT = 0;
+      const back = this.path.curve.getTangentAt(clamp(this.s / this.path.len, 0, 1));
+      ctx.dust.burst(this.p.x - back.x * 1.5, roadHeight(this.p.x) + 0.16, this.p.z - back.z * 1.5,
+        1, 2.4, new THREE.Vector3(-back.x, 0.24, -back.z), 0.92, 1.35);
+    }
+    if (this.v > 4 && ctx.dust && this.slideFrom) {
+      ctx.dust.smear(this.slideFrom.x, this.slideFrom.z, this.p.x, this.p.z, 2.9, this.smearId);
     }
     for (const m of this.path.marks) {
       if (m.base > this.at && this.s >= m.s) { this.at = m.base; this.touch(m.base, ctx); }
@@ -1233,7 +1192,21 @@ class Runner {
 
   /* --- arriving ----------------------------------------------------------- */
 
+  /**
+   * A foot lands on the chalk — and it takes some of the chalk with it.
+   *
+   * The kick is CHALK-tinted rather than road-tinted, which is the one place in
+   * this file where a puff is allowed to touch the ceiling colour: the mark he
+   * just hit is chalk, and a white flash exactly on the bag is the cheapest,
+   * most physical way a still frame says WHICH FOOT ON WHICH BAG. It is what a
+   * kid's sneaker actually does to a week-old chalk cross.
+   */
   touch(i, ctx) {
+    if (ctx.dust && this.v > 6) {
+      const b = BAGS[i];
+      ctx.dust.burst(b.x, roadHeight(b.x) + 0.18, b.z,
+        this.v > 14 ? 4 : 2, 2.4, null, 0.62, 0.52, { chalk: true });
+    }
     bus.emit('run:touch', {
       who: this.id, name: this.name, bag: BAG_TAG[i], base: BAG_WORD[i], at: +ctx.now.toFixed(3),
     });
@@ -1311,7 +1284,7 @@ class Runner {
       if (k) {
         k.act('run_stop', { state: 'stop', lock: 0.55 });
         if (this.beaten) k.after = (kk) => kk.act('sulk', { state: 'sulk', lock: 1.7 });
-        if (ctx.dust) ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.16, this.p.z, RT.dustStop, 3.4, null, 0.85);
+        if (ctx.dust) ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.16, this.p.z, RT.dustStop, 3.4, null, 0.66);
       }
       return;
     }
@@ -1323,7 +1296,7 @@ class Runner {
       if (k) {
         k.act('run_stop', { state: 'stop', lock: 0.6 });
         k.setFace('smug', 1.6);
-        if (ctx.dust) ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.16, this.p.z, RT.dustStop + 4, 4.0, null, 0.95);
+        if (ctx.dust) ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.16, this.p.z, RT.dustStop + 4, 4.0, null, 0.74);
       }
       bus.emit('run:pull_up', { who: this.id, name: this.name, bag: this.bagTag });
       return;
@@ -1448,6 +1421,50 @@ class Runner {
   }
 
   /**
+   * THE LEAN — the other half of the same cheat, and the cheaper half.
+   *
+   * Nobody corners upright. A kid taking the banana at first has his shoulders
+   * dropped into the turn and his outside arm across his chest, and none of the
+   * clips can know that, because a clip does not know what shape the path is.
+   * This file does: it is holding the curve. So the roll comes off how fast his
+   * own heading is turning, times how fast he is going — which is exactly the
+   * lateral acceleration his legs are fighting — and it is zero on a straight
+   * line down the chalk, where a lean would be a lie.
+   *
+   * On a slide it becomes something else: a fixed roll that opens his chest a
+   * quarter-turn toward the lens, so a headfirst dive shows an arm and a face
+   * instead of the flat back of a shirt. This is the same argument §17.6 makes
+   * about staged scale, applied to a body already on the ground.
+   *
+   * It is written into `group.rotation.z` with the Euler order forced to YXZ, so
+   * the roll happens about the kid's own forward axis AFTER the yaw that
+   * src/chars/players.js writes at order 20. That file only ever touches
+   * `rotation.y`, so the two do not fight; and `place` writes the roll on EVERY
+   * frame, including zero, so a body handed back to the fielding pool never
+   * keeps a tilt it is not entitled to.
+   */
+  bodyRoll(dt, ctx) {
+    let want = 0;
+    if (this.st === 'run' && this.v > 3) {
+      let d = this.faceGoal - (this.lastFace ?? this.faceGoal);
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const turn = dt > 1e-4 ? d / dt : 0;              // radians per second of heading
+      want = clamp(-turn * this.v * RT.bank, -RT.bankMax, RT.bankMax) * faceMirror();
+    } else if (this.st === 'slide' && ctx.cam) {
+      // roll toward the camera, whichever side of him it is on
+      const cx = ctx.cam.x - this.p.x, cz = ctx.cam.z - this.p.z;
+      const fx = Math.sin(this.faceGoal), fz = Math.cos(this.faceGoal);
+      const side = fx * cz - fz * cx;                   // >0: lens is off one shoulder
+      want = (side >= 0 ? -1 : 1) * RT.slideRoll * (this.headfirst ? 1 : 0.62);
+    }
+    this.lastFace = this.faceGoal;
+    const cur = this.roll ?? 0;
+    this.roll = cur + clamp(want - cur, -RT.bankEase * dt, RT.bankEase * dt);
+    return this.roll;
+  }
+
+  /**
    * Push this frame's answer onto the borrowed rig.
    *
    * `speed` is handed over PRE-DECAY: src/chars/players.js takes a fixed bite out
@@ -1466,6 +1483,8 @@ class Runner {
     if (this.snapFace) { k.face = this.faceGoal; k.group.rotation.y = this.faceGoal; this.snapFace = false; }
     k.speed = Math.max(0, this.v) + T.run.accel * 2 * dt;
     k.maxSpeed = Math.max(this.base, 1);
+    k.group.rotation.order = 'YXZ';
+    k.group.rotation.z = this.bodyRoll(dt, ctx);
     k.group.visible = true;
   }
 }
@@ -1542,14 +1561,16 @@ class Crew {
   }
 
   release(r) {
-    if (r.kid) { this.byBody.delete(r.kid); r.kid.onBase = false; }
+    // hand the body back level: the roll in `place` belongs to a runner and a
+    // fielder inheriting a rig must not inherit his lean with it
+    if (r.kid) { this.byBody.delete(r.kid); r.kid.onBase = false; r.kid.group.rotation.z = 0; }
     const i = this.runners.indexOf(r);
     if (i >= 0) this.runners.splice(i, 1);
   }
 
   clear(hide = true) {
     const pl = players();
-    for (const r of this.runners) if (r.kid) { r.kid.onBase = false; }
+    for (const r of this.runners) if (r.kid) { r.kid.onBase = false; r.kid.group.rotation.z = 0; }
     this.runners.length = 0;
     this.byBody.clear();
     this.play = null; this.seen = 0;
@@ -2084,11 +2105,29 @@ export default registerSystem({
   get crew() { return crew; },
   get debug() { return crew.debug; },
 
+  /**
+   * Tooling: re-run one of §10's setups with the settle overridden.
+   *
+   * `node tools/film.mjs` starts filming AFTER a scenario has settled, which for
+   * this piece means it films the aftermath of the beat it is meant to be
+   * judging — the slide is over before frame 1. This lets a burst be taken from
+   * any point on the play clock, which is the only way to check that the held
+   * skid pose and the plume actually land where BYB §5.1 says they should.
+   */
+  restage(key, over = {}) {
+    const s = STAGED[key];
+    if (!s) return null;
+    const opt = { ...s, ...over };
+    if (s.prompt) opt.prompt = { ...s.prompt, ...(over.prompt || {}) };
+    this.onScenario(key, APP);
+    stage(APP, opt);
+    return crew.debug;
+  },
+
   init(app) {
     app.baserunning = this;
     this.dust = new Dust(app.scene);
     this.bags = new LiveBag(app.scene);
-    this.lane = new Lane(app.scene);
     crew.dust = this.dust;
     crew.bags = this.bags;
     if (typeof addEventListener === 'function') {
@@ -2123,7 +2162,6 @@ export default registerSystem({
     }
     this.dust.update(dt, app.camera.quaternion);
     this.bags.update(dt);
-    this.lane.update(dt, crew.runners);
   },
 
   onScenario(name, app) {
@@ -2132,7 +2170,6 @@ export default registerSystem({
     crew.now = 0;
     this.dust.clear();
     this.bags.clear();
-    this.lane.clear();
     const pl = players();
     if (pl && pl.batter) { pl.batter.runOut = false; pl.batter.onBase = false; }
   },
@@ -2311,7 +2348,7 @@ registerScenario('run_close_play', {
 registerScenario('run_slide', {
   seed: 5150,
   setup: ({ app }) => {
-    stage(app, { ...STAGED.slide, settle: 1.15, prompt: { ...STAGED.slide.prompt, until: 2.50 } });
+    stage(app, { ...STAGED.slide, settle: 1.15, prompt: { ...STAGED.slide.prompt, until: 2.33 } });
   },
   settle: 0,
 });

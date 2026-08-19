@@ -101,16 +101,24 @@ ${brief}
 
 ## How to work
 
-1. Read the reference docs and the existing code you are extending.
-2. Build. Go far past "functional" — the bar is a beloved commercial kids' game, so sweat
-   silhouettes, colour, timing, contact shadows, and the small jokes.
+**Work in ONE focused pass and finish.** This is round ${round} of an outer loop that will
+bring you back — you do not have to land the whole piece today, and trying to is how a builder
+dies. Long agents are being killed mid-flight by upstream API errors and losing everything,
+so a smaller finished round beats a large lost one. Budget roughly **two self-critique
+iterations, not ten**, then report.
+
+1. Read what you are extending, and the previous round's brief. If files for your piece already
+   exist, CONTINUE them — a previous attempt may have died mid-work with real progress on disk.
+2. Build the single highest-value increment for this round. Go past "functional" on that
+   increment rather than shallowly across everything.
 3. \`node tools/shoot.mjs --out shots/${p.key}-r${round}\` and **read your own PNGs with the Read
    tool**. If it is motion work, also \`node tools/film.mjs <scenario> --frames 12 --step 0.05
    --out shots/${p.key}-r${round}\` and read the strip.
-4. Look at what you actually rendered and be honest: does it look like a beloved game or like
-   programmer art? Iterate at least three times on your own before you stop. Most of the value
-   is in rounds 2 and 3 of your own self-critique.
+4. Fix what the frames show is wrong, once. Then stop and report — do not keep polishing.
 5. Finish only when shoot exits 0, console is clean, and the bundle builds.
+
+If you are running long, cut scope and hand off cleanly rather than pressing on: say in
+\`known_weakness\` exactly where you stopped and what the next round should pick up.
 
 Return the structured result. \`known_weakness\` must be the real thing you would fix next —
 critics will find it anyway, and claiming there is none is an automatic fail.`;

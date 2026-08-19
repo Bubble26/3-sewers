@@ -864,36 +864,86 @@ class Shards {
   }
 }
 
-/** The woman at the glass. She is not angry yet; she is deciding. */
+/**
+ * THE WOMAN AT THE GLASS. She is not angry yet; she is deciding.
+ *
+ * She arrives with her own window — sash, glass, sill and a folded towel — drawn
+ * into the card, and that is not decoration. Round 1 put her bare face on the
+ * facade at the impact point and she landed behind a fire escape, a laundry line
+ * and the barber's awning, which between them are about nine feet of ironwork
+ * and wet sheets. A self-contained window can stand a foot proud of all of it
+ * and still read as a window, because everything that says "window" is in the
+ * card rather than behind it.
+ */
 function drawWoman(g, W, H) {
   const S = H / 100, cx = W / 2;
   const P = (x, y) => [cx + x * S, y * S];
-  const poly = (pts, fill, line = INK) => {
+  const poly = (pts, fill, line = INK, w = 2.4) => {
     g.beginPath();
     pts.forEach(([x, y], i) => { const p = P(x, y); i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); });
     g.closePath();
     if (fill) { g.fillStyle = fill; g.fill(); }
-    if (line) { g.lineWidth = 2.6 * S * 0.4; g.strokeStyle = line; g.stroke(); }
+    if (line) { g.lineWidth = w * S * 0.4; g.strokeStyle = line; g.lineJoin = 'round'; g.stroke(); }
   };
-  // the pane behind her, still whole, still ringing
-  g.fillStyle = 'rgba(60,74,92,0.42)';
-  g.fillRect(0, 0, W, H);
-  poly([[-24, 96], [-16, 58], [16, 58], [24, 96]], '#B03A5E');            // claret housedress
-  poly([[-13, 60], [-14, 40], [13, 40], [12, 60]], '#DFA377');            // neck and shoulders
-  poly([[-14, 40], [-16, 20], [-8, 8], [8, 8], [16, 20], [14, 40]], '#DFA377');
-  poly([[-17, 22], [-16, 6], [0, -2], [16, 6], [17, 22], [11, 12], [-11, 12]], '#5B3B33');  // hair, pinned
+  // the opening: a sooted brick reveal, then the dark of the room behind her
+  poly([[-30, 1], [30, 1], [30, 97], [-30, 97]], '#6B4235');
+  poly([[-25, 5], [25, 5], [25, 90], [-25, 90]], '#40352F');
+
+  // THE UPPER SASH, still down. Everything glassy happens up here and nothing
+  // glassy happens over her face, because a translucent blue wash over a face is
+  // how round 1 turned her into a ghost.
+  g.save();
+  g.globalAlpha = 0.4; g.fillStyle = GLASS;
+  g.fillRect(...P(-25, 5), 50 * S, 23 * S);
+  g.restore();
+  g.save();
+  g.globalAlpha = 0.5; g.strokeStyle = CHALK; g.lineWidth = 2.6 * S * 0.4; g.lineCap = 'round';
+  const q0 = P(-19, 25), q1 = P(-3, 8);
+  g.beginPath(); g.moveTo(q0[0], q0[1]); g.lineTo(q1[0], q1[1]); g.stroke();
+  const r0 = P(6, 24), r1 = P(17, 10);
+  g.beginPath(); g.moveTo(r0[0], r0[1]); g.lineTo(r1[0], r1[1]); g.stroke();
+  g.restore();
+  poly([[-26, 26], [26, 26], [26, 31], [-26, 31]], '#2E4034', INK, 2.2);       // the meeting rail
+
+  // HER, leaning on the sill in the open lower half
+  poly([[-21, 92], [-16, 62], [16, 62], [21, 92]], '#B03A5E');                 // claret housedress
+  poly([[-9, 64], [-10, 52], [9, 52], [8, 64]], '#DFA377');                    // neck
+  poly([[-12, 54], [-14, 42], [-8, 34], [8, 34], [14, 42], [12, 54], [6, 58], [-6, 58]], '#DFA377');
+  poly([[-15, 44], [-14, 33], [0, 28], [14, 33], [15, 44], [9, 37], [-9, 37]], '#5B3B33');  // hair, pinned
+  g.save();
   g.fillStyle = INK;
-  for (const x of [-6, 6]) { const p = P(x, 24); g.beginPath(); g.ellipse(p[0], p[1], 2.2 * S, 2.6 * S, 0, 0, 6.283); g.fill(); }
-  g.lineWidth = 2.2 * S * 0.4; g.strokeStyle = INK;
-  const m0 = P(-5, 33), m1 = P(5, 33);
-  g.beginPath(); g.moveTo(m0[0], m0[1]); g.quadraticCurveTo(cx, 36 * S, m1[0], m1[1]); g.stroke();
+  for (const x of [-5, 5]) { const p = P(x, 45); g.beginPath(); g.ellipse(p[0], p[1], 2.0 * S, 2.4 * S, 0, 0, 6.283); g.fill(); }
+  g.restore();
+  g.save();                                                                     // brows: she is deciding
+  g.strokeStyle = INK; g.lineWidth = 1.8 * S * 0.4; g.lineCap = 'round';
+  for (const [x, d] of [[-5, -1], [5, 1]]) {
+    const p0 = P(x - 3 * d, 41.4), p1 = P(x + 3 * d, 40.2);
+    g.beginPath(); g.moveTo(p0[0], p0[1]); g.lineTo(p1[0], p1[1]); g.stroke();
+  }
+  const m0 = P(-5, 52), m1 = P(5, 52);
+  g.lineWidth = 2.2 * S * 0.4;
+  g.beginPath(); g.moveTo(m0[0], m0[1]); g.quadraticCurveTo(cx, 54.5 * S, m1[0], m1[1]); g.stroke();
+  g.restore();
+  g.save();                                                                     // cheeks (§2.8)
+  g.globalAlpha = 0.24; g.fillStyle = BLUSH;
+  for (const x of [-10, 10]) { const p = P(x, 49); g.beginPath(); g.ellipse(p[0], p[1], 3.6 * S, 2.6 * S, 0, 0, 6.283); g.fill(); }
+  g.restore();
+  poly([[-13, 76], [-8, 70], [8, 70], [13, 76], [12, 82], [-12, 82]], '#DFA377');   // her forearms, folded
+  poly([[-23, 80], [-15, 75], [15, 75], [23, 80], [23, 88], [-23, 88]], '#E2D4B4'); // the folded towel
+
+  // sill and frame, the outermost read
+  poly([[-32, 88], [32, 88], [34, 98], [-34, 98]], '#7A4A34', INK, 3.0);
+  g.save();
+  g.strokeStyle = INK; g.lineWidth = 3.6 * S * 0.4;
+  g.strokeRect(...P(-30, 1), 60 * S, 96 * S);
+  g.restore();
 }
 
 class WindowFace {
   constructor(scene) {
-    const { c, g } = canvas2d(224, 300);
-    drawWoman(g, 224, 300);
-    this.mesh = cardMesh(texFrom(c), 4.0, 5.4, { name: 'street:woman', order: 8 });
+    const { c, g } = canvas2d(240, 320);
+    drawWoman(g, 240, 320);
+    this.mesh = cardMesh(texFrom(c), 4.4, 5.9, { name: 'street:woman', order: 12 });
     this.mesh.visible = false;
     scene.add(this.mesh);
     this.t = -1;
@@ -1259,8 +1309,7 @@ function sewerShot(p) {
 function windowHeld(p) {
   fired('window_held');
   const at = p?.pos ? p.pos.clone() : glassAt();
-  // she leans out of the sash one floor above whatever the ball hit
-  const her = at.clone().setY(Math.max(12.5, at.y + 6.5));
+  const her = HER_WINDOW;
   street.interrupt?.('glass', { seconds: 1.5, doOver: false, defer: false, why: 'the glass held' });
   beats.play('glass', [
     [0.00, () => {
@@ -1572,6 +1621,15 @@ function lightsComeOn() {
    those two files register, and if either moves this is wrong and it will look
    wrong immediately.                                                        */
 const glassAt = () => new THREE.Vector3(-31.4, 6.0, 17.5);        // 'deli plate glass', x = -facadeX
+/**
+ * MRS KOWALSKI'S WINDOW. She is a person with an address, not a function of
+ * where the ball went: the same sash, every time, second floor, south side,
+ * forty-four feet up the block. Measured against both locked framings, that is
+ * the only stretch of facade that is inside frame in BOTH — a window chosen off
+ * the impact point projected to x=1740 from FIELD, which is a hundred and forty
+ * pixels outside the picture, and the joke does not survive being off screen.
+ */
+const HER_WINDOW = new THREE.Vector3(-28.4, 15.6, 44);
 const grateAt = (p) => new THREE.Vector3((p?.side ?? 1) * 17.0, 0.2, 11.0);
 const canAt = (p) => new THREE.Vector3((p?.side ?? 1) * 19.6, 1.5, 9.0);
 
