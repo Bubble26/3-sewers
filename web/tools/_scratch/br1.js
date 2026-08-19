@@ -1,0 +1,11 @@
+const { app } = globalThis.__SB;
+const br = app.baserunning;
+const out = { debug: br.debug };
+const marks = [];
+app.scene.traverse((o) => { if (o.name === 'live_bag') marks.push({ vis: o.visible, op: +o.material.opacity.toFixed(3), pos: [o.position.x, o.position.y, o.position.z] }); });
+out.liveBags = marks;
+const pl = app.get('players');
+out.bodies = [pl.batter, ...pl.runners].map((k) => ({ name: k.name, vis: k.group.visible, x: +k.pos.x.toFixed(1), z: +k.pos.y.toFixed(1), st: k.state, lock: +k.lock.toFixed(2) }));
+out.play = app.sim.lastPlay && { result: app.sim.lastPlay.result, moves: app.sim.lastPlay.moves, batter: app.sim.lastPlay.batter };
+out.field = app.fielding.debug;
+return out;
