@@ -130,17 +130,32 @@ export const RT = {
   govEase: 4.5,               // how fast the multiplier is allowed to move, per second
   outBy: 0.105,               // seconds the runner arrives AFTER the ball, on an out
   safeBy: 0.085,              // ... and before it, when he is safe
-  closeGap: 0.10,             // inside this and the whole street has an opinion
+  closeGap: 0.12,             // inside this and the whole street has an opinion
   arguePause: 1.5,            // how long the argument holds the bag
+
+  /**
+   * How far a runner's shoulders are allowed to open toward the lens.
+   *
+   * Home to first runs 31 degrees off the lens axis and away from it, so a runner
+   * legging one out is seen from BEHIND — and a kid seen dead astern is, in
+   * src/game/layout.js's own words about the catcher, "a coloured trapezoid with
+   * a cap on it". That file yaws the catcher 82 degrees off his facing for
+   * exactly this reason and says so. This is the same cheat, a quarter as big:
+   * the shoulders open toward the camera in proportion to how directly he is
+   * running away, so a sprint up the line shows a profile, an arm and a face.
+   * The stage cheats; §17.6 says it in as many words.
+   */
+  runYaw: 0.60,               // radians, the most the shoulders may be argued with
+  threeQuarter: 1.02,         // radians (58 deg) of separation we want from the lens axis
 
   /** Life on a bag between pitches. */
   lead: 4.2,                  // feet off the chalk once the pitcher commits
   leadCreep: 1.6,             // ... and how much further he steals while nobody looks
   fidgetEvery: [2.4, 5.6],
 
-  /** The lane he is running in — see §3. */
-  laneStep: 4.0,              // feet between chalk chevrons
-  laneAhead: 7,               // most chevrons drawn in front of him at once
+  /** The lane he is running in — see §2. */
+  laneStep: 2.6,              // feet per segment of the chalked base path
+  laneWidth: 0.95,            // ... and how wide the chalk is
   bagInside: 2.6,             // feet to the crown side of the bag a race passes on
 
   /** Dust. */
@@ -402,11 +417,11 @@ class Dust {
       if (it.life > 0) continue;
       it.max = brng.range(0.46, 0.86) * hang;
       it.life = it.max;
-      it.pos.set(x + brng.range(-0.5, 0.5), y + brng.range(0, 0.5), z + brng.range(-0.5, 0.5));
+      it.pos.set(x + brng.range(-0.9, 0.9), y + brng.range(0, 0.9), z + brng.range(-0.9, 0.9));
       const a = brng.range(0, Math.PI * 2), r = brng.range(0.25, 1) * power;
       it.vel.set(Math.cos(a) * r * 0.7, brng.range(0.35, 1.05) * power * 0.55, Math.sin(a) * r * 0.7);
       if (dir) it.vel.addScaledVector(dir, brng.range(0.35, 1.0) * power * 0.62);
-      it.size = size * brng.range(0.62, 1.35);
+      it.size = size * brng.range(0.48, 1.85);
       it.roll = brng.range(0, Math.PI * 2);
       it.spin = brng.range(-2.2, 2.2);
       it.tone = brng.next();
@@ -512,38 +527,43 @@ class Dust {
  * per-instance colour for free and a per-instance alpha only through a shader
  * patch. Chalk scuffing back into the road is also what actually happens.
  */
-function chevronTexture() {
-  const { c, g } = makeCanvas(128, 96);
+function laneTexture() {
+  const { c, g } = makeCanvas(128, 40);
   const R = new RNG(2207);
-  const arm = (x0, y0, x1, y1, w, col) => {
+  const bar = (w, col, alpha) => {
     g.save();
-    g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.globalAlpha = alpha;
+    g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'butt';
     g.beginPath();
-    const n = 6;
+    const n = 10;
     for (let i = 0; i <= n; i++) {
       const u = i / n;
-      const X = x0 + (x1 - x0) * u + R.range(-2.2, 2.2);
-      const Y = y0 + (y1 - y0) * u + R.range(-2.2, 2.2);
-      if (i === 0) g.moveTo(X, Y); else g.lineTo(X, Y);
+      g.lineTo(u * 128, 20 + R.range(-2.6, 2.6));
     }
     g.stroke();
     g.restore();
   };
-  // ink under, chalk over — the two-sided read (§2.5), baked so one quad carries both
-  arm(14, 76, 64, 18, 20, '#2a1d1a');
-  arm(114, 76, 64, 18, 20, '#2a1d1a');
-  arm(14, 76, 64, 18, 12, '#f6f0e2');
-  arm(114, 76, 64, 18, 12, '#f6f0e2');
+  // ink under, chalk over — one quad carrying the two-sided read of §2.5
+  bar(26, '#2a1d1a', 0.92);
+  bar(13, '#f6f0e2', 1);
+  // the chalk is not new: a couple of scuffs through it
+  g.globalCompositeOperation = 'destination-out';
+  g.globalAlpha = 1;
+  for (let i = 0; i < 3; i++) {
+    const x = R.range(6, 118);
+    g.fillRect(x, 0, R.range(2, 6), 40);
+  }
+  g.globalCompositeOperation = 'source-over';
   return canvasTexture(c);
 }
 
 class Lane {
-  constructor(scene, count = 96) {
+  constructor(scene, count = 132) {
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.MeshBasicMaterial({
-      map: chevronTexture(), transparent: true, depthWrite: false,
-      alphaTest: 0.42, toneMapped: false, side: THREE.DoubleSide,
+      map: laneTexture(), transparent: true, depthWrite: false,
+      alphaTest: 0.40, toneMapped: false, side: THREE.DoubleSide,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, count);
     this.mesh.name = 'run_lane';
@@ -561,47 +581,48 @@ class Lane {
   }
 
   /**
-   * Lay this frame's chevrons out for every runner who is going somewhere.
+   * Lay this frame's chalk out for every runner who is going somewhere.
    *
-   * The WHOLE leg is drawn, bag to bag, not just the piece in front of him — a
-   * chalk diagonal running the width of the frame is the compositional element
-   * this stage does not otherwise have, and it is what carries the eye to a kid
-   * who is 15% of frame height in a street with thirteen people in it. The
-   * chevrons he has already passed are scuffed most of the way back into the
-   * road; the ones in front of him are fresh and a wave of brightness runs along
-   * them toward the bag, so the mark says which way as well as where.
+   * The mark is a LINE, not a row of arrows. Round 3 of this piece drew chevrons
+   * and they died on the ground plane: this camera squashes the road 3.4 to 1, so
+   * a chevron 3 ft deep is 20 px of bracket and reads as debris. A line does not
+   * care — it is the same line however hard you foreshorten it — and a chalked
+   * base path is what a block actually puts on a road.
+   *
+   * It is drawn along the runner's OWN curve, which means it draws the banana:
+   * the bow out of the diamond before the bag and the cut back through it. That
+   * is the single most legible thing this piece owns, because it turns a kid
+   * running away from the lens into a shape across the frame.
+   *
+   * The fade is done in TINT and SIZE and never in alpha, because a per-instance
+   * colour multiplies the texture and the texture carries its own ink outline:
+   * tint it dark and the chalk goes to road while the ink stays ink, which turns
+   * a chalk mark into a painted road stripe.
    */
   update(dt, runners) {
     this.t += dt;
     let i = 0;
     for (const r of runners) {
       if (!r.path) continue;
-      const live = r.st === 'run' || r.st === 'slide';
-      if (!live) continue;
+      if (r.st !== 'run' && r.st !== 'slide') continue;
       const end = r.bagS();
-      const first = Math.max(2.0, Math.min(r.s - 4.0, end - RT.laneStep * RT.laneAhead));
-      for (let k = 0; k < 13 && i < this.n; k++) {
-        const sv = first + k * RT.laneStep;
-        if (sv > end - 0.9) break;
+      const step = RT.laneStep;
+      const first = Math.max(1.4, Math.min(r.s - 12.0, end - step * 20));
+      for (let k = 0; k < 26 && i < this.n; k++) {
+        const sv = first + k * step;
+        if (sv > end - 0.4) break;
         const u = clamp(sv / r.path.len, 0, 1);
         const q = r.path.curve.getPointAt(u);
         const tg = r.path.curve.getTangentAt(u);
-        // heading only: the quad is already flat (see Dust.smear for the same trap)
-        this.dummy.position.set(q.x, roadHeight(q.x) + 0.09, q.z);
-        this.dummy.rotation.set(0, Math.atan2(tg.x, tg.z), 0);
         const ahead = sv > r.s;
-        const gone = clamp((r.s - sv) / 11, 0, 1);           // how long ago he passed it
-        // A per-instance colour MULTIPLIES the texture, and the texture carries
-        // its own ink outline: tint it dark and the chalk goes to road while the
-        // ink stays ink, which turns a chalk mark into a painted road arrow. So
-        // the tint never leaves the chalk band and the scuffing-away is done in
-        // SIZE, which is also what happens to chalk under eleven pairs of boots.
-        const sc = ahead ? 1 : 0.92 - 0.42 * gone;
-        this.dummy.scale.set(4.0 * sc, 1, 2.9 * sc);
+        const gone = clamp((r.s - sv) / 13, 0, 1);
+        this.dummy.position.set(q.x, roadHeight(q.x) + 0.085, q.z);
+        this.dummy.rotation.set(0, Math.atan2(tg.x, tg.z) + Math.PI / 2, 0);
+        this.dummy.scale.set(step * 1.16, 1, RT.laneWidth * (ahead ? 1 : 0.94 - 0.3 * gone));
         this.dummy.updateMatrix();
         this.mesh.setMatrixAt(i, this.dummy.matrix);
-        const wave = 0.5 + 0.5 * Math.sin(this.t * 6.4 - (sv - first) * 0.42);
-        const bright = ahead ? 0.86 + 0.14 * wave : 0.78 - 0.16 * gone;
+        const wave = 0.5 + 0.5 * Math.sin(this.t * 5.6 - (sv - first) * 0.30);
+        const bright = ahead ? 0.84 + 0.16 * wave : 0.80 - 0.18 * gone;
         this.col.copy(this.road).lerp(this.chalkC, clamp(bright, 0, 1));
         this.mesh.setColorAt(i, this.col);
         i++;
@@ -1099,7 +1120,7 @@ class Runner {
       const tg = this.path.curve.getTangentAt(clamp(this.s / this.path.len, 0, 1));
       ctx.dust.burst(at.x, at.y, at.z, RT.dustSlide, 6.6, new THREE.Vector3(tg.x, 0.3, tg.z), 1.5, 1.5);
     }
-    bus.emit('run:slide', { pos: at, headfirst: this.headfirst, who: this.id, name: this.name, bag: this.bagTag });
+    bus.emit('run:slide', { pos: at, headfirst: this.headfirst, who: this.id, name: this.name, bag: this.bagTag, at: +ctx.now.toFixed(3), from: +this.s.toFixed(1), to: +this.bagS().toFixed(1) });
   }
 
   stepSlide(dt, ctx) {
@@ -1346,6 +1367,42 @@ class Runner {
   /* --- writing the body --------------------------------------------------- */
 
   /**
+   * THE THREE-QUARTER CHEAT.
+   *
+   * Two of the four legs of this diamond run almost straight down the lens axis:
+   * home to first goes 31 degrees away from the camera and third to home comes
+   * 23 degrees straight back at it. A kid running dead away is a coat with a cap
+   * on it; a kid sliding dead at the lens is a cap and nothing else, which is
+   * exactly what a round-3 frame of this piece showed. src/game/layout.js has the
+   * same problem with the catcher, says so at length, and solves it by yawing him
+   * 82 degrees off his facing. This is the same fix, smaller and continuous: the
+   * body is turned until it makes at least `threeQuarter` radians with the lens
+   * axis, capped at `runYaw` so it never becomes a crab-walk, and the turn is
+   * toward whichever side is already shorter.
+   *
+   * The feet are then a little off the direction of travel. That is the cost, it
+   * is one this stage has already agreed to pay (§17.6: "we cheat, the way a
+   * stage does"), and it buys a silhouette instead of a hat.
+   */
+  shoulderCheat(ctx) {
+    if (this.st !== 'run' && this.st !== 'slide') return 0;
+    const cam = ctx.cam;
+    if (!cam) return 0;
+    const cx = cam.x - this.p.x, cz = cam.z - this.p.z;
+    const L = Math.hypot(cx, cz);
+    if (L < 1) return 0;
+    const camA = Math.atan2(cx / L, cz / L);
+    let d = this.faceGoal - camA;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    const sgn = d >= 0 ? 1 : -1;
+    const a = Math.abs(d);
+    const want = RT.threeQuarter;
+    const a2 = clamp(a, want, Math.PI - want);
+    return clamp(sgn * (a2 - a), -RT.runYaw, RT.runYaw);
+  }
+
+  /**
    * Push this frame's answer onto the borrowed rig.
    *
    * `speed` is handed over PRE-DECAY: src/chars/players.js takes a fixed bite out
@@ -1360,7 +1417,7 @@ class Runner {
     k.target = null;
     k.glide = 0;
     k.pos.set(this.p.x, this.p.z);
-    k.faceGoal = this.faceGoal;
+    k.faceGoal = this.faceGoal + this.shoulderCheat(ctx);
     if (this.snapFace) { k.face = this.faceGoal; k.group.rotation.y = this.faceGoal; this.snapFace = false; }
     k.speed = Math.max(0, this.v) + T.run.accel * 2 * dt;
     k.maxSpeed = Math.max(this.base, 1);
@@ -1718,6 +1775,7 @@ class Crew {
 
   step(dt) {
     this.now += dt;
+    this.cam = APP.camera ? APP.camera.position : null;
     const sim = APP.sim;
     if (sim && sim.state.phase === 'in_play') this.applyMoves(this.play || sim.lastPlay);
     this.releaseHolds(dt);
@@ -2086,7 +2144,15 @@ function stage(app, {
     if (cur && cur.phase === 'prompt') cur.choose(prompt.answer);
     crew.applyMoves(shot);
   }
-  if (prompt && prompt.after) app.clock.advance(prompt.after);
+  // Advance to an ABSOLUTE play time rather than a blind offset from an event
+  // whose moment this file does not control: the gather, and therefore the
+  // prompt, is src/game/fielding.js's clock. Fixed steps, so it stays as
+  // deterministic as everything else in the harness.
+  if (prompt && prompt.until) {
+    for (let i = 0; i < 480 && crew.now < prompt.until; i++) app.clock.advance(1 / 60);
+  } else if (prompt && prompt.after) {
+    app.clock.advance(prompt.after);
+  }
 }
 
 export const STAGED = {
@@ -2154,7 +2220,7 @@ registerScenario('run_single', {
  */
 registerScenario('run_close_play', {
   seed: 3311,
-  setup: ({ app }) => { stage(app, { ...STAGED.close, settle: 1.10 }); },
+  setup: ({ app }) => { stage(app, { ...STAGED.close, settle: 1.675 }); },
   settle: 0,
 });
 
@@ -2164,7 +2230,7 @@ registerScenario('run_close_play', {
 registerScenario('run_slide', {
   seed: 5150,
   setup: ({ app }) => {
-    stage(app, { ...STAGED.slide, settle: 1.15, prompt: { ...STAGED.slide.prompt, after: 1.05 } });
+    stage(app, { ...STAGED.slide, settle: 1.15, prompt: { ...STAGED.slide.prompt, until: 2.50 } });
   },
   settle: 0,
 });

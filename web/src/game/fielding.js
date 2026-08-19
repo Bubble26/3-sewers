@@ -135,6 +135,7 @@ export const FT = {
   holdLift: 6.2,               // fake upward speed on a held ball; see hold()
   trailSpeed: 58,              // fake speed on a thrown ball, so ballphysics trails it
   looseSettle: 0.55,           // how long a muffed ball keeps hopping in the road
+  looseDwell: 0.85,            // ... and the least time it lies there before a hand closes
 };
 
 const P = T.play;
@@ -1022,13 +1023,19 @@ class Play {
     this.loose.t += dt;
     const k = this.recover;
     if (!k) return this.beat(0.5);
+    if (this.loose.t < 0.16) return;                 // he has to see it first
     if (dist2(k, this.loose.pos.x, this.loose.pos.z) < 2.6 && !this.picking) {
       this.picking = 1;
       k.target = null;
       k.lookAt(this.loose.pos.x, this.loose.pos.z);
       k.act('crouch', { state: 'catch', lock: 0.42 });
       if (APP.puffs) APP.puffs.burst(new THREE.Vector3(k.pos.x, (k.groundY || 0) + 0.2, k.pos.y), 3, 2.0);
-      this.pickAt = this.loose.t + 0.24;
+      // A LOOSE BALL LIES THERE FOR A BEAT. Nobody's hand closes on it inside
+      // three-quarters of a second, whoever happens to be standing next to it,
+      // because the beat where the ball is in the road and nobody has it is the
+      // whole error — take it away and the muff is a half-second stutter that a
+      // player never sees.
+      this.pickAt = Math.max(this.loose.t + 0.24, FT.looseDwell);
     }
     if (this.picking && this.loose.t >= this.pickAt) {
       this.holder = k;
@@ -2531,5 +2538,5 @@ registerScenario('field_error', {
   setup: ({ app }) => {
     stage(app, STAGED.error);
   },
-  settle: 1.62,
+  settle: 1.78,
 });
