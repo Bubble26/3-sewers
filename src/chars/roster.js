@@ -17,6 +17,8 @@
  * The audio piece reads:       kid.voice — { pitch, rasp, sting } for the per-character
  *                              instrument sting (DESIGN-BIBLE §7.3).
  * Gameplay slots read:         kid.stats — six axes, integers 1..4, never 0, never 5.
+ * The rules core reads:        kid.quirk.id and playCard(kid) — the 1..4 tallies mapped
+ *                              onto the five axes src/game/core.js was ported against.
  * The UI reads:                kid.accent (a key into palette ACCENTS) and kid.art.skin.
  *
  * Nothing in here is optional. Every kid has every field. A missing field is a bug,
@@ -44,6 +46,9 @@
  *   say       { picked passed hit field } — what he actually yells, in his own words
  *   charm     the superstition. Everybody has one and nobody thinks it is a superstition.
  *   secret    { label, text } — the hidden trait the game reveals in play, not in a menu
+ *   quirk     { id, name, desc } — the one thing he does that changes the rules. `id` is a
+ *             mechanic in src/game/core.js (see QUIRKS below); `name` and `desc` are ours.
+ *             Four kids carry id 'none' and a joke, because most kids are just a kid.
  *   owns      'ball' | 'stick' | null — the block's whole power structure (§8.1)
  *   captain   true for the two who are captains by acclamation (period §1.8)
  *   title     an earned label rendered over the head, or ''
@@ -122,6 +127,7 @@ export const ROSTER = [
     say: { picked: "I'M PICKIN'.", passed: '', hit: 'SOME WALLOP!', field: "IT'S MINE! MINE!" },
     charm: 'Taps the manhole four times instead of two, on the theory that twice is twice as good.',
     secret: { label: 'CANNOT HIT SLOW', text: 'Cannot hit a slow ball. Not one. Nobody has worked it out yet and he prays nightly that it holds.' },
+    quirk: { id: 'none', name: 'NO QUIRK THE BLOCK WILL ADMIT', desc: 'He owns the stick, bats first, and explains why that is fair. He is fairly sure that is the quirk.' },
     owns: 'stick', captain: true, title: '',
     accent: 'red',
     art: {
@@ -144,6 +150,7 @@ export const ROSTER = [
     say: { picked: "I'M PICKIN'.", passed: '', hit: 'AND HOW!', field: 'I GOT IT!' },
     charm: 'Will not step on a crack between the stoop and the plate, which on Belgian block takes a while.',
     secret: { label: 'NEVER ONCE WENT HOME', text: 'Has never once taken her ball and gone home. Everybody knows it. It is the only reason anybody dares argue with her.' },
+    quirk: { id: 'spinner', name: 'CALLS IT FIRST', desc: 'Says out loud what she is about to throw, throws it, and it breaks off the hop anyway.' },
     owns: 'ball', captain: true, title: '',
     accent: 'bottleGreen',
     art: {
@@ -166,6 +173,7 @@ export const ROSTER = [
     say: { picked: 'Okay.', passed: 'Okay.', hit: 'Two sewers.', field: 'Mine.' },
     charm: 'Ties the left boot twice. Never the right.',
     secret: { label: 'NOT OUT SINCE EASTER', text: 'Nobody has got her out since Easter. Nobody has thought to mention it.' },
+    quirk: { id: 'three_sewers', name: 'TWO SEWERS', desc: 'When she gets all of it, it comes down a full sewer past where anybody was standing.' },
     owns: null, captain: false, title: 'TWO-SEWER MAN',
     accent: 'claret',
     art: {
@@ -189,6 +197,7 @@ export const ROSTER = [
     say: { picked: "I'LL GO LAST! I DON'T CARE!", passed: "That's fine. That's fine.", hit: 'DID YOU SEE IT?', field: 'I ALMOST HAD IT!' },
     charm: "Wears one of Sal's socks. Just the one.",
     secret: { label: 'NEVER BEEN TAGGED', text: 'Nobody on this block has ever tagged him out. Nobody has noticed, because nobody has ever put him on.' },
+    quirk: { id: 'none', name: 'NOTHING PROVEN YET', desc: 'Nobody has had him on base long enough to find out what he does there.' },
     owns: null, captain: false, title: '',
     accent: 'mustard',
     art: {
@@ -212,6 +221,7 @@ export const ROSTER = [
     say: { picked: 'ON THE LEVEL!', passed: 'Ah, ya bum.', hit: 'HOT SOCKS!', field: 'I HAD IT!' },
     charm: 'Will not play with the fire-escape ladder down. Somebody always puts it down.',
     secret: { label: 'ONE HOP AND YOU ARE OUT', text: 'Cannot catch a thing. Let it reach him on one hop and he will throw out anybody in New York.' },
+    quirk: { id: 'rifle', name: 'THE ARM BEHIND THE PLATE', desc: 'Catching, he settles whoever is out on the manhole, and the pitches come in sharper for it.' },
     owns: null, captain: false, title: '',
     accent: 'olive',
     art: {
@@ -234,6 +244,7 @@ export const ROSTER = [
     say: { picked: 'ABOUT TIME!', passed: 'SEZ WHO?', hit: 'SAYS YOU!', field: 'OUTTA THE WAY!' },
     charm: 'A bottle cap in the left stocking — the one from the day she hit the awning.',
     secret: { label: 'KEEPS THE SCORE', text: 'Keeps the score in her head, out loud, and has never once been wrong. Which is not the same as honest.' },
+    quirk: { id: 'on_house', name: 'FROM THE BAG', desc: 'Standing on a base she calls the count, the fielders, and your business, and her side hits sharper for it.' },
     owns: null, captain: false, title: '',
     accent: 'plum',
     art: {
@@ -256,6 +267,7 @@ export const ROSTER = [
     say: { picked: 'YOU SAID IT!', passed: 'Applesauce.', hit: 'DUCK SOUP!', field: 'IT IS MINE!' },
     charm: 'Practices the swing on the banister going down all four flights. Every flight.',
     secret: { label: 'FOULS THEM OFF', text: 'Fouls off nine, ten, eleven pitches until the pitcher’s arm quits. She has never mentioned that this is on purpose.' },
+    quirk: { id: 'eagle_eye', name: 'TWO STRIKES, SO WHAT', desc: 'With two strikes she gets wood on anything thrown. The pitcher gives up before she does.' },
     owns: null, captain: false, title: '',
     accent: 'slateBlue',
     art: {
@@ -278,6 +290,7 @@ export const ROSTER = [
     say: { picked: 'ATTABOY!', passed: 'Aw, nuts.', hit: 'OH, YOU KID!', field: 'HEADS UP!' },
     charm: 'Four bars of harmonica between innings. Only four. Nobody has ever heard the fifth.',
     secret: { label: 'PUT ONE OVER THE LINE', text: 'The only kid on the block who has put one clean over the second-floor line, and he says he never saw the pitch.' },
+    quirk: { id: 'none', name: 'ONCE, IN SEPTEMBER', desc: 'One ball clean over the second-floor line, and not one since. The block is still waiting on the second.' },
     owns: null, captain: false, title: '',
     accent: 'rust',
     art: {
@@ -300,6 +313,7 @@ export const ROSTER = [
     say: { picked: 'I GOT TILL SUPPER!', passed: "That's swell, I gotta go anyway.", hit: 'TWO MINUTES! TWO MORE MINUTES!', field: 'HOLD IT! HOLD IT!' },
     charm: 'Never takes the last at-bat of an inning if he can trade out of it. That is when it happens.',
     secret: { label: 'THIRD FLOOR, SECOND WINDOW', text: 'When that window opens the inning is over, and it has never once opened at a good time.' },
+    quirk: { id: 'none', name: 'GOOD FOR TWO INNINGS', desc: 'Whatever he has got, the third-floor window takes it back before anybody can put a name on it.' },
     owns: null, captain: false, title: '',
     accent: 'indigo',
     art: {
@@ -322,6 +336,7 @@ export const ROSTER = [
     say: { picked: 'BOY OH BOY!', passed: 'Chase yourself.', hit: 'ATTA WAY!', field: 'I GOT IT! I GOT IT!' },
     charm: 'Will not field with a cap on. There is no cap. It will not stay on.',
     secret: { label: 'WRONG BASE, EVERY TIME', text: 'Catches everything on this block and throws it to the wrong base with total confidence.' },
+    quirk: { id: 'lookout', name: 'EARS', desc: 'Hears the whistle a block off, so his side scatters early and is playing again before the cop is past the hydrant.' },
     owns: null, captain: false, title: '',
     accent: 'teal',
     art: {
@@ -344,6 +359,7 @@ export const ROSTER = [
     say: { picked: 'BOY OH BOY!', passed: 'Banana oil.', hit: "THAT'S THE STUFF!", field: 'WAY BACK! WAY BACK!' },
     charm: 'Runs the long way round the manhole. Every time. Even on a walk.',
     secret: { label: 'WILL NOT SLIDE', text: 'Will not slide. Has never once had to.' },
+    quirk: { id: 'extra', name: 'NEVER STOPS AT ONE', desc: 'Rounds the base without looking at it and takes the next one, and she has never once had to slide for it.' },
     owns: null, captain: false, title: '',
     accent: 'mustard',
     art: {
@@ -366,6 +382,7 @@ export const ROSTER = [
     say: { picked: 'DALE! DALE!', passed: 'Aw, ya bum.', hit: 'SOME WALLOP!', field: 'MOVE IT! MOVE IT!' },
     charm: 'Spits in his palms, rubs them, then wipes them on the same spot of his knickers.',
     secret: { label: 'GOES ON THE SECOND LOOK', text: 'Steals on the pitcher’s second look, every time, and the pitchers keep taking a second look.' },
+    quirk: { id: 'headfirst', name: 'NO SHOES, NO BRAKES', desc: 'Goes in flat out on the close ones at first and beats the throw more often than he has any right to.' },
     owns: null, captain: false, title: '',
     accent: 'tan',
     art: {
@@ -388,6 +405,7 @@ export const ROSTER = [
     say: { picked: 'ABOUT TIME.', passed: 'Suit yourself.', hit: 'AND HOW!', field: 'RIGHT HERE! RIGHT HERE!' },
     charm: 'Sets the crutch in the same square of bluestone. If an ash can is on it, the ash can moves.',
     secret: { label: 'EVERY BASE, SAME SQUARE', text: 'Has thrown out a runner at every base on this block, home included, without leaving that one square of bluestone.' },
+    quirk: { id: 'southpaw', name: 'THE PLANTED CRUTCH', desc: 'First time through the order, nobody picks the ball up out of that windup.' },
     owns: null, captain: false, title: 'BEST ARM ON THE BLOCK',
     accent: 'periwinkle',
     art: {
@@ -410,6 +428,7 @@ export const ROSTER = [
     say: { picked: 'RIGHT HERE!', passed: 'Suits me.', hit: 'OFF THE WALL!', field: 'PLAY IT OFF THE WALL!' },
     charm: 'Will not start until the line above the street is clear. It is her mother’s line.',
     secret: { label: 'NEVER COMES BACK WITH ONE', text: 'Every ball on a roof is hers to fetch, and she has never once come back down with only the one.' },
+    quirk: { id: 'spit_shine', name: 'HANDS IT BACK CLEANER', desc: 'Wipes every ball on her sleeve out of habit, and on her side nothing squirts loose.' },
     owns: null, captain: false, title: '',
     accent: 'bottleGreen',
     art: {
@@ -433,6 +452,7 @@ export const ROSTER = [
     say: { picked: 'Thank you.', passed: 'That is quite all right.', hit: 'NICE GOING!', field: 'TIME! TIME!' },
     charm: 'Real Keds, and she will not play the gutter side of the street in them.',
     secret: { label: 'ONE WHISTLE ENDS IT', text: 'One whistle from the corner and the game is over. She is the only one not scared of him and the only one who will not use it.' },
+    quirk: { id: 'boughten', name: 'THE BOUGHTEN BAT', desc: 'A real store-bought bat, brought out for her at-bats only and carried home again after.' },
     owns: null, captain: false, title: '',
     accent: 'plum',
     art: {
@@ -455,6 +475,7 @@ export const ROSTER = [
     say: { picked: 'ATTABOY!', passed: 'So’s your old man!', hit: 'WAY BACK! WAY BACK!', field: 'LEMME HAVE IT!' },
     charm: 'Never bats in shoes. Says he can feel the block through his feet.',
     secret: { label: 'THE TWO-SEWER, ONCE', text: 'Hit two sewers exactly once, in front of nobody at all, and mentions it about four times an inning.' },
+    quirk: { id: 'wallop', name: 'OFF THE HANDLE ANYWAY', desc: 'Gets a piece of it wrong and it still goes somewhere. He swings from the heels at everything thrown.' },
     owns: null, captain: false, title: '',
     accent: 'red',
     art: {
@@ -511,6 +532,87 @@ export const SHARED_NICKS = (() => {
   return [...m.entries()].filter(([, ids]) => ids.length > 1).map(([nick, ids]) => ({ nick, ids }));
 })();
 
+/* ============================================================================
+   The play card — how a kid on this block turns into a batter, a fielder
+   and an arm inside the rules core (src/game/core.js).
+   ========================================================================= */
+
+/**
+ * The rules core was ported from a finished stickball engine whose cards ran 1..10
+ * (docs/PORT-SPEC.md). Ours are chalk tallies, 1..4, and they are staying that way —
+ * a kid is four marks on a curb, not a spreadsheet. This is the only bridge between
+ * the two, and it is the one number to move if the soak test drifts off its baseline.
+ *
+ * It is not linear on purpose: a 4 is meant to be a kid the block talks about, so the
+ * top mark is worth more than the step below it. Under this map our sixteen average
+ * PWR 5.6 / CON 6.1 / SPD 5.8 / ARM 5.9 / GLV 6.3 against the 5.4 / 6.2 / 5.8 / 5.7 / 6.5
+ * of the roster the engine was balanced on, which is why tools/soak.mjs lands on their
+ * run-scoring baseline without touching a rule.
+ */
+export const PLAY_SCALE = [0, 2, 4, 6, 9];
+
+/**
+ * The twelve quirks the rules core knows about, and what each one actually does in
+ * play. The mechanic ids come from the ported engine and are matched by string in
+ * src/game/core.js — renaming one here silently turns it off, so rename the label
+ * on the kid instead. Four kids carry `none`, which is a joke, not an oversight:
+ * on a real block most kids are just a kid.
+ */
+export const QUIRKS = {
+  three_sewers: { batting: true,  mech: 'A hit off better than 0.8 quality carries +0.22 — a full sewer farther.' },
+  wallop:       { batting: true,  mech: 'Contact quality is floored at 0.45. Even the mishits leave the stick.' },
+  eagle_eye:    { batting: true,  mech: '+3 EYE with two strikes, which widens every contact window.' },
+  on_house:     { batting: true,  mech: '+1 EYE to every teammate at the plate while she is standing on a base.' },
+  boughten:     { batting: true,  mech: '+1 WALLOP, permanently, because the lumber is store-bought.' },
+  extra:        { running: true,  mech: '40% of the time a hit is stretched one base further.' },
+  headfirst:    { running: true,  mech: '+0.05 on the race to first, which is most of a close play.' },
+  spinner:      { pitching: true, mech: '+0.08 pitch quality. The hop breaks off the cobbles.' },
+  southpaw:     { pitching: true, mech: '+0.12 pitch quality against a batter who has not faced him yet.' },
+  rifle:        { pitching: true, mech: '+0.05 pitch quality for his pitcher while he is catching.' },
+  spit_shine:   { fielding: true, mech: '+0.08 catch chance for every glove on his side.' },
+  lookout:      { street: true,   mech: 'CHEESE IT! comes half as often (0.16 -> 0.08) and clears twice as fast.' },
+  none:         { mech: 'Nothing the rules core reads. Most kids are just a kid.' },
+};
+
+/** Who carries each mechanic, computed from the roster so the two can never disagree. */
+export const QUIRK_HOLDER = (() => {
+  const m = {};
+  for (const k of ROSTER) if (k.quirk && k.quirk.id !== 'none') m[k.quirk.id] = k.id;
+  return m;
+})();
+
+/**
+ * A kid's card as the rules core wants it: the five axes it reads, on its scale, plus
+ * the quirk mechanic id. PWR/CON/SPD/ARM/GLV are named in the engine's shouty style so
+ * a reader can diff src/game/core.js against docs/godot-reference/match_core.gd line by
+ * line. NERVE is ours and the ported core does not read it yet.
+ */
+export function playCard(ref) {
+  const k = getKid(ref);
+  const s = k.stats;
+  return {
+    id: k.id,
+    name: k.name,
+    nick: k.nick,
+    PWR: PLAY_SCALE[s.power],
+    CON: PLAY_SCALE[s.contact],
+    SPD: PLAY_SCALE[s.speed],
+    ARM: PLAY_SCALE[s.arm],
+    GLV: PLAY_SCALE[s.fielding],
+    NERVE: PLAY_SCALE[s.nerve],
+    quirk: k.quirk ? k.quirk.id : 'none',
+    qname: k.quirk ? k.quirk.name : '',
+    qdesc: k.quirk ? k.quirk.desc : '',
+  };
+}
+
+/** Every kid as a play card, keyed by id — the dictionary MatchCore.setup() takes. */
+export function playRoster(kids = ROSTER) {
+  const out = {};
+  for (const k of kids) out[k.id] = playCard(k);
+  return out;
+}
+
 /** Sum of the six, for a rough "who is good" ordering. */
 export function statTotal(kid) {
   const s = getKid(kid).stats;
@@ -552,6 +654,18 @@ export function auditRoster() {
     if (!k.arm || !k.arm.quirk) bad.push(`${k.id}: no pitching quirk`);
     if (!k.say || !k.say.hit) bad.push(`${k.id}: nothing to yell`);
     if (!k.art || !k.art.fam) bad.push(`${k.id}: no silhouette family`);
+  }
+  const quirkSeen = new Map();
+  for (const k of ROSTER) {
+    if (!k.quirk || !k.quirk.id) { bad.push(`${k.id}: no quirk record`); continue; }
+    if (!QUIRKS[k.quirk.id]) bad.push(`${k.id}: quirk "${k.quirk.id}" is not a mechanic the rules core reads`);
+    if (!k.quirk.name || !k.quirk.desc) bad.push(`${k.id}: a quirk with nothing written on it`);
+    if (k.quirk.id === 'none') continue;
+    if (quirkSeen.has(k.quirk.id)) bad.push(`${k.id}: quirk "${k.quirk.id}" is already ${quirkSeen.get(k.quirk.id)}'s`);
+    quirkSeen.set(k.quirk.id, k.id);
+  }
+  for (const q of Object.keys(QUIRKS)) {
+    if (q !== 'none' && !quirkSeen.has(q)) bad.push(`quirk "${q}" belongs to nobody`);
   }
   const legends = ROSTER.filter((k) => STAT_KEYS.filter((s) => k.stats[s] >= 4).length >= 5);
   if (legends.length !== 1) bad.push(`there must be exactly one legend, found ${legends.length}`);

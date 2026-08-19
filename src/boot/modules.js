@@ -17,6 +17,7 @@ import '../chars/rig.js';
 import '../game/ballview.js';
 import '../game/ballphysics.js';
 import '../game/pitching.js';
+import '../game/core.js';   // the ported rules core: street rules, quirks, the throw prompt
 // --- fx / ui / audio -------------------------------------------------------
 import '../fx/particles.js';
 import '../ui/hud.js';
