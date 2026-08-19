@@ -31,21 +31,26 @@ import { registerScenario } from '../core/scenarios.js';
  * ---------------------------------------------------------------------------
  * T.stage.framings gives each framing its DIRECTION and its ANCHOR — the two things that are
  * artistic decisions and are locked by the contract with the backdrop and field-layout pieces.
- * This file solves the two things that are arithmetic — distance and focal length — against
- * the cast that is actually standing in the street, measured exactly the way tools/measure.mjs
- * measures it (world-space Box3, top and bottom projected, screen height in % of frame height).
+ * This file solves the three that are arithmetic — how far back, how long a lens, how far
+ * above — against the cast that is actually standing in the street, measured exactly the way
+ * tools/measure.mjs measures it: world-space Box3, top and bottom projected, screen height as
+ * a percentage of frame height. The solver's numbers and the arbiter's numbers are the same
+ * numbers, so "does this framing pass" is answered before a pixel is drawn.
  *
  * That matters more than it sounds. The field-layout piece is moving fielders while this is
  * written. A hard-coded framing would be legal today and illegal tomorrow. A framing solved
  * from the cast's own boxes is legal both days, and the numbers it lands on are reproducible
- * because nothing here touches Math.random or wall-clock time.
+ * because nothing here touches Math.random or wall-clock time. Measured: with the cast where
+ * it stands today (three fielders out at z = 79…95, past the contract's 70) the solve lands at
+ * fov 10.0° / 128 back; drop those three inside the contract stage and the same code, untouched,
+ * pulls in to fov 11.5° / 118. The framing follows the layout, not a comment.
  *
  * WHAT MOVES, AND WHAT NEVER DOES (§17.4)
  * ---------------------------------------------------------------------------
  * The camera CUTS. The two permitted continuous motions, and nothing else:
  *
- *   * a single-axis PAN (world-Y yaw, in place) to keep a live ball on screen,
- *   * a slow PUSH (a few percent along the view axis) on a run scoring.
+ *   * a single-axis follow — TILT, in place, capped at 2.6° — to keep a live ball on screen,
+ *   * a slow PUSH (3.5% along the view axis) when a run scores.
  *
  * No dolly through the street, no orbit, no roll, no handheld, no easing between framings.
  * A cut is one frame. The cut off the bat is held back by the length of the hitstop so the
@@ -69,7 +74,7 @@ const SOLVE_ASPECT = 16 / 9;
 
 /** §17.3, with a little margin so a kid drifting a foot upstage does not fail the build. */
 const LIMIT = {
-  kidMin: S.scale.kidMinPct + 1.0,   // a kid animates ±4% around his survey height
+  kidMin: S.scale.kidMinPct + 1.4,   // a kid loses up to 10% of his box height mid-stride
   leadMin: S.scale.leadMinPct,
   leadMax: S.scale.leadMaxPct,
   fovMax: Math.min(S.lens.max, 26),
@@ -97,7 +102,7 @@ const COMPOSITION = {
   field: {
     // The wide one: a steeper seat in the same theatre. Plate on the floor, the whole stage
     // stacked above it, and enough elevation that the fielders separate instead of stacking.
-    plateY: -0.90,
+    plateY: -0.84,
     biasX: 0.0,
     deepY: 0.88,
     softMaxPct: 27,
@@ -106,13 +111,33 @@ const COMPOSITION = {
   },
 };
 
-/** Continuous motion, §17.4. Both of these are deliberately small. */
+/**
+ * Continuous motion, §17.4 — and there is only this much of it.
+ *
+ * The permitted follow is ONE axis, and on this stage that axis is TILT, not yaw. A stickball
+ * ball goes up the street and up in the air; laterally it is fenced by a 46-unit-wide play
+ * plane that the frame already covers at every depth the ball reaches. Vertically it is not
+ * fenced by anything: on a 10° lens aimed 13° down, the visible band at the pitcher is about
+ * fourteen feet tall, and a squared-up hit clears that in a fifth of a second. So the one axis
+ * we are allowed to spend is the one that keeps the ball, and we spend it on tilt.
+ *
+ * It is deliberately a short leash. The follow buys the eye the first half second off the bat
+ * and then hands the ball to the chalk landing marker (DESIGN-BIBLE §2.5), which is a gameplay
+ * mechanic built for exactly this and does not require the camera to chase a pop fly out of
+ * its own composition.
+ */
 const MOTION = {
-  panMaxDeg: 11,          // hard stop on the follow-pan
-  panRateDeg: 34,         // deg/sec ceiling: a pan, never a whip
-  panDead: 0.30,          // ball may wander this far in NDC x before the pan wakes up
-  panPark: 0.16,          // and is walked back to here
-  panTau: 0.13,
+  // 2.6° is about a quarter of the frame height on this lens. It is enough to hold a line
+  // drive and never enough to lose the cast off the bottom of the frame, which is the trade
+  // that matters: a camera that chases a pop fly until the street has left the picture has
+  // swapped one lost object for fourteen.
+  tiltMaxDeg: 2.6,
+  tiltRateDeg: 16,        // deg/sec ceiling — a follow, never a whip
+  tiltDead: 0.50,         // ball may climb this far in NDC y before the tilt wakes up
+  tiltPark: 0.34,         // and is walked back to here
+  tiltGiveUp: 1.7,        // × the cap: past this the ball is unreachable, so stop reaching
+  tiltTau: 0.13,
+  tiltHome: 0.30,         // slower on the way back down: settling is not a move
   pushFrac: 0.035,        // 3.5% of the pull-back
   pushTime: 1.35,
   cutHold: 0.11,          // hold on BATTING through the hitstop before cutting to FIELD
@@ -127,7 +152,8 @@ const _v = new THREE.Vector3();
 const _dv = new THREE.Vector3();
 const _m4 = new THREE.Matrix4();
 const _look = new THREE.Vector3();
-const _qy = new THREE.Quaternion();
+const _qx = new THREE.Quaternion();
+const _XAXIS = new THREE.Vector3(1, 0, 0);
 const _fwd = new THREE.Vector3();
 const _YAXIS = new THREE.Vector3(0, 1, 0);
 
@@ -155,10 +181,11 @@ function surveyCast(app) {
     // 6.6 units there against 5.1–5.6 in every real gameplay pose. Solving against the bind
     // pose would pull the camera 30 units further back than the game ever needs. The rig
     // publishes each kid's standing height, so the survey height is the box clamped to a
-    // plausible multiple of it: the batter loses his flagpole, everybody else is untouched.
+    // plausible multiple of it — 1.27, the tallest a kid measures in any real pose — so the
+    // batter loses his flagpole and nobody else is touched at all.
     const tall = o.userData?.metrics?.tall || 0;
     const raw = _box.max.y - _box.min.y;
-    const h = tall > 0 ? Math.min(raw, tall * 1.30) : raw;
+    const h = tall > 0 ? Math.min(raw, tall * 1.27) : raw;
     cast.push({
       obj: o,
       name: o.name || 'kid',
@@ -405,17 +432,17 @@ export default registerSystem({
     this.app = app;
     this.cast = [];
     this.leads = {};
-    this.plate = new THREE.Vector3(T.street.gutterX * 0, 0.3, T.street.plateZ);
+    this.plate = new THREE.Vector3(0, 0.3, T.street.plateZ);
     this.framing = 'batting';
     this.pin = null;
     this.manual = false;
     this.applied = { pos: new THREE.Vector3(NaN, NaN, NaN), quat: new THREE.Quaternion(), fov: -1 };
-    this.pan = 0; this.panGoal = 0;
+    this.tilt = 0; this.tiltGoal = 0;
     this.pushT = -1;
     this.cutIn = -1; this.cutTo = null;
     this.wasPhase = '';
     this.solutions = null;
-    this.panView = new View();
+    this.followView = new View();
 
     this.resolve(app);
     this.cut('batting', true);
@@ -426,9 +453,11 @@ export default registerSystem({
   resolve(app) {
     this.cast = surveyCast(app);
     this.leads = tagLeads(app, this.cast);
+    // The composition hangs off a point halfway between the plate and the batter's chest, so
+    // the shot stays about the at-bat rather than about whichever side of the plate he stands.
     const bat = this.leads.batter;
     this.plate.set(0, 0.3, T.street.plateZ);
-    if (bat) this.plate.set(bat.mid.x * 0.45, 0.3, bat.mid.z);
+    if (bat) this.plate.set(bat.mid.x * 0.5, 0.3, bat.mid.z);
     this.solutions = {
       batting: solveFraming('batting', this.cast, this.plate),
       field: solveFraming('field', this.cast, this.plate),
@@ -451,7 +480,7 @@ export default registerSystem({
     this.manual = false;
     this.pin = null;
     CAM.pin = null;
-    this.pan = 0; this.panGoal = 0;
+    this.tilt = 0; this.tiltGoal = 0;
     this.pushT = -1;
     this.cutIn = -1; this.cutTo = null;
     this.wasPhase = '';
@@ -468,7 +497,7 @@ export default registerSystem({
     const changed = this.framing !== name;
     this.framing = name;
     CAM.framing = name;
-    this.pan = 0; this.panGoal = 0;
+    this.tilt = 0; this.tiltGoal = 0;   // a cut lands on the locked framing, never mid-follow
     this.write();
     if (changed && !silent) bus.emit('cam:cut', { framing: name });
   },
@@ -490,7 +519,7 @@ export default registerSystem({
     }
     this.wasPhase = phase;
 
-    this.trackBall(dt, app);
+    this.followBall(dt, app);
     if (this.pushT >= 0) this.pushT = Math.min(MOTION.pushTime, this.pushT + dt);
     this.write();
   },
@@ -517,38 +546,50 @@ export default registerSystem({
   },
 
   /**
-   * The single-axis follow pan (§17.4). Yaw only, in place, rate limited, and it goes to sleep
-   * the moment the ball is comfortably inside the frame.
+   * The single-axis follow (§17.4): tilt, in place, rate limited, and asleep the moment the
+   * ball is comfortably inside the frame. Yaw is never touched, roll is never touched, the
+   * camera never moves an inch, and when the ball dies the tilt walks home on its own.
    */
-  trackBall(dt, app) {
+  followBall(dt, app) {
     const sim = app.sim;
     const live = sim && (sim.ball.inFlight || sim.ball.live) && sim.state.phase === 'in_play';
-    if (!live || this.pin) {
-      this.panGoal = 0;
-    } else {
+    let home = true;
+    if (live && !this.pin) {
       const f = this.solutions[this.framing];
-      const view = this.panView;
+      const view = this.followView;
       view.pos.copy(f.pos);
       view.quat.copy(f.quat);
-      _qy.setFromAxisAngle(_YAXIS, this.pan);
-      view.quat.premultiply(_qy);
-      view.right.set(1, 0, 0).applyQuaternion(view.quat);
+      _qx.setFromAxisAngle(_XAXIS, this.tilt);
+      view.quat.multiply(_qx);                       // local X: pitch only, no roll, no yaw
       view.up.set(0, 1, 0).applyQuaternion(view.quat);
+      view.right.set(1, 0, 0).applyQuaternion(view.quat);
       view.fwd.set(0, 0, -1).applyQuaternion(view.quat);
       view.t = Math.tan(f.fov * RAD / 2);
-      const x = view.ndcX(sim.ball.pos);
-      if (x != null && Math.abs(x) > MOTION.panDead) {
-        const want = MOTION.panPark * Math.sign(x);
-        this.panGoal = this.pan + Math.atan((x - want) * view.t * SOLVE_ASPECT);
+      const y = view.ndcY(sim.ball.pos);
+      const lim = MOTION.tiltMaxDeg * RAD;
+      if (y != null && Math.abs(y) > MOTION.tiltDead) {
+        // d(ndcY)/d(tilt) = −1/t: tilting the camera up pushes the image DOWN the frame, so a
+        // ball that has climbed to +ndc is brought back by tilting up, i.e. by a positive step.
+        const want = MOTION.tiltPark * Math.sign(y);
+        const need = this.tilt + Math.atan((y - want) * view.t);
+        // A towering fly is out of reach of any move we are allowed to make. Rather than sit
+        // pinned at the stop with the whole cast off the bottom of the frame, the camera lets
+        // it go and settles back onto the stage, where the chalk landing marker is already
+        // drawing the answer on the ground (DESIGN-BIBLE §2.5).
+        if (Math.abs(need) < lim * MOTION.tiltGiveUp) { this.tiltGoal = need; home = false; }
+      } else if (y != null) {
+        home = false;                                // ball is in the box: hold, do not drift
+        this.tiltGoal = this.tilt;
       }
     }
-    const lim = MOTION.panMaxDeg * RAD;
-    this.panGoal = THREE.MathUtils.clamp(this.panGoal, -lim, lim);
-    const k = 1 - Math.exp(-dt / MOTION.panTau);
-    let step = (this.panGoal - this.pan) * k;
-    const cap = MOTION.panRateDeg * RAD * dt;
-    step = THREE.MathUtils.clamp(step, -cap, cap);
-    this.pan += step;
+    if (home) this.tiltGoal = 0;
+    const cap0 = MOTION.tiltMaxDeg * RAD;
+    this.tiltGoal = THREE.MathUtils.clamp(this.tiltGoal, -cap0, cap0);
+    const tau = home ? MOTION.tiltHome : MOTION.tiltTau;
+    let step = (this.tiltGoal - this.tilt) * (1 - Math.exp(-dt / tau));
+    const cap = MOTION.tiltRateDeg * RAD * dt;
+    this.tilt += THREE.MathUtils.clamp(step, -cap, cap);
+    if (Math.abs(this.tilt) < 1e-5) this.tilt = 0;
   },
 
   /** Put the camera where the director says it is, and remember exactly where that was. */
@@ -559,9 +600,9 @@ export default registerSystem({
     const c = app.camera;
     c.position.copy(f.pos);
     c.quaternion.copy(f.quat);
-    if (this.pan !== 0) {
-      _qy.setFromAxisAngle(_YAXIS, this.pan);
-      c.quaternion.premultiply(_qy);
+    if (this.tilt !== 0) {
+      _qx.setFromAxisAngle(_XAXIS, this.tilt);
+      c.quaternion.multiply(_qx);
     }
     if (this.pushT >= 0) {
       const u = THREE.MathUtils.clamp(this.pushT / MOTION.pushTime, 0, 1);
@@ -626,10 +667,18 @@ registerScenario('cam_batting', {
 registerScenario('cam_field', {
   seed: 4242,
   setup: () => {
+    // A ball actually in play, low and over the infield, so a critic is judging the wide
+    // framing with the thing it exists to keep on screen actually on screen — and so
+    // tools/measure.mjs has a ball to hold against the 9 px floor in §17.3.
     APP.sim.reset(4242);
-    APP.clock.advance(0.9);
-    APP.sim.swing();
+    APP.clock.advance(0.62);
+    const b = APP.sim.ball;
+    b.pos.set(1.5, 5.2, 14);
+    b.vel.set(9, 7.5, 34);
+    b.live = true; b.inFlight = true;
+    APP.sim.state.phase = 'in_play';
+    APP.sim.playT = 0;
     pin('field');
   },
-  settle: 0.5,
+  settle: 0.22,
 });

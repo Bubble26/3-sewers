@@ -234,8 +234,8 @@ function alleyArch(ctx, lot) {
 // ─── the system ───────────────────────────────────────────────────────────────
 // §17.4: the camera CUTS, it does not fly. These are locked framings, nothing more.
 const DEFAULT_CAM = { pos: [0, 12, -34], look: [0, 4, 30], fov: 46 };
-const BLOCK_CAM = { pos: [-2.5, 18, -56], look: [1.5, 17.4, 78], fov: 20 };
-const DETAIL_CAM = { pos: [-13.5, 15.5, -14], look: [30, 26, 62], fov: 30 };
+const BLOCK_CAM = { pos: [0, 38, -58], look: [0.5, 37.4, 84], fov: 20 };
+const DETAIL_CAM = { pos: [-14, 9, 26], look: [32, 35, 62], fov: 26 };
 
 export default registerSystem({
   name: 'street',
@@ -334,7 +334,7 @@ export default registerSystem({
 
   onScenario(name, app) {
     // the train's phase is part of the frame, so it has to be deterministic per scenario
-    this.t = name === 'stage_wide' || name === 'block_tour' ? 6.4 : name === 'backdrop_layers' ? 3.1 : 0;
+    this.t = name === 'stage_wide' || name === 'block_tour' ? 1.73 : name === 'backdrop_layers' ? 3.9 : 0;
   },
 
   update(dt, app) {
@@ -355,14 +355,14 @@ function lock(app, cam) {
   app.camera.updateProjectionMatrix();
 }
 
-/** The block, long lens, from the batter's end: the wings and the notch in one frame. */
+/** The block as an elevation, from a second-floor window: wings, near card, notch, El. */
 registerScenario('block_tour', {
   seed: 1925,
   setup: ({ app }) => { app.sim.reset(1925); lock(app, BLOCK_CAM); },
   settle: 0.4,
 });
 
-/** Close on the wing relief — cornice, fire escape, sills, sign band. */
+/** Close on the wing relief, looking up: cornice, fire escape, sills, sign band, ghost. */
 registerScenario('facade_detail', {
   seed: 1925,
   setup: ({ app }) => { app.sim.reset(1925); lock(app, DETAIL_CAM); },

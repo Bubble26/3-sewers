@@ -351,10 +351,22 @@ function wagonBay(card, lot, r) {
   const half = 6.2, head = 11.0, spring = 8.6;
   const wall = (f, n, c) => brickK(lot, c[1]);
 
-  // blind brick either side of the opening, and the spandrel over the arch
-  W.box(xf, 0, z0, xf + 0.9, M.ground, cz - half, wall, 'nx', 8);
-  W.box(xf, 0, cz + half, xf + 0.9, M.ground, z1, wall, 'nx', 8);
+  // blind brick either side of the opening, and the spandrel over the arch. Banded, because
+  // one flat quad of brick is the fastest way to make a wall look like a texture swatch.
+  const bands = [0, 2.1, 5.4, 8.6, M.ground];
+  for (let i = 0; i < bands.length - 1; i++) {
+    const b0 = bands[i], b1 = bands[i + 1];
+    const k = 1 - 0.055 * (i % 2) - 0.03 * i;
+    const band = (f, n, c) => { const m = wall(f, n, c); return [m[0] * k, m[1] * k, m[2] * k]; };
+    W.box(xf, b0, z0, xf + 0.9, b1, cz - half, band, 'nx', 8);
+    W.box(xf, b0, cz + half, xf + 0.9, b1, z1, band, 'nx', 8);
+  }
   W.box(xf, head + 1.4, cz - half, xf + 0.9, M.ground, cz + half, wall, 'nx', 8);
+  // brownstone water table along the foot of the wall — the one horizontal at kid height
+  for (const [a, b] of [[z0, cz - half], [cz + half, z1]]) {
+    Tb.box(xf - 0.34, 1.55, a, xf + 0.1, 2.1, b,
+      (f, n, c) => shadeLin(lot.stoneHex, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.45 : 0), 'nx py ny');
+  }
 
   // the opening: recessed, brown, never black (Law 2)
   const deep = 3.6;
@@ -453,9 +465,9 @@ function parapetPots(card, lot, r) {
   }
   // a flagpole, because somebody put one up in 1918 and nobody has taken it down
   const fz = z0 + M.lot * 0.84;
-  Tb.box(lot.xf - 0.6, top - 1.2, fz - 0.13, lot.xf - 0.34, top + 12.5, fz + 0.13,
+  Tb.box(lot.xf - 0.7, top - 1.2, fz - 0.19, lot.xf - 0.32, top + 8.2, fz + 0.19,
     () => shadeLin(0x8e8579, 0.5), 'nx px pz nz');
-  Tb.cyl(lot.xf - 0.47, fz, 0.34, top + 12.5, top + 13.1, 7, (n, c) => shadeLin(0xb8924a, litOf(n, c[0], c[1], c[2])));
+  Tb.cyl(lot.xf - 0.51, fz, 0.42, top + 8.2, top + 8.9, 7, (n, c) => shadeLin(0xb8924a, litOf(n, c[0], c[1], c[2])));
 }
 
 /** The card's own sidewalk: cards stand on nothing, so each one brings its ground with it. */
@@ -540,13 +552,13 @@ function apron(card, z0, z1, half) {
  * step is the whole trick of a stage set — it buys depth the lens is not allowed to.
  */
 const MID = [
-  { x: 8, st: 5, brick: 'red', fe: 1, pigeons: 1, flankSign: 'goldDust' },
-  { x: 33, st: 4, brick: 'brown', fe: 1, tank: 1 },
-  { x: 58, st: 5, brick: 'ochre', fe: 1, tank: 1 },
-  { x: 83, st: 4, brick: 'red', fe: 1, coop: 1 },
-  { x: -61, st: 5, brick: 'brown', fe: 1, coop: 1, pigeons: 1 },
-  { x: -86, st: 4, brick: 'red', fe: 1, tank: 1 },
-  { x: -111, st: 5, brick: 'ochre', fe: 1, tank: 1 },
+  { x: 0, st: 5, brick: 'red', fe: 1, pigeons: 1, flankSign: 'goldDust' },
+  { x: 25, st: 4, brick: 'brown', fe: 1, tank: 1 },
+  { x: 50, st: 5, brick: 'ochre', fe: 1, tank: 1 },
+  { x: 75, st: 4, brick: 'red', fe: 1, coop: 1 },
+  { x: -75, st: 5, brick: 'brown', fe: 1, coop: 1, pigeons: 1 },
+  { x: -100, st: 4, brick: 'red', fe: 1, tank: 1 },
+  { x: -125, st: 5, brick: 'ochre', fe: 1, tank: 1 },
 ];
 
 function buildMidBlock(card) {
@@ -591,12 +603,18 @@ function massRow(card, o) {
       Tb.box(x + 0.7, 0, z, x + w - 0.7, h, z + o.depth,
         (f, n, c) => shadeLin(hex, farLit(n, c, SH) * 0.96, f === 'ny' ? 0.4 : 0), 'nz px nx py');
       // painted window rows — at this distance a window is a rectangle of value, nothing more
-      const rows = Math.max(1, Math.round(h / 40));
+      const rows = Math.max(1, Math.round(h / 21));
       for (let k = 0; k < rows; k++) {
         const y0 = 2 + (k / rows) * (h - 4), y1 = 2 + ((k + 1) / rows) * (h - 4);
         Sb.quad([x + w - 1.5, y0, z - 0.12], [x + 1.5, y0, z - 0.12],
           [x + 1.5, y1, z - 0.12], [x + w - 1.5, y1, z - 0.12],
-          texTint(0.34 * clamp01((y0 - o.shadeTo) / 24 + 0.25), 0.05), uv, [0, 0, -1]);
+          texTint(0.34 * clamp01((y0 - o.shadeTo) / 24 + 0.28), 0.05), uv, [0, 0, -1]);
+      }
+      // a string course or two: the horizontal that stops a far wall reading as a slab
+      for (let k = 1; k < rows; k += 2) {
+        const yy = 2 + (k / rows) * (h - 4);
+        Tb.box(x + 0.5, yy - 0.55, z - 0.5, x + w - 0.5, yy, z + 0.4,
+          (f, n, c) => shadeLin(0x8a7f70, farLit(n, c, SH) * 0.92, f === 'ny' ? 0.4 : 0), 'nz py ny');
       }
       Tb.box(x, h, z - 2.0, x + w, h + 2.2, z + 1.4,
         (f, n, c) => shadeLin(r.chance(0.5) ? 0x4c4a3c : 0x5b3b33, farLit(n, c, SH) * 0.9,
@@ -689,7 +707,7 @@ export function buildBackdrop(atlas) {
     const card = new Card(atlas, spec);
     if (spec.key === 'nearFacade') {
       buildNearFacade(card);
-      relightCard(card, { facing: 0.62, sunShift: 36, air: 0.07, bite: 0.16 });
+      relightCard(card, { facing: 0.63, sunShift: 36, air: 0.07, bite: 0.24 });
     } else if (spec.key === 'midBlock') {
       buildMidBlock(card);
       relightCard(card, { facing: 0.54, sunShift: 30, air: 0.30, bite: 0.12 });
@@ -698,7 +716,7 @@ export function buildBackdrop(atlas) {
     } else if (spec.key === 'elevated') {
       buildElevated(card.ctx);
       card.base.z = spec.z - (EL.nearCol + EL.farCol) / 2;
-      hazeCard(card, 0.64);
+      hazeCard(card, 0.52);
     } else {
       buildSky(card);
     }
@@ -765,7 +783,7 @@ registerScenario('backdrop_layers', {
   seed: 1925,
   setup: ({ app }) => {
     app.sim.reset(1925);
-    setCam(app, [300, 150, -60], [-20, 20, 180], 22);
+    setCam(app, [30, 44, -120], [-16, 28, 175], 18);
   },
   settle: 0.4,
 });

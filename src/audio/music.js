@@ -1357,7 +1357,7 @@ const WALKUPS = {
   sal: {
     inst: 'trombone', bpm: 146, chartStr: 'F6 | C7 F6', swing: MT.swingHot,
     mel: 'A4:2 A4:1 G4:1 F4:2 A4:2 | C5:3 A4:1 F4:4/',
-    trim: 0.7, rhythm: 'strut', taps: 4, glissTo: -7,
+    trim: 0.7, preroll: 0.78, rhythm: 'strut', taps: 4, glissTo: -7,
   },
   // Will not step on a crack: the tune skips the beat where the crack would be.
   kathleen: {
@@ -1920,7 +1920,10 @@ function addWalkupCue(id) {
   CUES[`walkup_${id}`] = {
     seconds: 6, loop: false, bus: 'game',
     gain: (WALKUPS[id] && WALKUPS[id].trim) || 1.4,
-    build(R, t0) { buildWalkup(R, id, t0 + 0.7); },
+    // 0.15 s of air before the sting, not 0.7: a walk-up fires the moment a kid
+    // is picked and half a second of nothing reads as a bug. Only Sal needs the
+    // long pre-roll, because his four manhole taps happen before his tune.
+    build(R, t0) { buildWalkup(R, id, t0 + ((WALKUPS[id] && WALKUPS[id].preroll) || 0.15)); },
   };
 }
 for (const kid of (ROSTER || [])) addWalkupCue(kid.id);
@@ -2000,7 +2003,7 @@ class Music {
     const ctx = this.ctx();
     if (!ctx) return false;
     if (this.live && !opts.layer) this.stop(0.12);
-    const t0 = ctx.currentTime + 0.06;
+    const t0 = ctx.currentTime + 0.06 + (opts.delay || 0);
     const loop = !!CUES[name].loop;
     const len = loop ? this.span(name) : (CUES[name].seconds || 6);
     const R = this.renderInto(ctx, name, t0, { ...opts, seconds: len, dest: this.dest() });
@@ -2219,7 +2222,34 @@ export default registerSystem({
     bus.on('hit', (p) => music.state({ rally: Math.min(1, music.mood.rally + ((p && p.bases) || 1) * 0.34), tension: 0 }));
     bus.on('run', () => music.state({ rally: 1, tension: 0 }));
     bus.on('out', () => music.state({ rally: music.mood.rally * 0.4 }));
-    bus.on('ball:sewer', () => music.play('stinger_sewer'));
+    /**
+     * BIBLE §7.3: a kid's sting fires in exactly three places — the card, the
+     * walk-up, and the trot after a sewer shot. Card and walk-up are wired here;
+     * the trot layers the batter's own sting 1.2 s behind the fanfare, which is
+     * the beat at which the original plays the kid's theme as they round.
+     * Payload shapes differ between pieces, so read an id out of whatever comes.
+     */
+    const kidId = (p) => {
+      if (!p) return null;
+      const c = p.id || p.kid || p.who || p.batterId ||
+        (p.batter && (p.batter.id || (typeof p.batter === 'string' ? p.batter : null)));
+      return (typeof c === 'string' && CUES[`walkup_${c}`]) ? c : null;
+    };
+    let atBat = null;
+    for (const ev of ['atbat:begin', 'batter:up', 'walkup', 'batter:ready']) {
+      bus.on(ev, (p) => {
+        const id = kidId(p);
+        if (!id) return;
+        atBat = id;
+        music.play(`walkup_${id}`, { layer: true });
+      });
+    }
+    bus.on('ball:sewer', () => {
+      music.play('stinger_sewer');
+      // scheduled on the AUDIO clock, not a setTimeout: wall-clock timing is
+      // non-deterministic and the harness forbids it (docs/CONTRACT.md)
+      if (atBat) music.play(`walkup_${atBat}`, { layer: true, delay: 1.2 });
+    });
     bus.on('half:end', () => music.play('between_innings'));
     bus.on('game:over', (p) => {
       const s = (p && p.score) || { home: 0, away: 0 };
