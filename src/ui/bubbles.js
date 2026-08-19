@@ -119,6 +119,17 @@ const PAD = {
 };
 const CARDW = { dot: 512, gooch: 512, kid: 264 };
 
+/* --- the three rules of where paper may sit ------------------------------
+ * INSET   nothing touches the frame edge, ever. A clipped card is a card the
+ *         player has to guess at, and the climb film clipped two of them.
+ * DRIFT   a card slides out of the way at a walking pace, not a whip pan.
+ * SETTLE  and it only does it ONCE per thing said. After that it is a piece of
+ *         paper somebody is holding up, not a balloon on a string.
+ */
+const INSET = 32;
+const DRIFT = 40;
+const SETTLE = 0.85;
+
 /* ============================================================================
    2. Halftone — what makes newsprint newsprint
    ========================================================================= */
@@ -368,6 +379,16 @@ function headCanvas(who, size) {
 
 let SEQ = 0;
 
+/**
+ * How many syllables are in a line, near enough to drive a bounce. The real
+ * count comes from announcer.js's sylls() and arrives on the card as `o.syls`;
+ * this is the fallback, kept local so the paper never has to import the writing.
+ */
+function sylCount(t) {
+  const m = String(t).toLowerCase().match(/[aeiouy]+/g);
+  return Math.max(1, m ? m.length : 1);
+}
+
 class Card {
   constructor(o) {
     this.id = ++SEQ;
@@ -390,6 +411,14 @@ class Card {
     this.goal = { x: 0, y: 0 };
     this.rect = { x: 0, y: 0, w: 0, h: 0 };
     this.lines = null;
+    /* one frame of life on the paper: the card is snapped UP and dropped back
+       every time the words change, and the last word of the last line rides the
+       syllable rate of the line being said (§7.2 cadence, made visible) */
+    this.snapAt = 0;
+    this.settle = SETTLE;
+    this.syls = o.syls || sylCount(this.text);
+    this.sylRate = this.syls / Math.max(0.5, this.life);
+    this.center = this.kind === 'beat';
     this.reseed();
   }
 
@@ -406,9 +435,14 @@ class Card {
     if (next === this.text && o.grow == null) return;
     this.text = next;
     this.kind = o.kind || this.kind;
+    this.center = this.kind === 'beat';
     if (o.grow != null) this.growGoal = o.grow;
     if (o.hold != null) { this.life = o.hold; this.age = Math.min(this.age, 0.05); }
     this.punch = 1;
+    this.snapAt = this.age;          // and it hops, because paper hops
+    this.settle = SETTLE;            // one step aside per thing said, then still
+    this.syls = o.syls || sylCount(next);
+    this.sylRate = this.syls / Math.max(0.5, this.life);
     this.reseed();
   }
 
@@ -478,7 +512,7 @@ class Bubbles {
     card.slot = slot;
     const prev = this.cards.find((c) => c.slot === slot && !c.out);
     if (prev && prev.who !== 'kid' && !o.fresh) {
-      prev.setText(card.text, { kind: card.kind, hold: card.life, grow: card.grow });
+      prev.setText(card.text, { kind: card.kind, hold: card.life, grow: card.grow, syls: card.syls });
       prev.body = card.body; prev.world = card.world; prev.accent = card.accent;
       return prev;
     }
@@ -509,6 +543,7 @@ class Bubbles {
     this.mount(); this.resize();
     this.survey(app || APP);
     for (const c of this.cards) { this.layout(c); this.solve(app || APP, c, dt); }
+    this.separate();
   }
 
   /* --- geometry ---------------------------------------------------------- */
@@ -530,7 +565,7 @@ class Bubbles {
     if (!head) return null;
     const px = foot ? Math.abs(foot.y - head.y) : 90 * this.U;
     const on = head.x > -40 && head.x < this.w + 40 && head.y > -40 && head.y < this.h + 40;
-    return { x: head.x, y: head.y, px: Math.max(24, px), on };
+    return { x: head.x, y: head.y, foot, px: Math.max(24, px), on };
   }
 
   /** Is this kid actually in the frame right now. A bubble for somebody you
@@ -547,8 +582,11 @@ class Bubbles {
     const B = this.blocked;
     B.length = 0;
     const U = this.U;
-    // 1. the scorebug, which is DOM and lives top-centre
-    B.push({ x: this.w * 0.5 - 190 * U, y: 0, w: 380 * U, h: 96 * U, weight: 1 });
+    // 1. THE SCOREBUG. Hard priority — above the ball and above the batter —
+    //    because it is the only permanently readable object in the frame and a
+    //    card drawn over it is a card drawn over the score. 640->960 x 12->100
+    //    at 1600x900, scaled with the frame.
+    B.push({ x: this.w * 0.5 - 160 * U, y: 12 * U, w: 320 * U, h: 88 * U, weight: 6 });
     // 2. the ball. Always. It is the readability accent of the whole game (§2.4).
     const ball = app.sim?.ball;
     if (ball && (ball.live || ball.inFlight)) {
@@ -583,6 +621,21 @@ class Bubbles {
   /** Lay a card out: wrap the words, measure the paper. */
   layout(card) {
     const U = this.U;
+    // THE HELD BEAT. Three dots and nothing else, on a card sized for exactly
+    // that, drawn as three real dots rather than as type. A pause has to look
+    // like a decision — a small '. . .' inside a full-width banner looks like a
+    // card that failed to load, and the pause before a close call is the best
+    // timing idea in the piece.
+    if (card.kind === 'beat') {
+      card.lines = [];
+      card.size = 30 * U;
+      card.badge = card.who === 'kid' ? 0 : 86 * U;
+      card.pad = card.who === 'kid' ? PAD.kid : PAD.booth;
+      card.rect.w = card.badge + 168 * U;
+      card.rect.h = 96 * U;
+      card.bleed = 0;
+      return card;
+    }
     const isKid = card.who === 'kid';
     const shout = card.kind === 'shout';
     const size = (isKid ? (shout ? TYPE.kidShout : TYPE.kid) : (shout ? TYPE.announceShout : TYPE.announce)) * U;
@@ -606,7 +659,7 @@ class Bubbles {
   /** Put it somewhere it does not cover the game. */
   solve(app, card, dt) {
     const U = this.U, W = this.w, H = this.h;
-    const m = 30 * U;
+    const m = INSET * U;
     const cands = [];
     if (card.who === 'kid') {
       const a = this.kidAnchor(app, card.body) || { x: W * 0.5, y: H * 0.55, px: 90 * U };
@@ -641,8 +694,7 @@ class Bubbles {
     const gw = card.rect.w * Math.max(1, card.grow), gh = card.rect.h * Math.max(1, card.grow);
     const ox = (gw - card.rect.w) / 2, oy = (gh - card.rect.h) / 2;
     for (const c of cands) {
-      const x = clamp(c.x, m * 0.4 + ox, W - m * 0.4 - card.rect.w - ox);
-      const y = clamp(c.y, m * 0.35 + oy, H - m * 0.35 - card.rect.h - oy);
+      const { x, y } = this.confineTo(card, c.x, c.y, ox, oy);
       const bl = card.bleed || 0;
       const r = { x: x - bl, y: y - bl, w: card.rect.w + bl * 2, h: card.rect.h + bl * 2 };
       let cost = c.pri * 900 * U * U;
@@ -655,13 +707,82 @@ class Bubbles {
     }
     card.goal = best;
     if (!card.pos || dt <= 0) card.pos = { x: best.x, y: best.y };
-    else {
-      // damped: a card gets out of the ball's way, it does not teleport
+    else if (card.settle > 0) {
+      // ONE step aside per thing said, taken at a walking pace. The old solver
+      // gave every card an unlimited budget and a 0.085 s time constant, so a
+      // card toured the left half of the frame for four seconds chasing a ball.
+      card.settle = Math.max(0, card.settle - dt);
       const k = 1 - Math.exp(-dt / 0.085);
-      card.pos.x += (best.x - card.pos.x) * k;
-      card.pos.y += (best.y - card.pos.y) * k;
+      let dx = (best.x - card.pos.x) * k, dy = (best.y - card.pos.y) * k;
+      const cap = DRIFT * U * dt;
+      const d = Math.hypot(dx, dy);
+      if (d > cap) { dx *= cap / d; dy *= cap / d; }
+      card.pos.x += dx; card.pos.y += dy;
     }
     card.rect.x = card.pos.x; card.rect.y = card.pos.y;
+  }
+
+  /** The box a card actually paints into, grown and spiked. */
+  grown(card) {
+    const g = Math.max(1, card.grow), bl = card.bleed || 0;
+    const w = card.rect.w * g + bl * 2, h = card.rect.h * g + bl * 2;
+    return { x: card.pos.x - (w - card.rect.w) / 2, y: card.pos.y - (h - card.rect.h) / 2, w, h };
+  }
+
+  /** Nothing touches the frame edge. Ever. */
+  confineTo(card, x, y, ox, oy) {
+    const U = this.U, W = this.w, H = this.h, inset = INSET * U;
+    const bl = card.bleed || 0;
+    const lo = inset + ox + bl, hi = W - inset - card.rect.w - ox - bl;
+    const loY = inset + oy + bl, hiY = H - inset - card.rect.h - oy - bl;
+    return {
+      x: hi >= lo ? clamp(x, lo, hi) : (W - card.rect.w) / 2,
+      y: hiY >= loY ? clamp(y, loY, hiY) : (H - card.rect.h) / 2,
+    };
+  }
+
+  confine(card) {
+    const g = Math.max(1, card.grow);
+    const ox = (card.rect.w * g - card.rect.w) / 2, oy = (card.rect.h * g - card.rect.h) / 2;
+    const p = this.confineTo(card, card.pos.x, card.pos.y, ox, oy);
+    card.pos.x = p.x; card.pos.y = p.y;
+  }
+
+  /**
+   * The solver's cost function makes an overlap expensive. This makes it
+   * impossible: after everybody has picked a spot, any two pieces of paper that
+   * are still on top of each other push apart along their shallow axis. The
+   * announcers are pinned to their corners and barely move; the kid, who is the
+   * one who turned up late, does most of the walking.
+   */
+  separate() {
+    const list = this.cards.filter((c) => c.pos && c.rect.w);
+    if (list.length < 2) return;
+    for (let pass = 0; pass < 3; pass++) {
+      let moved = false;
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i], b = list[j];
+          const A = this.grown(a), B = this.grown(b);
+          const ox = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x);
+          const oy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y);
+          if (ox <= 0 || oy <= 0) continue;
+          const wa = a.who === 'kid' ? 1 : 0.2, wb = b.who === 'kid' ? 1 : 0.2;
+          const tot = wa + wb;
+          if (oy <= ox) {
+            const s = (oy + 1) * (A.y + A.h / 2 <= B.y + B.h / 2 ? -1 : 1);
+            a.pos.y += s * (wa / tot); b.pos.y -= s * (wb / tot);
+          } else {
+            const s = (ox + 1) * (A.x + A.w / 2 <= B.x + B.w / 2 ? -1 : 1);
+            a.pos.x += s * (wa / tot); b.pos.x -= s * (wb / tot);
+          }
+          this.confine(a); this.confine(b);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    for (const c of list) { c.rect.x = c.pos.x; c.rect.y = c.pos.y; }
   }
 
   /* --- paint ------------------------------------------------------------- */
@@ -678,9 +799,12 @@ class Bubbles {
     if (this.cards.some((c) => !c.pos)) {
       this.survey(app);
       for (const c of this.cards) if (!c.pos) { this.layout(c); this.solve(app, c, 0); }
+      this.separate();
     }
     // announcers behind, kids in front — a kid yelling wins the frame
     const order = [...this.cards].sort((a, b) => (a.who === 'kid' ? 1 : 0) - (b.who === 'kid' ? 1 : 0));
+    // who is talking, under everything, before any paper goes down
+    for (const c of order) if (c.who === 'kid') this.spotlight(g, c);
     for (const c of order) this.draw(g, c);
   }
 
@@ -811,10 +935,14 @@ class Bubbles {
     const s = card.scale;
     const rnd = new RNG(card.seed);
     const tilt = (rnd.next() - 0.5) * 0.036;      // ±1° — seeded, stable, never per frame
+    // ONE FRAME OF LIFE: every time the words change the card is snapped four
+    // pixels up and dropped back over 90 ms, on the same overshoot easing the
+    // scale uses. Paper that never moves is a caption.
+    const lift = -(1 - pop(clamp((card.age - card.snapAt) / 0.09, 0, 1))) * 4 * U;
 
     g.save();
     g.globalAlpha = a;
-    g.translate(cx, cy);
+    g.translate(cx, cy + lift);
     g.rotate(tilt);
     g.scale(s, s);
     g.translate(-cx, -cy);
@@ -883,6 +1011,21 @@ class Bubbles {
     }
 
     /* --- the words -------------------------------------------------------- */
+    if (card.kind === 'beat') {
+      // three dots, hand sized, the middle one riding a slow breath. Nobody in
+      // the booth is saying anything and the paper says so out loud.
+      const bx = r.x + card.badge + (r.w - card.badge) / 2;
+      const by = r.y + r.h * 0.56;
+      const rad = 6.4 * U;
+      for (let i = -1; i <= 1; i++) {
+        const dip = i === 0 ? -Math.abs(Math.sin(card.age * 3.1)) * 3.0 * U : 0;
+        g.beginPath();
+        g.arc(bx + i * 26 * U, by + dip, rad, 0, TAU);
+        g.fillStyle = C(st.ink); g.fill();
+      }
+      g.restore();
+      return;
+    }
     const size = card.size;
     const P = card.pad || PAD.booth;
     const x0 = r.x + P.x * U + card.badge;
@@ -893,8 +1036,25 @@ class Bubbles {
       color: C(st.ink),
       shadow: { dx: Math.max(1, 1.6 * U), dy: Math.max(1, 1.7 * U), color: C(mix(st.paper, st.edge, 0.72)) },
     };
-    for (const line of card.lines) {
-      slab(g, line, x0, y, size, opt);
+    // one glyph advance, so the bouncing last word lands exactly where the
+    // straight rendering would have put it
+    const adv = 6 * (size / 10) * TYPE.condense + TYPE.track * size;
+    // the last word rides the syllable rate of the line being said, 2 px, for as
+    // long as the beat is held. It is the difference between a talking card and
+    // a printed one, and it costs one sine.
+    const live = card.age < card.life;
+    const bob = live ? -Math.abs(Math.sin(card.age * Math.PI * card.sylRate)) * 2 * U : 0;
+    for (let i = 0; i < card.lines.length; i++) {
+      const line = card.lines[i];
+      const cw = card.center ? (r.w - card.badge - P.x * U * 2 - slabW(line, size, opt)) / 2 : 0;
+      const k = line.lastIndexOf(' ');
+      if (i === card.lines.length - 1 && bob !== 0 && k > 0) {
+        const head = line.slice(0, k + 1);
+        slab(g, head, x0 + cw, y, size, opt);
+        slab(g, line.slice(k + 1), x0 + cw + head.length * adv, y + bob, size, opt);
+      } else {
+        slab(g, line, x0 + cw, y + (i === card.lines.length - 1 ? bob : 0), size, opt);
+      }
       y += size * TYPE.lead;
     }
     g.restore();
@@ -961,6 +1121,61 @@ class Bubbles {
     g.fillStyle = C(mix(AIR.shadowTint, INK, 0.4)); g.fill();
     g.restore();
     g.drawImage(hc, bx, by, d, d);
+  }
+
+  /**
+   * WHO IS ACTUALLY SAYING IT.
+   * A card near a kid is a caption. A card near a kid who is visibly making a
+   * noise is a performance, and that is where Backyard wins: its kids are seen
+   * to say the line. The rig cannot yet play a speak clip (chars/players.js is
+   * another piece), so the eye is sent to the right face in screen space
+   * instead: a chalk ring opening at his feet and two short arcs off his head,
+   * drawn in HIS accent — the same colour as the band along the top of his
+   * paper — so the mark and the card read as one object. It lives 0.55 s, which
+   * is the length of a shout, and then the street is quiet again.
+   */
+  spotlight(g, card) {
+    const a = card.anchor;
+    if (!a || a.on === false) return;
+    const A = card.alpha;
+    if (A <= 0.01) return;
+    const U = this.U;
+    const t = clamp(card.age / 0.55, 0, 1);   // the pop
+    const k = (1 - t) * (1 - t);
+    const acc = C(card.accent);
+    g.save();
+    g.lineCap = 'round';
+    if (a.foot) {
+      // the ring opens once, fast, and then stays lit under him for as long as
+      // he is talking — so a STILL also tells you which kid is making the noise
+      const rx = a.px * (0.34 + t * 0.30);
+      g.globalAlpha = A * (0.24 + 0.46 * k);
+      g.strokeStyle = acc;
+      g.lineWidth = Math.max(2, 5.0 * U * (1 - t * 0.45));
+      g.beginPath();
+      g.ellipse(a.foot.x, a.foot.y, rx, rx * 0.30, 0, 0, TAU);
+      g.stroke();
+      g.globalAlpha = A * (0.12 + 0.22 * k);
+      g.strokeStyle = C(inkOf(card.accent));
+      g.lineWidth = Math.max(1, 1.8 * U);
+      g.stroke();
+    }
+    // the noise coming out of him: two arcs on the side the card is on, and
+    // they go out with the shout rather than hanging around
+    if (t < 1) {
+      const side = card.pos && (card.pos.x + card.rect.w / 2) < a.x ? -1 : 1;
+      g.globalAlpha = A * 0.8 * k;
+      g.strokeStyle = acc;
+      g.lineWidth = Math.max(1.8, 3.6 * U);
+      for (let i = 0; i < 2; i++) {
+        const rr = a.px * (0.26 + i * 0.15) + t * a.px * 0.10;
+        const mid = side > 0 ? 0 : Math.PI;
+        g.beginPath();
+        g.arc(a.x, a.y + a.px * 0.10, rr, mid - 0.62, mid + 0.62);
+        g.stroke();
+      }
+    }
+    g.restore();
   }
 
   /** A folded strip of the same paper, pointing at whoever is talking. */
@@ -1051,7 +1266,9 @@ registerScenario('bubbles', {
     bubbles.clear();
     if (bubbles.demo) bubbles.demo('bubbles');
   },
-  settle: 0.34,
+  // late enough that Dot's card has aged and the Gooch's is fresh: the still
+  // shows the ORDER the two-hander was said in, which is the whole joke
+  settle: 2.1,
 });
 
 registerScenario('chatter', {
@@ -1062,5 +1279,7 @@ registerScenario('chatter', {
     bubbles.clear();
     if (bubbles.demo) bubbles.demo('chatter');
   },
-  settle: 0.30,
+  // setup, beat, loser — three cards in age order, the loser freshest and
+  // holding longest, and the Gooch arriving after all of it
+  settle: 3.0,
 });

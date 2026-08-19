@@ -1092,3 +1092,34 @@ Characters stay real-time 3D meshes with real lighting — that is the "3D chara
 **Costs:** the receding canyon composition, free camera movement, and any gameplay idea that
 depends on deep space. The street is now a set, three or four bays wide, dressed to be looked
 at from two angles.
+
+### 17.6 Staged scale is legal — amendment
+
+A long lens buys us a flat street and costs us the size hierarchy that tells a player who the
+subject of a shot is. Round-3 critique of the camera piece measured BATTING at batter 23.0%,
+pitcher 19.3%, and an uninvolved bystander 24.1% — three people the same size, so the frame has
+no subject. That is the lens doing exactly what §17.2 asks of it.
+
+**Resolution: we cheat, the way a stage does.** This is not a 3D world and we owe it no
+photographic consistency. Actors carry a **stage scale** by role, applied on top of their
+position:
+
+| Role in the current framing | Stage scale |
+|---|---|
+| The subject (batter in BATTING, the fielder making the play in FIELD) | **1.00** |
+| The second party (pitcher in BATTING, the runner being thrown out) | **0.82** |
+| Everyone else in play | **0.70** |
+| Bystanders, spectators, kids not in the game | **0.55**, and never in the near third of frame |
+
+The subject must read at least **1.35×** the height of the next-largest kid in frame. That
+ratio, not the lens, is what makes a shot legible.
+
+Scale transitions on a cut are instant and on a role change are eased over 0.25s. Contact
+shadows, outline weight and any ground contact scale with the actor, or the cheat shows.
+
+`tools/measure.mjs` measures **rendered** height, so it governs this unchanged — the §17.3
+floors and ceilings still apply to whatever ends up on screen. What §17.6 removes is the
+requirement that those heights come from distance alone.
+
+**The one rule that survives:** the ball is never scaled. It is the only object in the game whose
+size is honest, because its size is how a player reads its distance.

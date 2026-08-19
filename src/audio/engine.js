@@ -18,13 +18,25 @@
  * THE GRAPH
  * ---------------------------------------------------------------------------
  *
- *   cue -> [cue gain x play gain x 1/(1+d/ref)] -> [air lowpass(d)] -> [pan]
- *              |
+ *   cue.build()  ---------------------------\
+ *   or a rendered AudioBuffer of cue.build() -+-> [gain: cue x play x 1/(1+d/ref)]
+ *                                                        |
+ *                     [delay d/1125] -> [highshelf 1800 Hz, -16 dB by 170 ft]
+ *                                                        |
+ *                     [lowpass 6500*exp(-d/220)+900] -> [pan]
+ *                                                        |
  *              +-> bus: sfx | voice | chatter | music | ambience --> [mix x master]
  *              |                                                        |
  *              +-> canyon send(d) -> [convolver] -> [reverb bus] -------+
  *                                                                       |
  *                                        [1/range] -> [soft clip] -> [range] -> out
+ *
+ * The five most expensive cues — the city bed, the deli window, the El, the
+ * ash-can lid and the knife grinder — are RENDERED at unlock (precache(), three
+ * seeded variants each) and played back as BufferSources through that identical
+ * chain, because building 860 nodes on the main thread at the instant the ball
+ * hits the glass is a guaranteed dropped frame. Everything after the first arrow
+ * is still computed per event, so a cached voice still moves in space.
  *
  * Bus levels obey DESIGN-BIBLE §7.5: during a pitch the loudest thing on the mix
  * is the kids, music is a bed, and ambience sits underneath everything and ducks
@@ -81,14 +93,41 @@ export const MIX = {
   // loudest cues now tops out at 0.992 with zero samples at or over 0.999, and a
   // 5x render still holds. The claim is now: nothing leaves this graph above 1.0.
   limiter: { knee: 0.62, range: 2.0, ceiling: 0.98 },
+  // ---------------------------------------------------------------------------
+  // SPACE. Distance used to be a volume knob wearing a lowpass as a disguise: the
+  // air filter was 19000*exp(-d/95), which at 220 ft lands at 1889 Hz and therefore
+  // never touched a pock whose energy is at 680 Hz or a clang whose energy is at
+  // 266 Hz. Measured, `crack` moved 610 -> 595 Hz across 0->220 ft and `clang_iron`
+  // moved 266 -> 267 Hz. Under 3%. The block had a foreground and a quieter
+  // foreground, which is not the same thing as depth.
+  //
+  // Four things now change with distance, and only one of them is level:
+  //   1. LEVEL      1/(1 + (d/ref)^rolloff), unchanged.
+  //   2. TILT       a highshelf at 1800 Hz going to -16 dB by 170 ft. This is the
+  //                 one that actually works, because a shelf attenuates the whole
+  //                 top of the spectrum instead of waiting for a corner frequency
+  //                 to arrive somewhere near the signal.
+  //   3. BANDWIDTH  a lowpass at 6500*exp(-d/220) + 900, so the far end of the
+  //                 block is genuinely band-limited and not merely tilted.
+  //   4. TIME       sound goes 1125 ft/s. The church at 320 ft arrives 90 ms late.
+  //                 This is the cheapest "that is far away" cue there is and the
+  //                 graph had none of it.
+  // Plus a much steeper canyon send — 0.70 by 130 ft instead of 0.46 by 210 — so an
+  // event out at the corner is audibly wetter than dry across sixty feet of brick.
   space: {
     refDist: 14,        // feet at which a sound is half as loud
     rolloff: 0.85,
-    airDist: 95,        // feet per e-fold of high frequency lost to air and soot
+    shelfHz: 1800,      // the tilt: everything above here goes away with distance
+    shelfDb: 16,        // dB of tilt at shelfDist and beyond
+    shelfDist: 170,
+    airTop: 6500,       // bandwidth: airTop*exp(-d/airDist) + minLp
+    airDist: 220,       // feet per e-fold of high frequency lost to air and soot
     minLp: 900, maxLp: 19000,
     panWidth: 22,       // feet of street that maps to full stereo width
     panMax: 0.72,
-    sendNear: 0.055, sendFar: 0.46, sendDist: 210,
+    sendNear: 0.055, sendFar: 0.70, sendDist: 130,
+    speed: 1125,        // ft/s. Propagation delay on the direct path.
+    maxDelay: 0.09,
   },
   reverb: {
     // the canyon: 60 ft of street between two 60 ft walls. Slapback first, then a
@@ -173,23 +212,48 @@ export function buildGraph(ctx) {
 }
 
 /**
- * Per-play voice chain: gain -> air lowpass -> pan -> bus, with a distance-scaled
- * tap into the canyon. Identical live and offline; renderOffline just passes the
- * dist/pan it was asked for instead of reading them off the camera.
+ * Per-play voice chain, and the only place distance means anything:
+ *
+ *   gain(d) -> delay(d) -> highshelf(d) -> lowpass(d) -> pan -> bus
+ *                                                        |
+ *                                                        +-> send(d) -> canyon
+ *
+ * Identical live and offline; renderOffline just passes the dist/pan it was
+ * asked for instead of reading them off the camera. See MIX.space for why each
+ * of the four terms is there and what it measured before it was.
  */
 function voiceChain(graph, cue, o) {
   const ctx = graph.ctx, S = MIX.space;
   const dist = Math.max(0, o.dist ?? 0);
   const g = ctx.createGain();
   g.gain.value = (cue.gain ?? 1) * (o.gain ?? 1) / (1 + Math.pow(dist / S.refDist, S.rolloff));
+  let tail = g;
 
+  // 4. TIME. Sound is slow. A clang off the fire escape at the far corner has to
+  //    cross the block before it gets here, and the ear reads that lateness as
+  //    distance before it reads anything else. Capped at 90 ms so nothing that
+  //    the player caused can ever feel unresponsive.
+  const late = Math.min(S.maxDelay, dist / S.speed);
+  if (late > 0.0005) {
+    const dl = ctx.createDelay(0.12);
+    dl.delayTime.value = late;
+    tail.connect(dl); tail = dl;
+  }
+
+  // 2. TILT. The whole top of the spectrum, not a corner frequency that has to
+  //    travel far enough to reach the signal before it does anything.
+  const tilt = ctx.createBiquadFilter();
+  tilt.type = 'highshelf';
+  tilt.frequency.value = S.shelfHz;
+  tilt.gain.value = -S.shelfDb * Math.min(1, dist / S.shelfDist);
+  tail.connect(tilt); tail = tilt;
+
+  // 3. BANDWIDTH. Soot, brick and two hundred feet of air.
   const air = ctx.createBiquadFilter();
   air.type = 'lowpass';
-  air.frequency.value = clamp(S.maxLp * Math.exp(-dist / S.airDist), S.minLp, S.maxLp);
+  air.frequency.value = clamp(S.airTop * Math.exp(-dist / S.airDist) + S.minLp, S.minLp, S.maxLp);
   air.Q.value = 0.7;
-
-  let tail = g;
-  g.connect(air); tail = air;
+  tail.connect(air); tail = air;
 
   if (ctx.createStereoPanner) {
     const p = ctx.createStereoPanner();
@@ -230,6 +294,56 @@ export function applyDuck(graph, source, t, seconds = 0.4) {
 }
 
 /* =============================================================================
+ * THE PRECACHE — why the biggest sounds are rendered instead of rebuilt
+ * ---------------------------------------------------------------------------
+ * Every cue in this game is synthesised, which used to mean every cue was
+ * ASSEMBLED OUT OF LIVE WEBAUDIO NODES ON THE MAIN THREAD AT THE MOMENT IT WAS
+ * HEARD. Measured on this build, by counting create* calls and timing the build:
+ *
+ *     city_bed        ~860 nodes   14.5 ms   re-fired every 7.5-10.5 s, forever
+ *     window_break     447 nodes    7.1 ms   at the exact instant the ball hits
+ *     el_train         418 nodes    5.8 ms
+ *     knife_grinder    226 nodes    6.5 ms
+ *     ashcan_lid       285 nodes    5.9 ms
+ *
+ * The frame budget at 60 fps is 16.7 ms and CONTRACT §3 names SwiftShader as the
+ * target, so that is a dropped frame on a metronome — and the one at the top of
+ * the list lands on the deli window, which is the single most important moment
+ * the block owns. `?harness=1` disables audio, so no tool in the repo could see
+ * it: shoot, film and playthrough never exercise the live path at all.
+ *
+ * So the five expensive cues are rendered ONCE, at unlock, three seeded variants
+ * each, into AudioBuffers — and after that the game plays a BufferSource. The
+ * rendering goes through cue.build(), the same function renderOffline() and
+ * tools/audition.mjs call, so the cache is not a second implementation of
+ * anything; it is the first implementation, evaluated early.
+ *
+ * WHY NOT LITERALLY renderOffline(). renderOffline() builds the whole mixer —
+ * buses, master, canyon, limiter — because that is what a critic must measure.
+ * Rendering through it and then playing the result back INTO that same mixer
+ * would apply the bus gain, the master gain, the reverb and the soft-clip curve
+ * twice, and the limiter is a non-linearity so it cannot be undone afterwards.
+ * renderCueBuffer() therefore taps the cue at exactly the point voiceChain()
+ * writes into — cue.build() into a unity gain — so a BufferSource fed through
+ * voiceChain() is sample-for-sample the live path, with distance, pan, bus and
+ * canyon send all still applied at play time and still moving per event.
+ * ========================================================================== */
+const BED_LEN = 12.0;                 // seconds of bed per rendered variant
+const BED_XF = 1.2;                   // equal-power crossfade between variants
+const BED_VARIANTS = 3;
+const BED_GAIN = 0.9;                 // what startBed() always passed to the bed
+const BED_SEEDS = [51925, 70119, 92531];
+
+/** 64-point equal-power crossfade pair. sin^2 + cos^2 = 1, so the sum is flat. */
+const FADE_IN = new Float32Array(64);
+const FADE_OUT = new Float32Array(64);
+for (let i = 0; i < 64; i++) {
+  const u = (i / 63) * (Math.PI / 2);
+  FADE_IN[i] = Math.sin(u);
+  FADE_OUT[i] = Math.cos(u);
+}
+
+/* =============================================================================
  * THE ENGINE
  * ========================================================================== */
 export class AudioEngine {
@@ -248,6 +362,14 @@ export class AudioEngine {
     this.lastPlay = new Map();
     this.lastVoice = null;
     this.log = [];
+    // --- the precache ---
+    this.bedBufs = null;     // AudioBuffer[] — the block, rendered
+    this.cueBufs = new Map();// cue name -> { bufs, speeds }
+    this.bedChain = null;    // ONE persistent voiceChain the bed sources feed
+    this.bedSlot = 0;
+    this.bedLast = -1;
+    this.bedNextAt = 0;
+    this._precache = null;
   }
 
   /* --- lifecycle ---------------------------------------------------------
@@ -268,6 +390,110 @@ export class AudioEngine {
   ensureGraph() { this.ensure(); return this.graph; }
   resume() { const c = this.ensure(); if (c && c.state === 'suspended') c.resume(); return c; }
   get now() { return this.ctx ? this.ctx.currentTime : 0; }
+
+  /* --- the precache ------------------------------------------------------
+   * See the block comment above the class. Rendered once at unlock, on the
+   * audio thread, while the player is still looking at the team select.
+   */
+
+  /**
+   * Render ONE cue to an AudioBuffer at the live context's sample rate, tapped
+   * at the point voiceChain() writes into: cue.build() straight into a unity
+   * gain. No buses, no master, no canyon, no limiter — those are applied at play
+   * time by the same voiceChain() every live cue goes through, so a cached voice
+   * and a built voice are the same signal at the same point in the graph.
+   */
+  async renderCueBuffer(name, { seconds = 2, seed = 1925, speed = 1, channels = 1 } = {}) {
+    const def = getCue(name);
+    const OAC = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+    if (!def || !OAC || !this.ctx) return null;
+    const sr = this.ctx.sampleRate;
+    const ctx = new OAC(channels, Math.max(1, Math.ceil(seconds * sr)), sr);
+    const tap = ctx.createGain();
+    tap.gain.value = 1;
+    tap.connect(ctx.destination);
+    def.build(ctx, tap, 0.0015, { seconds, speed, dist: 0, pan: 0, gain: 1, rnd: new RNG(seed) });
+    return ctx.startRendering();
+  }
+
+  /**
+   * Render the block and the five expensive one-shots. Idempotent, and safe to
+   * call without awaiting: `startBed()` and `play()` both fall back to the live
+   * build for as long as the cache is cold, so nothing is ever silent waiting
+   * for this. Errors are swallowed into this.log rather than logged, because
+   * CONTRACT §4 is zero console output and a cold cache is not a failure.
+   */
+  async precache() {
+    if (this._precache) return this._precache;
+    const ctx = this.ensure();
+    const OAC = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+    if (!ctx || !OAC) return false;
+    this._precache = (async () => {
+      // THE BLOCK, FIRST. Three 12 s variants, stereo because the flivver that
+      // pulls away from the kerb sweeps across the field and that pan has to be
+      // baked. The bed goes first because it is the one cue that repeats
+      // forever, so every second it stays cold is another live rebuild.
+      // ONE AT A TIME, measured: firing the three renders concurrently took the
+      // whole precache from 10.8 s to 39.3 s on the SwiftShader box CONTRACT §3
+      // names as the target — three OfflineAudioContexts do not get three
+      // threads, they get one thread and a lot of contention. Each variant is
+      // published the moment it lands, so the bed goes warm on the first one.
+      this.bedBufs = [];
+      for (let i = 0; i < BED_VARIANTS; i++) {
+        const b = await this.renderCueBuffer('city_bed', {
+          seconds: BED_LEN, seed: BED_SEEDS[i % BED_SEEDS.length], channels: 2,
+        });
+        if (b) this.bedBufs.push(b);
+      }
+
+      // THE ONE-SHOTS, after it and one at a time. These are rare events and
+      // their live build is 6-9 ms, i.e. inside the frame budget already, so
+      // there is no reason to fight the bed for threads: they can trickle in.
+      for (const name of Object.keys(CUES)) {
+        const def = CUES[name];
+        const n = def.precache | 0;
+        if (!n) continue;
+        const speeds = def.precacheSpeeds || null;
+        const bufs = [];
+        for (let i = 0; i < n; i++) {
+          const b = await this.renderCueBuffer(name, {
+            seconds: (def.dur ?? 2) + 0.3,
+            seed: (7717 * (i + 1) + name.length * 2654435761 + 1925) >>> 0,
+            speed: speeds ? speeds[i % speeds.length] : 1,
+          });
+          if (b) bufs.push(b);
+        }
+        if (!bufs.length) continue;
+        const entry = { bufs, speeds };
+        this.cueBufs.set(name, entry);
+        // hung on the def as well, so play() finds it through CUE_ALIAS without
+        // this file needing to know the alias table
+        def._cache = entry;
+      }
+      return true;
+    })().catch((e) => { this.log.push('precache: ' + (e && e.message)); return false; });
+    return this._precache;
+  }
+
+  /** Pick which rendered variant of a cue to play. */
+  pickVariant(cached, o) {
+    const { bufs, speeds } = cached;
+    if (bufs.length === 1) return bufs[0];
+    // A cue whose build() reads o.speed (the ash-can lid scales with how hard the
+    // ball hit it) is rendered at three speeds and picks the nearest, so impact
+    // energy still changes the sound. Everything else picks at random, which is
+    // what stops three window breaks in one game from being the same recording.
+    if (speeds) {
+      const s = clamp(o.speed ?? 1, 0.5, 1.4);
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < bufs.length; i++) {
+        const d = Math.abs((speeds[i % speeds.length] ?? 1) - s);
+        if (d < bd) { bd = d; best = i; }
+      }
+      return bufs[best];
+    }
+    return bufs[this.rnd.int(0, bufs.length - 1)];
+  }
 
   /* --- mixing ------------------------------------------------------------ */
   setBus(name, linear, ramp = 0.08) {
@@ -336,7 +562,19 @@ export class AudioEngine {
     // the whole difference between one follow-through and two), but it costs a
     // reference and it is the only handle the graph would otherwise never expose.
     this.lastVoice = out;
-    try { cue.build(this.ctx, out, t, opts); } catch (e) { console.error('cue ' + name, e); return null; }
+    // THE CACHE. If this cue was rendered at unlock, play the render — through
+    // the identical voiceChain, so distance, tilt, propagation delay, pan, bus
+    // and canyon send are all still computed per event. Two nodes instead of
+    // four hundred. Cold cache falls through to the live build below.
+    if (cue._cache) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.pickVariant(cue._cache, opts);
+      if (o.pitch) src.playbackRate.value = clamp(o.pitch, 0.5, 2);
+      src.connect(out);
+      src.start(t);
+    } else {
+      try { cue.build(this.ctx, out, t, opts); } catch (e) { console.error('cue ' + name, e); return null; }
+    }
     if (cue.bus === 'voice') this.duck('voice', Math.min(2.2, cue.dur ?? 0.6));
     else if (cue.bus === 'music') this.duck('music', Math.min(4, cue.dur ?? 1));
     return t;
@@ -374,14 +612,67 @@ export class AudioEngine {
     return ctx.startRendering();
   }
 
-  /* --- the block runs whether anybody is playing or not ------------------- */
+  /* --- the block runs whether anybody is playing or not -------------------
+   * THE BED IS NO LONGER REBUILT. It used to call play('city_bed') every
+   * 7.5-10.5 seconds, and every one of those calls assembled ~860 WebAudio nodes
+   * on the main thread in 14.5 ms — a dropped frame on a metronome, for the
+   * entire length of the game, on the machine CONTRACT §3 names as the target.
+   *
+   * Now: three 12 s variants are rendered at unlock and the block is two
+   * BufferSources handing off to each other. A pass allocates ONE source and ONE
+   * gain; the voiceChain they feed (level, tilt, bandwidth, pan, canyon send) is
+   * built once and kept. Two things stop three variants from becoming an audible
+   * loop: the next variant is never the one just played, and each pass runs at a
+   * playbackRate between 0.96 and 1.04, which is inaudible as pitch on a wash and
+   * completely decorrelates it as a repeat. Six variant pairs x a continuous rate
+   * spread x the sporadic scheduler on top.
+   * ------------------------------------------------------------------------- */
   startBed() {
     if (!this.graph || this.bedAt > this.now) return;
-    // §7.5: the loop must never become audible, so every pass is a different draw
-    // and a different length. Deterministic per session, never identical twice.
+    if (!this.bedBufs || !this.bedBufs.length) return this.startBedLive();
+    const ctx = this.ctx;
+
+    // ONE persistent voiceChain for the block: exactly what play() would have
+    // given it, built once instead of once per pass.
+    if (!this.bedChain) this.bedChain = voiceChain(this.graph, CUES.city_bed, { gain: BED_GAIN, dist: 0, pan: 0 });
+
+    // never the same variant twice running
+    let i = this.rnd.int(0, this.bedBufs.length - 1);
+    if (i === this.bedLast && this.bedBufs.length > 1) i = (i + 1 + this.rnd.int(0, this.bedBufs.length - 2)) % this.bedBufs.length;
+    this.bedLast = i;
+
+    const buf = this.bedBufs[i];
+    const rate = this.rnd.range(0.96, 1.04);
+    const len = buf.duration / rate;
+    const t = Math.max(this.now + 0.02, this.bedNextAt);
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    src.connect(g);
+    g.connect(this.bedChain);
+
+    // equal-power in, hold, equal-power out. sin^2 + cos^2 = 1, so two passes
+    // overlapping by BED_XF sum to a flat block — no dip, no bump, no seam.
+    g.gain.setValueCurveAtTime(FADE_IN, t, BED_XF);
+    g.gain.setValueAtTime(1, t + BED_XF + 0.002);
+    g.gain.setValueCurveAtTime(FADE_OUT, t + len - BED_XF, BED_XF);
+    src.start(t);
+    src.stop(t + len + 0.02);
+
+    this.bedSlot ^= 1;
+    this.bedNextAt = t + len - BED_XF;      // the next pass starts inside this one
+    this.bedAt = this.bedNextAt;
+  }
+
+  /** The cold path: the cache is not warm yet, so build the block live, once. */
+  startBedLive() {
     const LEN = this.rnd.range(7.5, 10.5);
-    this.play('city_bed', { gain: 0.9, dist: 0, gate: 0, seconds: LEN, rnd: new RNG(this.rnd.int(1, 1e6)) });
+    this.play('city_bed', { gain: BED_GAIN, dist: 0, gate: 0, seconds: LEN, rnd: new RNG(this.rnd.int(1, 1e6)) });
     this.bedAt = this.now + LEN - 0.4;
+    this.bedNextAt = this.bedAt;
   }
   tickAmbience(dt) {
     if (!this.graph || !this.started) return;
@@ -653,6 +944,11 @@ export default registerSystem({
     const unlock = () => {
       if (!audio.enabled) return;
       audio.resume();
+      // Render the block and the five expensive one-shots NOW, on the first
+      // gesture, while the player is still on the team-select screen. Not
+      // awaited: startBed() and play() both build live until it lands, so
+      // nothing waits for it and nothing is silent because of it.
+      audio.precache();
       if (audio.graph && !audio.started) { audio.started = true; audio.startBed(); }
       removeEventListener('pointerdown', unlock); removeEventListener('keydown', unlock);
     };

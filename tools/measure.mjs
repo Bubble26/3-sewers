@@ -30,6 +30,7 @@ const LIMITS = {
   leadMinPct: 18,       // batter / pitcher / catcher
   leadMaxPct: 26,
   ballMinPx: 9,
+  subjectRatio: 1.35,   // §17.6 — the subject must out-measure the next-largest kid in frame
 };
 
 const { srv, port } = await listen(0);
@@ -130,6 +131,14 @@ for (const name of scenarios) {
     else if (k.lead && (k.pct < LIMITS.leadMinPct || k.pct > LIMITS.leadMaxPct)) v.push(`${k.name} (lead) is ${k.pct}%, wanted ${LIMITS.leadMinPct}–${LIMITS.leadMaxPct}% (§17.3)`);
   }
   if (m.ballPx != null && m.ballPx < LIMITS.ballMinPx) v.push(`ball is ${m.ballPx}px, floor is ${LIMITS.ballMinPx}px (§17.3)`);
+  // §17.6: a frame with no subject is an unreadable frame, however legal its heights are.
+  if (m.kids.length > 1) {
+    const tall = [...m.kids].sort((a, b) => b.px - a.px);
+    const ratio = tall[0].px / (tall[1].px || 1);
+    if (ratio < LIMITS.subjectRatio) {
+      v.push(`no subject: tallest kid (${tall[0].name}, ${tall[0].pct}%) is only ${ratio.toFixed(2)}x the next (${tall[1].name}, ${tall[1].pct}%), wanted ${LIMITS.subjectRatio}x (§17.6)`);
+    }
+  }
 
   report.scenarios.push({ scenario: name, fov: m.fov, ortho: m.ortho, kids: m.kids.length, ballPx: m.ballPx,
     smallestKid: m.kids[0] ?? null, violations: v });

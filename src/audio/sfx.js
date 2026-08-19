@@ -794,7 +794,7 @@ registerCue('clatter_tin', {
 });
 
 registerCue('ashcan_lid', {
-  bus: 'sfx', gain: 0.36, dur: 2.4,
+  bus: 'sfx', gain: 0.52, dur: 2.4, precache: 3, precacheSpeeds: [0.70, 1.0, 1.32],
   note: 'the lid comes off. §7.4: clang, then the classic wobble-to-flat, all of it.',
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.5, 1.4);
@@ -805,10 +805,18 @@ registerCue('ashcan_lid', {
       gains: [0.8, 1.0, 0.70, 0.48, 0.33, 0.21, 0.13, 0.07],
       decays: [0.55, 0.48, 0.36, 0.27, 0.19, 0.13, 0.09, 0.06],
     });
-    // the wobble: contacts that accelerate geometrically to a buzz, like a dropped coin
+    // THE WOBBLE — contacts that accelerate geometrically to a buzz, like a
+    // dropped coin. This is the joke and it used to be inaudible: the chain ran
+    // through bp(1500, 1.1), which is 1.8 octaves ABOVE the lid's own 438 Hz
+    // fundamental, so the filter was throwing away the exact partials that make
+    // it read as the same lid. Measured, the contacts came out 11.5 dB under the
+    // opening clang (0.194 vs 0.052) — level with the city bed's RMS, i.e. gone.
+    // The band now sits at 620 Hz, a fifth above the fundamental and wide (Q 0.8),
+    // so the wobble keeps the lid's own voice while still reading as the object
+    // lying down rather than being struck.
     const ring = gain(ctx, 1);
-    chain(ring, bp(ctx, 1500, 1.1), out);
-    let t = t0 + 0.30, dt = 0.145, g = 0.52 * s;
+    chain(ring, bp(ctx, 620, 0.8), out);
+    let t = t0 + 0.30, dt = 0.145, g = 0.78 * s;
     for (let i = 0; i < 30 && dt > 0.0065; i++) {
       metal(ctx, ring, t, {
         f0: 438 * (1 + i * 0.005), g, strike: 0.5, strikeF: 3100, strikeD: 0.005,
@@ -893,16 +901,20 @@ registerCue('window_flex', {
     burst(ctx, out, t0 + 0.002, { f: 2400, q: 0.8, g: 0.055, a: 0.0006, d: 0.020 });
     // ---- and now nothing at all, for a whole beat, because that is the joke ----
     // ---- 1.35 seconds later, exactly one small guilty noise: a lid falling over.
+    // It has to STAY small — the whole gag is the size of it against the boom —
+    // but it also has to be heard, and at 0.038 it measured -28 dBFS against a
+    // city bed peaking -17 dBFS, i.e. the punchline was under the traffic. Up
+    // 4.7 dB: still 16 dB under the boom in front of it, now clear of the block.
     metal(ctx, out, t0 + 1.42, {
-      f0: 402, g: 0.038, strike: 0.4, strikeF: 2400, strikeD: 0.006,
+      f0: 402, g: 0.065, strike: 0.4, strikeF: 2400, strikeD: 0.006,
       ratios: [1, 1.36, 2.44], gains: [0.7, 1, 0.4], decays: [0.12, 0.09, 0.05],
     });
-    metal(ctx, out, t0 + 1.53, { f0: 402, g: 0.020, strike: 0.2, ratios: [1, 1.36], gains: [0.8, 1], decays: [0.08, 0.06] });
+    metal(ctx, out, t0 + 1.53, { f0: 402, g: 0.034, strike: 0.2, ratios: [1, 1.36], gains: [0.8, 1], decays: [0.08, 0.06] });
   },
 });
 
 registerCue('window_break', {
-  bus: 'sfx', gain: 1.3, dur: 2.6, send: 0.20,
+  bus: 'sfx', gain: 1.3, dur: 2.6, send: 0.20, precache: 3,
   note: 'the deli pane, and then everybody runs. Snap, shower, and shards on the sidewalk.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -1124,7 +1136,7 @@ function motorT(ctx, dest, t0, o) {
 }
 
 registerCue('city_traffic', {
-  bus: 'ambience', gain: 1.45, dur: 6,
+  bus: 'ambience', gain: 1.45, dur: 6, precache: 3,
   note: 'the avenue, two blocks over. Never a modern engine, never a tyre screech.',
   build(ctx, out, t0, o) {
     const dur = o.seconds ?? 6, r = o.rnd;
@@ -1190,7 +1202,7 @@ registerCue('klaxon', {
 
 /* --- the Third Avenue El, passing overhead --------------------------------- */
 registerCue('el_train', {
-  bus: 'ambience', gain: 0.95, dur: 6.5,
+  bus: 'ambience', gain: 0.95, dur: 6.5, precache: 3,
   note: 'the El. PERIOD: steel structure over the avenue, wooden cars, and it flattens conversation.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -1334,7 +1346,7 @@ registerCue('radio_window', {
 
 /* --- the knife grinder, working his way up the block ----------------------- */
 registerCue('knife_grinder', {
-  bus: 'ambience', gain: 1.2, dur: 3.0,
+  bus: 'ambience', gain: 1.2, dur: 3.0, precache: 3,
   note: 'PERIOD: he rings a hand bell and the whole street knows what he is. Two per swing.',
   build(ctx, out, t0, o) {
     const bell = (t, g, p) => metal(ctx, out, t, {
@@ -1547,14 +1559,28 @@ registerCue('mother_calling', {
  *
  * Cutting the layer list also cuts the allocation burst the last builder flagged
  * and could not measure. Counted by instrumenting OfflineAudioContext's create*
- * methods around one build: the bed is 840 nodes per pass, against ~1,600 before
- * — the El alone was 422 of them, the knife grinder 229. That is a 47% cut, and
- * it is still a wholesale rebuild rather than persistent looping sources, which
- * remains the honest weak point of this file.
+ * methods around one build: the bed is ~860 nodes per pass, against ~1,600 before
+ * — the El alone was 422 of them, the knife grinder 229.
+ *
+ * THAT COUNT NO LONGER HAPPENS AT PLAY TIME. As of this round the bed is rendered
+ * three times at unlock into AudioBuffers (engine.js `precache()`) and the running
+ * game crossfades those two-at-a-time, so the steady-state cost of the block is two
+ * BufferSources and two GainNodes. This build function is still the single source
+ * of truth — the offline render calls exactly it — but it is called three times per
+ * session instead of every eight seconds forever.
+ *
+ * THE FIFTH LAYER IS THE ONE THAT MOVES. Four looping layers averaged into a wash:
+ * measured over 8 s the bed had a crest factor of 12.8 dB, one detected onset and
+ * nothing with an attack sharper than 94 ms, which is a hiss with a rumble in it
+ * rather than a street. Two changes fix that without ever letting the bed fight the
+ * play (§7.5): the avenue — the only truly continuous layer — comes down 5 dB so it
+ * is a floor and not a blanket, and one Model T pulls away from the kerb on every
+ * pass, sweeping left to right, its idle climbing 19.5 -> 24.5 Hz over four seconds
+ * and its level enveloped 0 -> 0.055 -> 0 so it can never out-peak a pock.
  * ------------------------------------------------------------------------- */
 registerCue('city_bed', {
   bus: 'ambience', gain: 1.5, dur: 8.0,
-  note: '§7.5: the FOUR things this block does all the time — the avenue, a cart, the cornice pigeons, one radio in one window. Everything rarer than that belongs to the sporadic scheduler, not to the bed.',
+  note: '§7.5: the five things this block does all the time — the avenue, a cart, the cornice pigeons, one radio in one window, and one flivver pulling away from the kerb. Everything rarer than that belongs to the sporadic scheduler, not to the bed.',
   build(ctx, out, t0, o) {
     const r = o.rnd, dur = o.seconds ?? 8;
     // Every layer gets its own stream so the bed can be re-drawn every pass and
@@ -1566,12 +1592,16 @@ registerCue('city_bed', {
     // and the El at most once every 90 s.
     const sub = () => new RNG(r.int(1, 1000000));
 
-    // 1. THE AVENUE, two blocks over. The floor of the whole mix, and the only
-    //    thing in here allowed to run at full level.
-    CUES.city_traffic.build(ctx, out, t0, { ...o, seconds: dur, rnd: sub() });
+    // 1. THE AVENUE, two blocks over. The floor of the whole mix — and a FLOOR,
+    //    which is the change: at full level it was 90% of the bed's energy and
+    //    it buried every discrete thing on the block underneath itself. Down
+    //    5.2 dB, the hooves, the pigeons, the radio and the flivver all come out
+    //    from behind it and the bed reads as objects instead of as weather.
+    const ave = gain(ctx, 0.55); ave.connect(out);
+    CUES.city_traffic.build(ctx, ave, t0, { ...o, seconds: dur, rnd: sub() });
 
     // everything else is FAR — the bed must never fight the play (§7.5)
-    const far = gain(ctx, 0.78);
+    const far = gain(ctx, 0.98);
     chain(far, lp(ctx, 2600, 0.8), out);
 
     // 2. A HORSE CART. PERIOD: in 1925 half the deliveries on this block are
@@ -1583,9 +1613,32 @@ registerCue('city_bed', {
 
     // 4. ONE RADIO, ONE WINDOW, thin and far — §7.1 states that as an absolute,
     //    and "one radio in one window" is a continuous fact about the block, so
-    //    this is the one non-traffic layer that is right to hear every pass.
-    const rad = gain(ctx, 0.40); chain(rad, lp(ctx, 2400, 0.8), out);
-    CUES.radio_window.build(ctx, rad, t0 + r.range(0.05, 0.6), { ...o, rnd: sub() });
+    //    this is the one non-traffic layer that is right to hear every pass. The
+    //    set is 4.3 s long and the pass can be 12 s, so it is TILED: a radio that
+    //    stops after four seconds is not a radio, it is a cue.
+    const rad = gain(ctx, 0.46); chain(rad, lp(ctx, 2400, 0.8), out);
+    for (let t = t0 + r.range(0.05, 0.6); t < t0 + dur - 1.2; t += 4.42) {
+      CUES.radio_window.build(ctx, rad, t, { ...o, rnd: sub() });
+    }
+
+    // 5. THE ONE THING THAT MOVES. Somebody's Model T lets the clutch out and
+    //    pulls away from the kerb, once per pass, left to right across the whole
+    //    stereo field. It is the only layer with a direction and a beginning and
+    //    an end, and it is the reason the block stops sounding like a loop: the
+    //    ear tracks it, and something the ear can track is a place. Its peak is
+    //    capped at 0.055 by its own envelope, i.e. 9 dB under the bed's peak and
+    //    ~17 dB under a pock, so it can never take the play off you.
+    const away = ctx.createStereoPanner ? ctx.createStereoPanner() : gain(ctx, 1);
+    away.connect(out);
+    const tCar = t0 + Math.min(dur * r.range(0.12, 0.42), Math.max(0, dur - 4.4));
+    if (away.pan) {
+      away.pan.setValueAtTime(-0.60, tCar);
+      away.pan.linearRampToValueAtTime(0.60, tCar + 4.0);
+    }
+    motorT(ctx, away, tCar, {
+      dur: 4.0, rate: 19.5, drift: 24.5 / 19.5, g: 0.055,
+      f: 168, lp: 820, offset: r.range(0, 3), a: 0.75, d: 1.05,
+    });
   },
 });
 

@@ -160,9 +160,18 @@ function sunAt(x, y, o) {
  * — and its softness grows with distance so that every one of them measures 10–14 px at
  * 1600×900 from the locked framings. `slope` is ~3° off horizontal: enough that the edge reads
  * as a cast shadow with a direction, not as a horizontal band of paint.
+ *
+ * The near card sits LOW, at 8.2 ft, and that is a composition choice as much as a physical
+ * one. Physically it is right — the card stands four feet past the end of the wing rows and
+ * faces west-south-west, so at 3:50 pm it is a lit wall with only its foot in the shade the
+ * kerb and the carts throw. Compositionally it is what the frame needs: the shop glass, the
+ * goods and the kerb clutter behind the cast drop a stop and a half and go cool, the sign
+ * bands and awnings above the line stay in the sun, and the crown of the roadway stays the
+ * brightest ground in the picture (Law 1). Putting the line any higher buys a bolder edge by
+ * throwing the best lettering in the build into shade, which is a bad trade.
  */
 const SUN = {
-  nearFacade: { shadowY: 14.6, shadowX: 0, shadowSlope: -0.055, pen: 0.65 },
+  nearFacade: { shadowY: 8.2, shadowX: 0, shadowSlope: -0.055, pen: 0.65 },
   midBlock: { shadowY: 19.5, shadowX: 0, shadowSlope: -0.050, pen: 0.85 },
   farBlock: { shadowY: 22.0, shadowX: 0, shadowSlope: -0.045, pen: 1.10 },
   sky: { shadowY: -30, shadowX: 0, shadowSlope: -0.030, pen: 2.20 },
@@ -308,7 +317,7 @@ function cardLot(card, spec, r) {
     stoopAt: 0.30 + r.range(0, 0.05),
     brackets: r.int(6, 9),
     grime: 0.88 + r.range(0, 0.16),
-    chimneys: spec.st >= 3 ? [0.06, 0.94] : [],
+    chimneys: [0.06, 0.94],
     chimneyH: 2.4 + r.range(0, 2.6),
     pots: r.int(3, 6),
     tank: !!spec.tank, tankZ: r.range(-4, 4),
@@ -341,8 +350,8 @@ function faceQuad(B, x, y0, y1, z0, z1, col, uv) {
 const NEAR = [
   { x: 41, st: 5, brick: 'red', fe: 1, shop: 'tailor', tank: 1, pigeons: 1 },
   { x: 16, st: 4, brick: 'ochre', fe: 1, shop: 'ice', flankSign: 'castoria' },
-  { x: -9, st: 1, brick: 'red', bay: 1, roof: 'pots' },              // the quiet bay
-  { x: -34, st: 1, brick: 'brown', shop: 'lunch', roof: 'sign' },
+  { x: -9, st: 1, brick: 'red', bay: 1, roof: 'pots', tank: 1 },     // the quiet bay
+  { x: -34, st: 1, brick: 'brown', shop: 'lunch', roof: 'sign', coop: 1, pigeons: 1 },
   { x: -59, st: 4, brick: 'brown', blind: 'uneeda', shop: 'laundry', tank: 1, coop: 1 },
 ];
 
@@ -1048,7 +1057,7 @@ function buildFarBlock(card) {
   gasholder(card, -44, card.z + 56, T);
   church(card, -4, card.z + 46, T);
   apron(card, 190, CARD_Z.elevated - 4, 170);
-  hazeCard(card, 0.30);
+  hazeCard(card, 0.27);
   liftFloor(card, 0.064);
 }
 
@@ -1073,6 +1082,16 @@ function buildSky(card) {
     const hex = r.chance(0.5) ? FACADE.partyWall : FACADE.ochreShade;
     Tb.box(x, 0, card.z, x + w, h, card.z + 40,
       (f, n, c) => shadeLin(hex, farLit(n, c, SUN.sky) * 0.82, 0), 'nz px nx py');
+    // Two string courses and a setback. At this remove a loft is four horizontals and a
+    // silhouette; round 1 shipped the silhouette alone and a critic called the result "a pale
+    // slab carrying one water tank and nothing else", which it was.
+    for (let k = 1; k <= 2; k++) {
+      const yy = (k / 3) * h;
+      Tb.box(x - 0.6, yy - 0.9, card.z - 0.9, x + w + 0.6, yy, card.z + 1,
+        (f, n, c) => shadeLin(hex, farLit(n, c, SUN.sky) * 0.62, f === 'ny' ? 0.4 : 0), 'nz py ny');
+    }
+    Tb.box(x + w * 0.18, h, card.z + 1, x + w * 0.82, h + r.range(4, 9), card.z + 30,
+      (f, n, c) => shadeLin(hex, farLit(n, c, SUN.sky) * 0.86, 0), 'nz px nx py');
     Tb.box(x - 1.8, h, card.z - 2, x + w + 1.8, h + 3.4, card.z + 2,
       (f, n, c) => shadeLin(hex, farLit(n, c, SUN.sky) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
     if (r.chance(0.4)) {
@@ -1092,7 +1111,7 @@ function buildSky(card) {
     Tb.box(sx - ww, sy + 3 + i * 3.1, card.z + 6 + t * 3, sx + ww, sy + 6.1 + i * 3.1, card.z + 20 - t * 3,
       (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, SUN.sky) * (0.8 - t * 0.1), 0), 'nz px nx py');
   }
-  hazeCard(card, 0.78);
+  hazeCard(card, 0.66);
   liftFloor(card, 0.070);
 }
 
@@ -1446,7 +1465,7 @@ export default registerSystem({
    * end of its swing, the pigeons mid-flight and both smoke plumes at full length.
    */
   onScenario(name) {
-    this.t = name === 'backdrop_layers' ? 12.4 : name === 'stage_wide' ? 6.8 : name === 'atmosphere' ? 3.2 : 0.9;
+    this.t = name === 'backdrop_layers' ? 21.7 : name === 'stage_wide' ? 6.8 : name === 'atmosphere' ? 3.2 : 0.9;
     this.split = name === 'backdrop_layers' ? 1 : 0;
   },
 
@@ -1517,12 +1536,22 @@ const SEPARATE = { nearFacade: 0, midBlock: -7, farBlock: -15, elevated: -24, sk
    director for, shown rather than argued.
    ========================================================================= */
 
+/**
+ * Set the camera and KEEP it. The director hands over the moment it finds the camera somewhere
+ * it did not leave it — but a `cut` driven off a bus event (`atbat:begin`, `bat:contact`)
+ * writes the transform directly, without going through that check, so a scenario that is only
+ * ever screenshotted holds fine and the same scenario under tools/film.mjs gets taken away
+ * three frames in. Pinning to a framing that does not exist makes every cut a no-op, which is
+ * the director's own mechanism (`cut()` early-returns on a foreign pin) used as intended.
+ */
 const setCam = (app, pos, look, fov) => {
   app.camera.position.set(pos[0], pos[1], pos[2]);
   app.camera.lookAt(look[0], look[1], look[2]);
   app.camera.fov = fov;
   app.camera.updateProjectionMatrix();
   app.camera.updateMatrixWorld(true);
+  const sys = app.get('cameras');
+  if (sys) { sys.manual = true; sys.pin = 'backdrop:held'; }
 };
 
 /**

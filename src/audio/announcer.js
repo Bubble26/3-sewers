@@ -790,6 +790,29 @@ const TINY_GAG = [
   'I HIT TWO SEWERS ONCE.',
 ];
 
+/* --- how a build is timed ------------------------------------------------
+ * A rung has to survive long enough to be READ, and it has to be visibly bigger
+ * and visibly louder than the rung under it, or the escalation exists only in
+ * the source. These four numbers are the whole gag.
+ */
+const CLIMB_STEP = 0.85;                 // reading time per rung, seconds
+const CLIMB_HOLD = 1.4;                  // how long a rung stays up once said
+const CLIMB_GROW = [1.0, 1.45, 2.0];     // the card DOUBLES across the ladder
+const CLIMB_BAND = [7, 13];              // and the ball has to earn each rung
+
+/* The argument (§8.1): one beat every three quarters of a second, so a critic
+   can read a setup, a beat and a loser in the order they were said. */
+const ARG_GAP = 0.75;
+const ARG_SWAP = [
+  'No it was not.', 'It never was.', 'That is not what happened.', 'Say that again.',
+];
+/** The first three words of a line, flattened. Two cards on screen may never
+    share them — an argument where both sides open the same way is an echo. */
+const head3 = (t) => String(t).toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 3).join(' ');
+
+/** Which chatter a kid may answer in his own language, when he has one. */
+const SWITCHABLE = new Set(['infield', 'taunt', 'call', 'cheer', 'groan']);
+
 /* ============================================================================
    3. Bags — nothing repeats until its bank is spent
    ========================================================================= */
@@ -913,6 +936,14 @@ export function sylls(text, cap = 24) {
     if (out.reduce((a, s) => a + s.length, 0) >= cap) break;
   }
   return out;
+}
+
+/** Syllables in a line. The paper bounces its last word at this rate, which is
+    how a card reads as somebody talking rather than as a printed caption. */
+export function sylCount(text) {
+  let n = 0;
+  for (const w of sylls(text, 999)) n += w.length;
+  return n;
 }
 
 /** How long this line takes to say, in this voice. Drives the bubble hold. */
@@ -1092,13 +1123,14 @@ class Mouth {
     this.wait = hold;
     const kind = b.kind || (b.silent ? 'beat' : 'talk');
     const text = b.silent ? '. . .' : b.text;
+    const syls = sylCount(text);
     const opts = {
       who: this.who === 'kid' ? 'kid' : this.who,
-      text, hold: hold + 0.30, kind, grow: b.grow ?? 1,
+      text, hold: hold + 0.30, kind, grow: b.grow ?? 1, syls,
       body: b.body || null, accent: b.accent,
     };
     if (this.card && !b.fresh && this.who !== 'kid') {
-      this.card.setText(text, { kind, hold: hold + 0.30, grow: b.grow ?? 1 });
+      this.card.setText(text, { kind, hold: hold + 0.30, grow: b.grow ?? 1, syls });
     } else {
       this.card = bubbles.say(opts);
     }
@@ -1164,6 +1196,7 @@ class Announcer {
     this.introduced = new Set();
     this.clock = 0;
     this.lastCallAt = -99;
+    this.lastClimbAt = -99;
   }
 
   reset(seed = 1925) {
@@ -1172,13 +1205,14 @@ class Announcer {
     this.lib.reset(seed);
     this.rnd.reset((seed * 2654435761) >>> 0);
     this.timers.length = 0;
-    this.quiet = 0; this.chatterIn = 2.2;
+    this.quiet = 0; this.chatterIn = 1.6;
     this.gag = { apple: 0, ice: 0, grounded: 0, tiny: 0, twoHander: 0, arg: 0 };
     this.climb = null;
     this.halves = 0;
     this.introduced = new Set();
     this.clock = 0;
     this.lastCallAt = -99;
+    this.lastClimbAt = -99;
     TTS.stop();
   }
 
@@ -1296,7 +1330,14 @@ class Announcer {
     const isKey = typeof kindOrText === 'string' && CHATTER[kindOrText];
     const body = o.body || this.chatterBody(isKey ? kindOrText : o.kind);
     const kid = kidFromBody(body);
-    const text = this.fillSelf(this.fill(isKey ? this.lib.pick('ch:' + kindOrText, CHATTER[kindOrText]) : kindOrText), kid);
+    // §7.5 / BYB §6.2, and it is a hard requirement, not a flourish: some kids
+    // out here call for a ball in the language they call for it in at home. The
+    // roster decides who — never chance, never everybody — and it is never
+    // translated, never subtitled and never mentioned by anybody in the booth.
+    let key = kindOrText;
+    const tongue = HOME_TONGUE[kid && kid.home];
+    if (isKey && tongue && SWITCHABLE.has(kindOrText) && this.rnd.chance(0.34)) key = tongue;
+    const text = this.fillSelf(this.fill(isKey ? this.lib.pick('ch:' + key, CHATTER[key]) : kindOrText), kid);
     const beat = {
       text, kind: o.kind === 'shout' || /!$/.test(text) ? 'shout' : 'talk',
       body, accent: ACCENTS[kid?.accent] ?? undefined,
@@ -1305,7 +1346,7 @@ class Announcer {
     };
     bubbles.say({
       who: 'kid', text: beat.text, kind: beat.kind, hold: beat.hold + 0.2,
-      body, accent: beat.accent,
+      body, accent: beat.accent, syls: sylCount(beat.text),
     });
     voice('kid', beat);
     this.quiet = Math.min(this.quiet, 1.2);
@@ -1325,17 +1366,44 @@ class Announcer {
     return beat;
   }
 
-  /** The argument, played out over several seconds by different mouths. */
-  argue() {
+  /**
+   * The argument. §8.1 says it is the engine the whole comedy runs on, so it is
+   * built like a joke and not like a crowd: one beat every 0.75 s in the order
+   * they were said, no two cards opening with the same three words, and the
+   * LOSER holds longest so his line is the last piece of paper on the street.
+   */
+  argueBeats(script) {
+    const seen = [];
+    const out = [];
+    const last = script.length - 1;
+    script.forEach((raw, i) => {
+      let text = raw;
+      if (seen.includes(head3(text))) text = ARG_SWAP[(this.gag.arg + i) % ARG_SWAP.length];
+      seen.push(head3(text));
+      const base = Math.max(1.5, speakSeconds(text, 'kid') + 0.9);
+      out.push({
+        text,
+        kind: i === last ? 'talk' : 'shout',
+        // earlier lines live long enough to still be on the paper when the
+        // loser speaks, so the whole argument reads in one glance
+        hold: i === last ? base * 1.6 : base + (last - i) * ARG_GAP,
+      });
+    });
+    return out;
+  }
+
+  argue(o = {}) {
     const script = ARGUMENTS[this.gag.arg++ % ARGUMENTS.length];
     const p = this.players;
-    const pool = [p?.catcher, ...(p?.fielders || []), p?.onDeck, p?.batter].filter(Boolean);
-    let t = 0.25;
-    script.forEach((lineText, i) => {
-      const body = pool.length ? pool[(i * 3 + this.gag.arg) % pool.length] : null;
-      this.after(t, () => this.chatter(lineText, { body, kind: i >= script.length - 1 ? 'talk' : 'shout' }));
-      t += Math.max(0.85, speakSeconds(lineText, 'kid') + 0.55);
+    const pool = (o.pool || [p?.catcher, ...(p?.fielders || []), p?.onDeck, p?.batter]).filter(Boolean);
+    let t = o.t0 ?? 0.25;
+    this.argueBeats(script).forEach((b, i) => {
+      // one line per mouth: an argument is three kids, not one kid three times
+      const body = pool.length ? pool[(i + this.gag.arg) % pool.length] : null;
+      this.after(t, () => this.chatter(b.text, { body, kind: b.kind, hold: b.hold }));
+      t += ARG_GAP;
     });
+    return t;
   }
 
   /* --- the running gags -------------------------------------------------- */
@@ -1382,11 +1450,37 @@ class Announcer {
     return true;
   }
 
-  /* --- the ball is climbing ---------------------------------------------- */
+  /* --- the ball is climbing ------------------------------------------------
+   * ESCALATION IS A THING THAT HAPPENS IN TIME. A rung has to stay up long
+   * enough to be read, and the next one has to be visibly bigger and visibly
+   * louder, or the build exists only in the source file.
+   *
+   * So a rung advances on the LATER of two clocks, never the earlier:
+   *   1. CLIMB_STEP seconds of reading time have passed, and
+   *   2. the ball has actually crossed the next height band.
+   * A build that outruns its own ball is a person shouting at nothing, and a
+   * build that lags the ball is a person describing the past. Both are worse
+   * than saying one thing and meaning it.
+   */
   startClimb(hit) {
     const ladder = this.lib.pick('dot:climb', DOT.climb);
-    this.climb = { ladder, step: 0, t: 0, peak: 0, resolved: false, hit };
-    this.dot.interrupt([{ text: ladder[0], kind: 'talk', grow: 1, hold: 9 }]);
+    this.climb = { ladder, step: 0, t: 0, rung: 0, peak: 0, hung: 0, resolved: false, hit };
+    this.lastClimbAt = this.clock;
+    this.sayRung(0);
+    this.quiet = 0;
+  }
+
+  /** One rung: bigger card, hotter delivery, and the same mouth as before. */
+  sayRung(i) {
+    const c = this.climb;
+    if (!c) return;
+    this.dot.say([{
+      text: this.fill(c.ladder[i]),
+      kind: i >= 1 ? 'shout' : 'talk',
+      grow: CLIMB_GROW[Math.min(i, CLIMB_GROW.length - 1)],
+      hold: CLIMB_HOLD,
+    }]);
+    c.rung = c.t;
     this.quiet = 0;
   }
 
@@ -1397,15 +1491,31 @@ class Announcer {
     const ball = APP.sim?.ball;
     const y = ball ? ball.pos.y : 0;
     c.peak = Math.max(c.peak, y);
-    const wantStep = c.t > 0.42 * (c.step + 1) && y > 6;
-    if (wantStep && c.step < c.ladder.length - 1) {
-      c.step++;
-      this.dot.card?.setText(c.ladder[c.step], { kind: c.step >= 2 ? 'shout' : 'talk', hold: 9, grow: 1 + c.step * 0.13 });
-      voice('dot', { text: c.ladder[c.step] });
+    const up = !!ball && (ball.inFlight || ball.live) && y > 3.5;
+    const last = c.ladder.length - 1;
+
+    if (c.step < last) {
+      const readable = c.t > CLIMB_STEP * (c.step + 1);
+      const crossed = c.peak > (CLIMB_BAND[c.step] ?? 0);
+      if (readable && crossed) { c.step++; this.sayRung(c.step); }
+    } else if (up && c.hung < 2 && c.t - c.rung > CLIMB_HOLD) {
+      // the ladder is spent and the thing is STILL in the air. She stops
+      // calling it, which is the loudest noise an announcer can make.
+      c.hung++;
+      this.dot.say([
+        { silent: true, hold: 0.55, kind: 'beat' },
+        {
+          text: this.fill(this.lib.pick('dot:climbhang', DOT.climb_hang)),
+          kind: 'shout', grow: CLIMB_GROW[CLIMB_GROW.length - 1], hold: CLIMB_HOLD,
+        },
+      ]);
+      c.rung = c.t + 0.55;
+      this.quiet = 0;
     }
+
     // if it never got anywhere, deflate it — a build that does not pay is a gag
-    if (!c.resolved && c.t > 1.5 && (!ball || (!ball.inFlight && !ball.live))) this.endClimb(null);
-    if (c.t > 4.2) this.endClimb(null);
+    if (!c.resolved && c.t > 1.6 && !up) this.endClimb(null);
+    if (c.t > 7.0) this.endClimb(null);
   }
 
   endClimb(result) {
@@ -1414,7 +1524,7 @@ class Announcer {
     this.climb = null;
     if (result) return;
     if (c.peak < 14) {
-      this.dot.interrupt([{ text: this.line('dot:climbdown', DOT.climb_down), kind: 'talk' }]);
+      this.dot.say([{ text: this.line('dot:climbdown', DOT.climb_down), kind: 'talk', grow: 1 }]);
       this.after(1.1, () => this.gooch.interrupt([{ text: this.line('gooch:nonseq', GOOCH.nonseq) }]));
     }
   }
@@ -1432,6 +1542,13 @@ class Announcer {
 
     const live = APP.sim && APP.sim.state.phase !== 'idle' && APP.sim.state.phase !== 'over';
     if (!live) return;
+
+    // A ball can reach the sky without a bat:contact event — a carom, a scenario,
+    // a gameplay slot that does not emit. The booth is never allowed to be the
+    // only thing on this street that has not noticed a ball over the rooftops.
+    const b = APP.sim.ball;
+    if (!this.climb && b && (b.inFlight || b.live) && b.pos.y > 11 && (b.vel?.y ?? 0) > 0
+        && this.clock - this.lastClimbAt > 3) this.startClimb(null);
     this.quiet += dt;
     this.chatterIn -= dt;
 
@@ -1481,12 +1598,15 @@ class Announcer {
             this.after(speakSeconds('x x x x', 'dot') + 0.5, () => this.gooch.interrupt([{ text: this.line('gooch:nonseq', GOOCH.nonseq) }]));
           }
         }
+        // the infield always says something when somebody new digs in, and it
+        // says it a third of a second after she names him, not on top of her
+        this.after(0.34, () => this.chatter(this.rnd.chance(0.5) ? 'taunt' : 'infield'));
         if (this.gag.twoHander === 0 && this.rnd.chance(0.34)) { this.gag.twoHander = 1; this.after(2.6, () => this.twoHander()); }
       }
     });
 
     bus.on('strike', (p) => {
-      if (p.kind === 'foul') return this.call('dot:foul', DOT.foul, 'gooch:strike', GOOCH.after_strike, { chance: 0.4 });
+      if (p.kind === 'foul') return this.call('dot:foul', DOT.foul, 'gooch:foul', GOOCH.after_foul, { chance: 0.55 });
       if (S().strikes >= T.game.strikes) return;   // the strikeout call comes from 'out'
       if (p.kind === 'swinging') this.call('dot:strikeSw', DOT.strike_swinging, 'gooch:strike', GOOCH.after_strike);
       else this.call('dot:strikeLk', DOT.strike_looking, 'gooch:strike', GOOCH.after_strike);
@@ -1644,24 +1764,38 @@ export default registerSystem({
 function stage(name) {
   const p = APP.get ? APP.get('players') : null;
   announcer.reset(1925);
+  announcer.chatterIn = 1e9;         // a staged frame is composed, not sampled
+  // A staged frame is a still life. Park the at-bat machine, or the sim calls a
+  // strike three seconds in and paints over the exact line the scenario exists
+  // to show. The count is then set to whatever the staged call says it is, so
+  // the scorebug and the booth agree.
+  const st = APP.sim && APP.sim.state;
+  if (st) st.phase = 'idle';
+
   if (name === 'bubbles') {
-    // the architecture of the whole piece in one frame: she calls it straight,
-    // he is strange one beat later, and the kids are talking underneath both
-    announcer.dot.say([{ text: 'Strike two, and the stick never moved. He watched it go by like a trolley he did not want.' }]);
-    announcer.gooch.say([{ text: 'The Gooch would have swung at that. The Gooch would have missed it.' }]);
-    announcer.chatter('{He} shuts {his} eyes! I saw {him}!', { body: p?.catcher, kind: 'shout' });
-    announcer.chatter('Sez who!', { body: p?.batter, kind: 'shout' });
-    const small = announcer.chatterBody('narrate') || p?.onDeck;
-    announcer.chatter('{ME} has a plan. The plan is to swing.', { body: small });
+    /* THE ARCHITECTURE OF THE PIECE IS THE ORDER, so the order is what the
+       frame shows. She calls it straight (t=0). The block reacts (t=0.5). The
+       batter answers, because on this street the batter always answers
+       (t=1.15). And the Gooch is strange a beat and a half AFTER all the
+       information is in (t=1.8) — writing rule 1, and the whole reason there
+       are two of them. At the still, her card is the oldest thing on screen and
+       his is the newest, which is exactly how you read a two-hander. */
+    if (st) { st.balls = 1; st.strikes = 2; }
+    announcer.dot.say([{ text: 'Strike two, and the stick never moved.', hold: 3.1 }]);
+    announcer.after(0.50, () => announcer.chatter('{He} shuts {his} eyes! I saw {him}!', { body: p?.catcher, kind: 'shout', hold: 2.4 }));
+    announcer.after(1.15, () => announcer.chatter('Sez who?', { body: p?.batter, kind: 'shout', hold: 2.2 }));
+    announcer.after(1.80, () => announcer.gooch.say([{ text: 'That swing had ambition. No accuracy. But ambition.', hold: 2.6 }]));
   } else if (name === 'chatter') {
-    // THE ARGUMENT — setup, beat, loser (§8.1). It is settled by volume, then
-    // seniority, then by whoever owns the ball, and it is the engine the whole
-    // comedy runs on, so it gets the frame to itself.
-    announcer.dot.say([{ text: 'Foul ball. And the argument starts in three, two —' }]);
-    announcer.chatter('It was foul!', { body: p?.catcher, kind: 'shout' });
-    announcer.chatter('It was over!', { body: p?.batter, kind: 'shout' });
-    announcer.chatter('It was foul. I have the ball.', { body: p?.onDeck });
-    announcer.gooch.say([{ text: 'Out. And here comes the arguing, right on schedule, like the El.' }]);
+    /* THE ARGUMENT — setup, beat, loser (§8.1), and the three of them arrive
+       three quarters of a second apart so a critic can tell which is which.
+       Both announcers are reading the SAME event: it was foul. The booth is not
+       allowed to contradict itself on one pitch. */
+    if (st) { st.balls = 2; st.strikes = 2; }
+    announcer.dot.say([{ text: 'Foul ball. And the argument starts in three, two —', hold: 3.9 }]);
+    announcer.argue({ t0: 0.75, pool: [p?.catcher, p?.batter, p?.onDeck].filter(Boolean) });
+    announcer.after(2.55, () => announcer.gooch.say([{
+      text: 'That is foul, and here comes the argument, right on schedule, like the El.', hold: 2.6,
+    }]));
   }
 }
 
@@ -1683,10 +1817,44 @@ registerScenario('announcer_climb', {
     APP.sim.ball.vel.set(9, 34, 52);
     APP.sim.ball.inFlight = true; APP.sim.ball.live = true;
     APP.sim.state.phase = 'in_play'; APP.sim.playT = 0;
+    announcer.chatterIn = 1e9;
     announcer.startClimb({ power: 108, angleDeg: 34 });
-    announcer.chatter('Way back! Way back!', { body: APP.get('players')?.catcher, kind: 'shout' });
+    announcer.chatter('Way back! Way back!', { body: APP.get('players')?.catcher, kind: 'shout', hold: 2.2 });
   },
-  settle: 1.05,
+  // rung ZERO. A still of the top of a build tells you nothing about a build;
+  // the film (tools/film.mjs announcer_climb) is where this scenario is read.
+  settle: 0.30,
+});
+
+/**
+ * THE PAUSE. The best timing idea in this file is the three quarters of a second
+ * in which nobody says anything: a bang-bang play at first, two kids already
+ * certain, and Dot holding a piece of newspaper with three dots on it while the
+ * whole street waits. `settle: 0.4` lands the still inside the silence.
+ */
+registerScenario('announcer_pause', {
+  seed: 8181,
+  setup: () => {
+    APP.sim.reset(8181);
+    APP.clock.advance(0.9);
+    bubbles.clear();
+    announcer.reset(8181);
+    announcer.chatterIn = 1e9;
+    // the throw is there and the runner is there and they arrived together
+    APP.sim.ball.pos.set(-6.5, 3.2, T.street.plateZ + 26);
+    APP.sim.ball.vel.set(-2, -6, 4);
+    APP.sim.ball.inFlight = true; APP.sim.ball.live = true;
+    APP.sim.state.phase = 'in_play'; APP.sim.playT = 0;
+    const p = APP.get('players');
+    announcer.chatter('OUT! He is OUT!', { body: p?.catcher, kind: 'shout', hold: 3.0 });
+    announcer.after(0.18, () => announcer.chatter('SAFE! I was standing right there!', { body: p?.batter, kind: 'shout', hold: 3.0 }));
+    // and the booth says nothing at all for three quarters of a second
+    announcer.closeCall(announcer.line('dot:closecall', DOT.close_call));
+    announcer.after(1.65, () => announcer.gooch.say([{
+      text: 'The Gooch saw it. The Gooch is not going to be the one to say.',
+    }]));
+  },
+  settle: 0.4,
 });
 
 /**
