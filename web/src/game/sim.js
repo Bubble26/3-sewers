@@ -107,6 +107,14 @@ export class Sim {
     this.pendingEv = null;
     this.lastEv = null;
     this.windupRate = 1;        // >1 rushes the pitcher's theatre (scenarios only)
+    /**
+     * A fielding piece that wants to put the human throw prompt on screen sets this
+     * true; the sim then leaves `core.pendingThrow` alone through the flight and only
+     * settles it (via `autoThrow`) if the play ends with nobody having answered.
+     */
+    this.deferThrow = false;
+    this.__forcePlay = null;    // the decided play, handed to the fielding slot at the crack
+    this.shown = { away: 0, home: 0 };   // runs already announced on the bus
   }
 
   // ── setup ─────────────────────────────────────────────────────────────────
@@ -120,6 +128,7 @@ export class Sim {
     this.pitch = null; this.hop = null; this.corePitch = null;
     this.lastContact = null; this.lastPlay = null; this.pendingEv = null; this.lastEv = null;
     this.lastErrMs = null;
+    this.shown = { away: 0, home: 0 };
     this.state = newGame();
     this.ball.live = false; this.ball.inFlight = false;
     this.ball.pos.set(0, T.pitch.releaseHeight, T.street.moundZ);
@@ -155,20 +164,35 @@ export class Sim {
     return this.pitchT >= w.open && this.pitchT <= w.close;
   }
 
-  /** Put the human's side at the plate. Scenarios use it; the game never needs to. */
+  /**
+   * Put the human's side at the plate. A reset always opens on the top half, so this is
+   * simply "the player has the visitors this time". Scenarios use it so a shot of the
+   * batting game is a shot of the batting game; the running game never needs it and
+   * keeps the ported default, which is that the gang bat last.
+   */
   setHumanAtBat() {
-    if (this.core.humanBatting()) return;
-    this.core.half = this.core.userSide === 0 ? HALF.TOP : HALF.BOT;
+    this.core.userSide = this.core.battingSide();
     this.syncState();
   }
 
+  /** Same thing, but valid to call BEFORE a reset (scenario hooks run before setup). */
+  humanBatsFirst() { this.core.userSide = HALF.TOP; }
+
   // ── mirror the core into the shape the HUD and the character piece read ───
-  syncState() {
+  /**
+   * `full = false` leaves the SCOREBOARD alone — runs and outs post when the play is
+   * announced, not at the crack, because a scoreboard that knows before the runner has
+   * touched the bag is a scoreboard nobody believes.
+   */
+  syncState(full = true) {
     const c = this.core, s = this.state;
     s.inning = c.inning;
     s.half = c.half === HALF.TOP ? 'top' : 'bottom';
-    s.outs = c.outs; s.balls = c.balls; s.strikes = c.strikes;
-    s.score.away = c.score[0]; s.score.home = c.score[1];
+    s.balls = c.balls; s.strikes = c.strikes;
+    if (full) {
+      s.outs = c.outs;
+      s.score.away = c.score[0]; s.score.home = c.score[1];
+    }
     s.bases = [c.bases[0] || null, c.bases[1] || null, c.bases[2] || null];
     const side = c.battingSide();
     const order = c.lineups[side] || [];
@@ -299,7 +323,10 @@ export class Sim {
       this.lastErrMs = null;
       ev = c.resolveNoSwing();
     }
-    if (c.pendingThrow.play) c.autoThrow();     // no human fielding piece yet: take the sure one
+    // A close grounder can leave the core waiting on a throw. Unless a fielding piece
+    // has claimed the prompt (`sim.deferThrow`), take the sure one now so the verdict
+    // handed downstream is complete.
+    if (c.pendingThrow.play && !this.deferThrow) c.autoThrow();
     this.lastEv = ev;
     gameplay.batting?.onVerdict?.(this, ev);
     return this.handle(ev);
@@ -310,8 +337,6 @@ export class Sim {
    * event into the bus traffic the rest of the game was built against.
    */
   handle(ev) {
-    const before = { ...this.state.score };
-
     if (ev.kind === 'in_play') return this.putInPlay(ev);
 
     this.syncState();
@@ -340,17 +365,23 @@ export class Sim {
       default:
         break;
     }
-    this.scoreDiff(before);
+    this.postRuns();
     return this.afterEvent(ev);
   }
 
-  /** Runs post when the runner touches, not when the rule fires. One 'run' per run. */
-  scoreDiff(before) {
+  /**
+   * Runs post when the play is announced, not when the rule fires, and one 'run' goes
+   * out per run. Measured against what has actually been ANNOUNCED rather than against
+   * the last frame's state, so a mid-play scoreboard sync can never swallow one.
+   */
+  postRuns() {
     const s = this.state;
     for (const team of ['away', 'home']) {
-      for (let i = before[team]; i < s.score[team]; i++) {
+      while (this.shown[team] < s.score[team]) {
+        this.shown[team] += 1;
         bus.emit('run', { team, score: { ...s.score } });
       }
+      this.shown[team] = s.score[team];
     }
   }
 
@@ -388,10 +419,18 @@ export class Sim {
     this.ball.live = true;
     this.state.phase = 'in_play';
     this.playT = 0;
+    this.syncState(false);          // bases and batter now; runs and outs when it lands
     this.freeze = hit.hitstop ?? 0;
     if (this.freeze > 0) bus.emit('bat:hitstop', { seconds: this.freeze, quality: hit.quality });
     bus.emit('bat:contact', hit);
+    // THE VERDICT IS ALREADY TRUE. src/game/fielding.js choreographs a play toward a
+    // known ending and takes it from `sim.__forcePlay`; handing it the core's own play
+    // is what stops it re-judging the same batted ball through core.js's `rules` bridge,
+    // which would draw fresh randomness AND write the sim's lagging state back over the
+    // core. One ball, one verdict, one rulebook.
+    this.__forcePlay = ev;
     gameplay.fielding?.onBallInPlay?.(this, hit);
+    this.__forcePlay = null;
     gameplay.baserunning?.onContact?.(this);
     return ev;
   }
@@ -401,12 +440,12 @@ export class Sim {
     const ev = this.pendingEv;
     this.pendingEv = null;
     this.ball.inFlight = false;
+    if (this.core.pendingThrow.play) this.core.autoThrow();   // nobody answered the prompt
     if (!ev) {                              // a scenario threw a ball with no at-bat behind it
       this.state.phase = 'wind_up';
       this.beat = 0.6;
       return null;
     }
-    const before = { ...this.state.score };
     this.syncState();
     this.state.lastEvent = ev.result || ev.kind;
 
@@ -424,7 +463,7 @@ export class Sim {
         detail: detailOf(ev),
       });
     }
-    this.scoreDiff(before);
+    this.postRuns();
     return this.afterEvent(ev);
   }
 

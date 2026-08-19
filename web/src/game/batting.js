@@ -4,8 +4,8 @@ import { provide } from './plugins.js';
 import { registerScenario } from '../core/scenarios.js';
 import { T } from '../core/tuning.js';
 import { bus } from '../core/bus.js';
-import { rng } from '../core/rng.js';
-import { CHALK, INK, PAVEMENT } from '../render/palette.js';
+import { rng, RNG } from '../core/rng.js';
+import { CHALK, BALL as BALLC } from '../render/palette.js';
 import { MAT, chalkTexture, slabText, slabWidth, LAYER } from '../render/materials.js';
 import { PITCH_TYPES, pitchTiming, blockRoster } from './core.js';
 
@@ -267,20 +267,37 @@ export function halfPerfectMs(con, quality) {
 
 /**
  * How a press becomes the number the rules core resolves — the whole human input model,
- * pure so `rhythmAudit()` can measure it without a browser.
+ * pure so `rhythmAudit()` can measure it without a browser. `afterMs` is milliseconds
+ * since the bounce.
  *
- * `afterMs` is milliseconds since the bounce. Ambiguity is the fix described at the top
- * of this file: if the runner-up pitch fits this press within the batter's own perfect
- * half-window, nothing was identified and nothing can be perfect.
+ * THE CLAIM RULE, which is the fix described at the top of this file:
+ *
+ *   A press claims a pitch. It has to land on that pitch's own side of the midpoint
+ *   between it and its neighbour — inside 60 ms toward the spinner from a fast one,
+ *   80 ms toward the drop from a spinner — or it has claimed nothing and cannot be
+ *   perfect. Past that line the error is floored just outside the batter's perfect
+ *   band and the swing is graded good, weak or a whiff on its merits.
+ *
+ * Note what it is NOT: it is not the eye-widened window, which would have punished a
+ * sharp eye harder than a dull one and made Rosie a worse hitter than Tiny. The limit
+ * is HALF THE GAP, which is a property of the pitches and the same for everybody, so a
+ * wider window is never worth less. The outer two pitches each have one free side —
+ * early on a fast one and late on a drop have no neighbour to be confused with — and
+ * that is exactly where a good eye still pays in full.
  */
-export function pressErrMs(type, afterMs, con, quality) {
-  const raw = afterMs - IDEAL_AFTER[type];
-  const half = halfPerfectMs(con, quality);
-  let rival = Infinity;
-  for (const k of PITCH_TYPES) if (k !== type) rival = Math.min(rival, Math.abs(afterMs - IDEAL_AFTER[k]));
-  const ambiguous = rival - Math.abs(raw) < half;
-  if (!ambiguous) return raw;
-  const floor = half * 1.06 + 2;
+export function pressErrMs(type, afterMs, con, quality, ambiguityFix = true) {
+  const mine = IDEAL_AFTER[type];
+  const raw = afterMs - mine;
+  if (!ambiguityFix) return raw;               // the model BEFORE the fix — measurement only
+  let claim = Infinity;                        // how far this press may err toward a neighbour
+  for (const k of PITCH_TYPES) {
+    if (k === type) continue;
+    const d = IDEAL_AFTER[k] - mine;
+    if (raw === 0 || (d < 0) !== (raw < 0)) continue;    // only neighbours on the side he erred
+    claim = Math.min(claim, Math.abs(d) / 2);
+  }
+  if (Math.abs(raw) < claim) return raw;
+  const floor = halfPerfectMs(con, quality) * 1.06 + 2;
   return (raw < 0 ? -1 : 1) * Math.max(Math.abs(raw), floor);
 }
 
@@ -304,8 +321,8 @@ function bandOf(errMs, con, quality) {
  * fixed rhythm ever gets perfect contact on more than one of the three pitches, the
  * guarantee is broken and `pass` is false.
  */
-export function rhythmAudit({ roster = blockRoster(), sigmaMs = 45, quality = 0.20, seed = 7 } = {}) {
-  const R = new (rng.constructor)(seed);
+export function rhythmAudit({ roster = blockRoster(), sigmaMs = 45, quality = 0.20, seed = 7, ambiguityFix = true } = {}) {
+  const R = new RNG(seed);
   const gauss = () => {
     let u = 0, v = 0;
     while (u <= 1e-9) u = R.next();
@@ -324,7 +341,7 @@ export function rhythmAudit({ roster = blockRoster(), sigmaMs = 45, quality = 0.
       let perfect = 0, contact = 0;
       const covers = [];
       for (const k of PITCH_TYPES) {
-        const b = bandOf(pressErrMs(k, d, kid.con, quality), kid.con, quality);
+        const b = bandOf(pressErrMs(k, d, kid.con, quality, ambiguityFix), kid.con, quality);
         if (b === 'perfect') { perfect++; covers.push(k); }
         if (b !== 'whiff') contact++;
       }
@@ -338,7 +355,7 @@ export function rhythmAudit({ roster = blockRoster(), sigmaMs = 45, quality = 0.
     for (let i = 0; i < N; i++) {
       const k = PITCH_TYPES[i % 3];
       const press = IDEAL_AFTER[k] + gauss() * sigmaMs;
-      const b = bandOf(pressErrMs(k, press, kid.con, quality), kid.con, quality);
+      const b = bandOf(pressErrMs(k, press, kid.con, quality, ambiguityFix), kid.con, quality);
       if (b === 'perfect') rp++;
       if (b !== 'whiff') rc++;
     }
@@ -347,7 +364,7 @@ export function rhythmAudit({ roster = blockRoster(), sigmaMs = 45, quality = 0.
     for (let i = 0; i < N; i++) {
       const k = PITCH_TYPES[i % 3];
       const press = best.delay + gauss() * sigmaMs;
-      const b = bandOf(pressErrMs(k, press, kid.con, quality), kid.con, quality);
+      const b = bandOf(pressErrMs(k, press, kid.con, quality, ambiguityFix), kid.con, quality);
       if (b === 'perfect') bp++;
       if (b !== 'whiff') bc++;
     }
@@ -365,7 +382,7 @@ export function rhythmAudit({ roster = blockRoster(), sigmaMs = 45, quality = 0.
   });
 
   return {
-    sigmaMs, quality,
+    sigmaMs, quality, ambiguityFix,
     gaps: pressGapsHere(6, quality).gaps,
     rows,
     worstBlindCoverage: Math.max(...rows.map((r) => r.blindPerfectPitches)),
@@ -483,10 +500,16 @@ function bounceDrop(g, R, s) {
 
 const BOUNCE_DRAW = { fast: bounceFast, spinner: bounceSpinner, drop: bounceDrop };
 
+/** chalkTexture() caches on the draw function's name, so every drawing gets its own. */
+function named(key, fn) {
+  Object.defineProperty(fn, 'name', { value: key, configurable: true });
+  return fn;
+}
+
 /** A word, hand-lettered in chalk on a torn scrap of air. Period lettering, §6.1. */
 function chalkWordTexture(text, { size = 512, seed = 11, sub = '' } = {}) {
   const key = `bat:word:${text}:${sub}:${seed}`;
-  return chalkTexture(Object.assign((g, R, s) => {
+  return chalkTexture(named(key, (g, R, s) => {
     const h = s * (sub ? 0.30 : 0.40);
     const w = slabWidth(text, h);
     slabText(g, text, (s - w) / 2, s * (sub ? 0.52 : 0.60), h, { color: CHALK, seed, tracking: 0.20 });
@@ -497,7 +520,7 @@ function chalkWordTexture(text, { size = 512, seed = 11, sub = '' } = {}) {
       slabText(g, sub, (s - w2) / 2, s * 0.76, h2, { color: CHALK, seed: seed + 5, tracking: 0.26 });
       g.globalAlpha = 1;
     }
-  }, { name: key }), { size, seed });
+  }), { size, seed });
 }
 
 /** A camera-facing chalk plane that pops, holds and fades. */
@@ -714,6 +737,7 @@ const impl = {
     const hit = {
       quality: q, power: speed, angleDeg: angle * 57.2957795, sprayRad: spray, kind,
       carry: ev.carry, lane: ev.lane, loft, sewers: ev.sewers || 0,
+      play: ev,                       // the core's whole verdict, for the fielding piece
       window: !!ev.window, fireEscape: !!ev.fireEscape, flivver: !!ev.flivver,
       distFt: Math.round(carryToFeet(ev.carry ?? 0.4)),
       hitstop: q >= BT.hitstop.at[0] ? BT.hitstop.square : q >= BT.hitstop.at[1] ? BT.hitstop.glance : BT.hitstop.nubber,
@@ -920,15 +944,222 @@ const system = registerSystem({
   },
 });
 
+
 /* ============================================================================
-   6. SCENARIOS — the evidence
+   6. THE EVIDENCE — two chalk boards hung broadside across the block
+   ----------------------------------------------------------------------------
+   The pitching piece hangs WHAT HE'S GOT across the street at z=38 so a critic can
+   see five real trajectories side on. These are the batting piece's two boards, in
+   the same idiom and deliberately at a different depth so the two never argue:
+   HOP READ (what the hop tells you) and the SWING WINDOW (what you may do about it).
+   Both are chalk on air, both are drawn from the same functions the live pitch flies.
    ========================================================================= */
 
-/** Run the at-bat forward to the release, fast, then to a chosen press. */
+const BOARD = { z: 30, y: 1.15, halfW: 13.5, zSpan: 24, k: 27 / 24 };
+
+/** Street (z, height) -> a point on the hung board. Uniform scale: no exaggeration. */
+function W(zStreet, y) {
+  return new THREE.Vector3(-(BOARD.halfW - zStreet * BOARD.k), BOARD.y + y * BOARD.k, BOARD.z);
+}
+
+const CHART_ID = { fast: 'heat', spinner: 'slow', drop: 'loft' };
+const NAMES = { fast: 'FAST', spinner: 'SPINNER', drop: 'DROP' };
+
+/** Three canonical pitches, one per family, all arriving at the same plate. */
+function chartPlans() {
+  return PITCH_TYPES.map((k) => {
+    const plan = hopPlan({ pitchId: CHART_ID[k], flight: P.pitchTB[k] + 0.34, releaseY: 4.35, aimY: 2.6 });
+    plan.dir = -1;
+    plan.z0 = T.street.moundZ - 2.4;
+    return plan;
+  });
+}
+
+/** Where a plan is, in street coordinates, `t` after release. */
+function planPoint(plan, t) {
+  const z = lerp(plan.z0, T.street.plateZ, clamp(t / plan.flight, 0, 1));
+  return { z, y: hopY(plan, t) };
+}
+
+/** A dotted chalk line on the board — one quad per dot, one draw call per line. */
+function dotLine(pts, { size = 0.13, alpha = 0.7 } = {}) {
+  const n = pts.length;
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 12);
+  const idx = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    const s = size * (p.w ?? 1);
+    const o = i * 12;
+    pos.set([p.x - s, p.y - s, p.z, p.x + s, p.y - s, p.z, p.x + s, p.y + s, p.z, p.x - s, p.y + s, p.z], o);
+    idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color: CHALK, transparent: true, opacity: alpha, depthWrite: false, fog: false, side: THREE.DoubleSide,
+  }));
+  m.renderOrder = 16;
+  return m;
+}
+
+function boardLabel(text, pos, size = 1.0, sub = '', seed = 21) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(size * 8.0, size * 8.0),
+    MAT.chalkMark(chalkWordTexture(text, { seed, sub }), { opacity: 0.97 }));
+  m.position.copy(pos);
+  m.renderOrder = 18;
+  return m;
+}
+
+/* ---------------------------------------------------------------------------
+   6a. HOP READ — three pitch types after the bounce, in one frame
+   ------------------------------------------------------------------------ */
+
+function buildHopChart(app) {
+  if (system.chart) { system.chart.visible = true; return system.chart; }
+  const g = new THREE.Group();
+  g.name = 'hop_read_board';
+  const plans = chartPlans();
+  const sep = separability();
+
+  for (const plan of plans) {
+    // the approach: faint, so the eye starts where the read starts — the stone
+    const before = [];
+    for (let t = 0; t <= plan.tBounce; t += plan.flight / 90) {
+      const q = planPoint(plan, t);
+      if (q.z <= BOARD.zSpan) before.push(Object.assign(W(q.z, q.y), { w: 0.72 }));
+    }
+    if (before.length) g.add(dotLine(before, { size: 0.10, alpha: 0.26 }));
+
+    // the rebound: the tell, drawn fat
+    const after = [];
+    for (let t = plan.tBounce; t <= plan.flight + 1e-6; t += plan.tb / 54) {
+      const q = planPoint(plan, t);
+      after.push(W(q.z, q.y));
+    }
+    g.add(dotLine(after, { size: 0.155, alpha: 0.9 }));
+
+    // the scuff on the stone, stood up on the board where the hop happens
+    const b = planPoint(plan, plan.tBounce);
+    const mk = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6),
+      MAT.chalkMark(chalkTexture(BOUNCE_DRAW[plan.type], { size: 256, seed: 60 + PITCH_TYPES.indexOf(plan.type) }), { opacity: 0.95 }));
+    mk.position.copy(W(b.z, b.y + 0.1));
+    mk.renderOrder = 17;
+    g.add(mk);
+
+    // the ball at the two instants the separability measurement names
+    for (const [s, solid] of [[0.100, false], [0.133, true]]) {
+      const q = planPoint(plan, plan.tBounce + s);
+      const dot = new THREE.Mesh(new THREE.CircleGeometry(T.ball.radius * BOARD.k * (solid ? 1.0 : 1.0), 18),
+        new THREE.MeshBasicMaterial({
+          color: solid ? BALLC.new : CHALK, transparent: true,
+          opacity: solid ? 1 : 0.45, fog: false, depthWrite: false,
+        }));
+      dot.position.copy(W(q.z, q.y));
+      dot.position.z += 0.02;
+      dot.renderOrder = 19;
+      g.add(dot);
+    }
+
+    // who this arc is, and when to hit it
+    const cross = planPoint(plan, plan.flight);
+    g.add(boardLabel(NAMES[plan.type], W(-2.9, cross.y + 0.35), 0.50, `${Math.round(IDEAL_AFTER[plan.type])} MS`, 21 + plan.type.length));
+    g.add(boardLabel(`${plan.yCross.toFixed(1)} FT`, W(4.2, cross.y + 1.15), 0.30, '', 31 + plan.type.length));
+  }
+
+  // the plate, so the three heights mean something
+  const post = [];
+  for (let y = 0; y <= 5.2; y += 0.28) post.push(Object.assign(W(0, y), { w: 0.6 }));
+  g.add(dotLine(post, { size: 0.10, alpha: 0.34 }));
+
+  g.add(boardLabel('THE HOP IS THE TELL', new THREE.Vector3(-1.0, BOARD.y + 9.4, BOARD.z), 1.05,
+    `${sep.at100.worst.toFixed(2)} BALLS APART AT 100 MS`, 41));
+  g.add(boardLabel('EVERY PITCH BOUNCES ONCE', new THREE.Vector3(-1.0, BOARD.y + 7.3, BOARD.z), 0.44,
+    `PRESSES 120 AND 160 MS APART`, 47));
+
+  app.scene.add(g);
+  system.chart = g;
+  return g;
+}
+
+/* ---------------------------------------------------------------------------
+   6b. THE SWING WINDOW — for a critic only. The game never draws this.
+   A prompt that lights before the ball arrives IS the read; see the header.
+   ------------------------------------------------------------------------ */
+
+function timingTexture(type) {
+  return chalkTexture(named(`bat:timing:${type}`, (g, R, s) => {
+    const X = (ms) => s * (0.055 + 0.90 * clamp((ms + 60) / 700, 0, 1));
+    const y = s * 0.50;
+    g.lineCap = 'round';
+    g.lineWidth = s * 0.008;
+    g.globalAlpha = 0.62;
+    g.beginPath(); g.moveTo(X(-60), y); g.lineTo(X(640), y); g.stroke();
+
+    for (const k of PITCH_TYPES) {
+      const x = X(IDEAL_AFTER[k]);
+      const live = k === type;
+      g.globalAlpha = live ? 1 : 0.42;
+      g.lineWidth = s * (live ? 0.016 : 0.008);
+      g.beginPath(); g.moveTo(x, y - s * (live ? 0.115 : 0.07)); g.lineTo(x, y + s * (live ? 0.115 : 0.07)); g.stroke();
+      const nm = NAMES[k];
+      slabText(g, nm, x - slabWidth(nm, s * 0.048) / 2, y - s * 0.135, s * 0.048, { color: CHALK, seed: 9 });
+      const n = String(Math.round(IDEAL_AFTER[k]));
+      slabText(g, n, x - slabWidth(n, s * 0.042) / 2, y + s * 0.20, s * 0.042, { color: CHALK, seed: 12 });
+    }
+
+    // the gaps, which are the whole guarantee
+    g.globalAlpha = 0.7;
+    g.lineWidth = s * 0.006;
+    for (const [a, b, lab] of [[IDEAL_AFTER.fast, IDEAL_AFTER.spinner, '120'], [IDEAL_AFTER.spinner, IDEAL_AFTER.drop, '160']]) {
+      const x0 = X(a), x1 = X(b), yy = y - s * 0.20;
+      g.beginPath(); g.moveTo(x0, yy); g.lineTo(x1, yy); g.stroke();
+      g.beginPath(); g.moveTo(x0, yy - s * 0.02); g.lineTo(x0, yy + s * 0.02); g.stroke();
+      g.beginPath(); g.moveTo(x1, yy - s * 0.02); g.lineTo(x1, yy + s * 0.02); g.stroke();
+      slabText(g, lab, (x0 + x1) / 2 - slabWidth(lab, s * 0.038) / 2, yy - s * 0.035, s * 0.038, { color: CHALK, seed: 14 });
+    }
+
+    // the window, for the pitch that is actually in the air
+    const open = X(IDEAL_AFTER[type] - P.swingEarly * 1000);
+    const close = X(IDEAL_AFTER[type] + P.swingLate * 1000);
+    g.globalAlpha = 0.92;
+    g.lineWidth = s * 0.026;
+    g.beginPath(); g.moveTo(open, y + s * 0.062); g.lineTo(close, y + s * 0.062); g.stroke();
+    for (const x of [open, close]) {
+      g.lineWidth = s * 0.012;
+      g.beginPath(); g.moveTo(x, y + s * 0.015); g.lineTo(x, y + s * 0.105); g.stroke();
+    }
+    slabText(g, 'SWING WINDOW 310 MS', open, y + s * 0.30, s * 0.046, { color: CHALK, seed: 15 });
+
+    slabText(g, 'MS AFTER THE BOUNCE', s * 0.055, s * 0.135, s * 0.058, { color: CHALK, seed: 17 });
+    g.globalAlpha = 0.72;
+    slabText(g, 'NO ONE RHYTHM FITS TWO', s * 0.055, s * 0.94, s * 0.042, { color: CHALK, seed: 19 });
+    g.globalAlpha = 1;
+  }), { size: 1024, seed: 5 });
+}
+
+function buildTimingChart(app) {
+  const type = app.sim.hop ? app.sim.hop.type : 'fast';
+  if (system.timing) { app.scene.remove(system.timing); system.timing = null; }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(29, 10.2),
+    MAT.chalkMark(timingTexture(type), { opacity: 0.96 }));
+  m.position.set(-1.0, 9.6, BOARD.z);
+  m.renderOrder = 18;
+  m.name = 'swing_window_board';
+  app.scene.add(m);
+  system.timing = m;
+  return m;
+}
+
+/* ---------------------------------------------------------------------------
+   6c. The scenarios themselves
+   ------------------------------------------------------------------------ */
+
+/** Run an at-bat forward to the release, fast, then on to a chosen press. */
 function toPress(seed, offsetSec, { rate = 8 } = {}) {
   const sim = app.sim;
+  sim.humanBatsFirst();
   sim.reset(seed);
-  sim.setHumanAtBat();
   sim.windupRate = rate;
   let guard = 0;
   while (sim.state.phase !== 'pitch' && guard++ < 900) app.clock.advance(1 / 60);
@@ -942,11 +1173,11 @@ function toPress(seed, offsetSec, { rate = 8 } = {}) {
   return w;
 }
 
-/** Stop the ball dead just after the bounce, so a still frame shows the hop. */
+/** Hold the ball a chosen moment after the hop, so a still frame shows the read. */
 function toBounce(seed, after = 0.10, { rate = 8 } = {}) {
   const sim = app.sim;
+  sim.humanBatsFirst();
   sim.reset(seed);
-  sim.setHumanAtBat();
   sim.windupRate = rate;
   let guard = 0;
   while (sim.state.phase !== 'pitch' && guard++ < 900) app.clock.advance(1 / 60);
@@ -957,200 +1188,36 @@ function toBounce(seed, after = 0.10, { rate = 8 } = {}) {
   while (sim.state.phase === 'pitch' && sim.pitchT < want && guard++ < 300) app.clock.advance(1 / 60);
 }
 
-registerScenario('swing_timing', {
-  seed: 1925,
-  setup: () => { toBounce(1925, 0.14); buildTimingChart(app); },
-  settle: 0,
-});
-
+/** THE READ. Three pitch types after the bounce, chalked across the block. */
 registerScenario('hop_read', {
   seed: 1925,
   setup: () => {
     const sim = app.sim;
+    sim.humanBatsFirst();
     sim.reset(1925);
-    sim.setHumanAtBat();
     sim.state.phase = 'idle';
     sim.ball.live = false; sim.ball.inFlight = false;
     buildHopChart(app);
-    app.camera.position.set(-27.0, 7.6, 14.0);
-    app.camera.lookAt(1.0, 4.4, 13.0);
-    app.camera.fov = 26;
+    app.camera.fov = 31;
+    app.camera.position.set(0.4, 7.4, -6.4);
+    app.camera.lookAt(-1.0, 7.0, BOARD.z);
     app.camera.updateProjectionMatrix();
   },
   settle: 0,
 });
 
-registerScenario('swing_early', { seed: 4242, setup: () => { toPress(4242, -0.15); }, settle: 0.30 });
-registerScenario('swing_square', { seed: 4242, setup: () => { toPress(4242, 0.0); }, settle: 0.30 });
-registerScenario('swing_late', { seed: 4242, setup: () => { toPress(4242, 0.11); }, settle: 0.30 });
+/** THE WINDOW, and a live ball 140 ms off the stone underneath it. */
+registerScenario('swing_timing', {
+  seed: 1925,
+  setup: () => {
+    toBounce(1925, 0.14);
+    buildTimingChart(app);
+  },
+  settle: 0,
+});
 
-/* ---------------------------------------------------------------------------
-   6a. THE HOP CHART — three pitches, one frame, so a critic can see the tell
-   ------------------------------------------------------------------------ */
-
-const CHART_ID = { fast: 'heat', spinner: 'slow', drop: 'loft' };
-
-function chartPlans() {
-  return PITCH_TYPES.map((k) => {
-    const plan = hopPlan({ pitchId: CHART_ID[k], flight: P.pitchTB[k] + 0.34, releaseY: 4.35, aimY: 2.6 });
-    plan.dir = -1;
-    return plan;
-  });
-}
-
-function arcDots(plan, z0, zPlate) {
-  const pts = [];
-  const n = 46;
-  for (let i = 0; i <= n; i++) {
-    const t = (i / n) * plan.flight;
-    const z = lerp(z0, zPlate, t / plan.flight);
-    const s = Math.max(0, t - plan.tBounce);
-    pts.push(new THREE.Vector3(plan.dir * plan.kick * s * 0.0, hopY(plan, t), z));
-  }
-  return pts;
-}
-
-function dotMesh(pts, { size = 0.13, alpha = 0.72, from = 0 } = {}) {
-  const g = new THREE.BufferGeometry();
-  const n = pts.length - from;
-  const pos = new Float32Array(n * 4 * 3);
-  const idx = [];
-  const a = new THREE.Vector3(size, 0, 0), b = new THREE.Vector3(0, size, 0);
-  for (let i = 0; i < n; i++) {
-    const p = pts[i + from];
-    const o = i * 12;
-    pos.set([p.x - a.x, p.y - b.y, p.z, p.x + a.x, p.y - b.y, p.z, p.x + a.x, p.y + b.y, p.z, p.x - a.x, p.y + b.y, p.z], o);
-    idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
-  }
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-    color: CHALK, transparent: true, opacity: alpha, depthWrite: false, fog: false, side: THREE.DoubleSide,
-  }));
-  m.renderOrder = 16;
-  return m;
-}
-
-function chartLabel(text, pos, size = 1.05, sub = '') {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(size * 7.2, size * 7.2),
-    MAT.chalkMark(chalkWordTexture(text, { seed: 21 + text.length, sub }), { opacity: 0.98 }));
-  m.position.copy(pos);
-  m.renderOrder = 18;
-  return m;
-}
-
-function buildHopChart(app) {
-  if (system.chart) { system.chart.visible = true; return system.chart; }
-  const g = new THREE.Group();
-  g.name = 'hop_chart';
-  const zPlate = T.street.plateZ;
-  const z0 = T.street.moundZ - 2.4;
-  const plans = chartPlans();
-
-  for (const plan of plans) {
-    const pts = arcDots(plan, z0, zPlate);
-    g.add(dotMesh(pts, { size: 0.115, alpha: 0.5 }));
-
-    const zb = lerp(z0, zPlate, plan.tBounce / plan.flight);
-    // the scuff on the stone, laid flat where it actually lands
-    const mk = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4),
-      MAT.chalkMark(chalkTexture(BOUNCE_DRAW[plan.type], { size: 256, seed: 60 + PITCH_TYPES.indexOf(plan.type) }), { opacity: 0.95 }));
-    mk.rotation.x = -Math.PI / 2;
-    mk.position.set(0, 0.04, zb);
-    mk.renderOrder = LAYER.chalk;
-    g.add(mk);
-
-    // the ball, at 100 ms and at 133 ms after the bounce — the two instants the
-    // separability measurement names
-    for (const [s, r] of [[0.100, 0.20], [0.133, 0.30]]) {
-      const t = plan.tBounce + s;
-      const b = new THREE.Mesh(new THREE.SphereGeometry(T.ball.radius * (r > 0.25 ? 1.9 : 1.5), 14, 10),
-        new THREE.MeshBasicMaterial({ color: r > 0.25 ? 0xF2828A : CHALK, transparent: true, opacity: r > 0.25 ? 1 : 0.55, fog: false }));
-      b.position.set(0, hopY(plan, t), lerp(z0, zPlate, t / plan.flight));
-      b.renderOrder = 19;
-      g.add(b);
-    }
-
-    const label = { fast: 'FAST', spinner: 'SPINNER', drop: 'DROP' }[plan.type];
-    g.add(chartLabel(label, new THREE.Vector3(0, plan.yCross + 1.6, zPlate + 3.4), 0.58,
-      `${Math.round(IDEAL_AFTER[plan.type])} MS`));
-    // where it gets to you, in chalk, at the plate
-    g.add(chartLabel(`${plan.yCross.toFixed(1)} FT`, new THREE.Vector3(0, plan.yCross, zPlate - 2.2), 0.40));
-  }
-
-  const sep = separability();
-  g.add(chartLabel('THE HOP IS THE TELL', new THREE.Vector3(0, 9.6, 20.0), 1.5,
-    `${sep.at100.worst.toFixed(2)} BALLS AT 100 MS   ${sep.at133.worst.toFixed(2)} AT 133`));
-
-  app.scene.add(g);
-  system.chart = g;
-  return g;
-}
-
-/* ---------------------------------------------------------------------------
-   6b. THE WINDOW — chalked on the road, for a critic only. The game never draws it.
-   ------------------------------------------------------------------------ */
-
-function timingTexture(sim) {
-  const h = sim.hop || hopPlan({});
-  const key = `bat:timing:${h.type}`;
-  return chalkTexture(Object.assign((g, R, s) => {
-    const X = (ms) => s * (0.06 + 0.88 * clamp((ms + 120) / 820, 0, 1));
-    const y = s * 0.58;
-    g.lineCap = 'round';
-    g.lineWidth = s * 0.012;
-    g.globalAlpha = 0.75;
-    g.beginPath(); g.moveTo(X(-120), y); g.lineTo(X(700), y); g.stroke();
-
-    // the three ideal presses, in the order a kid learns them
-    const NAMES = { fast: 'FAST', spinner: 'SPINNER', drop: 'DROP' };
-    for (const k of PITCH_TYPES) {
-      const x = X(IDEAL_AFTER[k]);
-      const live = k === h.type;
-      g.globalAlpha = live ? 1 : 0.5;
-      g.lineWidth = s * (live ? 0.020 : 0.011);
-      g.beginPath(); g.moveTo(x, y - s * (live ? 0.15 : 0.09)); g.lineTo(x, y + s * (live ? 0.15 : 0.09)); g.stroke();
-      const t = NAMES[k];
-      slabText(g, t, x - slabWidth(t, s * 0.055) / 2, y - s * 0.18, s * 0.055, { color: CHALK, seed: 9 });
-      const n = String(Math.round(IDEAL_AFTER[k]));
-      slabText(g, n, x - slabWidth(n, s * 0.05) / 2, y + s * 0.255, s * 0.05, { color: CHALK, seed: 12 });
-    }
-
-    // the window, for the pitch that is actually in the air
-    const open = X(IDEAL_AFTER[h.type] - P.swingEarly * 1000);
-    const close = X(IDEAL_AFTER[h.type] + P.swingLate * 1000);
-    g.globalAlpha = 0.9;
-    g.lineWidth = s * 0.030;
-    g.beginPath(); g.moveTo(open, y + s * 0.075); g.lineTo(close, y + s * 0.075); g.stroke();
-    for (const x of [open, close]) {
-      g.lineWidth = s * 0.016;
-      g.beginPath(); g.moveTo(x, y + s * 0.02); g.lineTo(x, y + s * 0.13); g.stroke();
-    }
-    const cap = 'SWING WINDOW  310 MS';
-    slabText(g, cap, open, y + s * 0.36, s * 0.052, { color: CHALK, seed: 15 });
-
-    const head = 'MS AFTER THE BOUNCE';
-    slabText(g, head, s * 0.06, s * 0.14, s * 0.062, { color: CHALK, seed: 17 });
-    const sub = `GAPS 120 AND 160 — NO ONE RHYTHM FITS TWO`;
-    g.globalAlpha = 0.78;
-    slabText(g, sub, s * 0.06, s * 0.90, s * 0.046, { color: CHALK, seed: 19 });
-    g.globalAlpha = 1;
-  }, { name: key }), { size: 1024, seed: 5 });
-}
-
-function buildTimingChart(app) {
-  const sim = app.sim;
-  if (system.timing) { app.scene.remove(system.timing); system.timing = null; }
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(40, 40),
-    MAT.chalkMark(timingTexture(sim), { opacity: 0.96 }).clone());
-  m.material = m.material.clone();
-  m.rotation.x = -Math.PI / 2;
-  m.position.set(0, 0.05, T.street.plateZ + 18.0);
-  m.renderOrder = LAYER.chalk + 1;
-  m.name = 'swing_window_chart';
-  app.scene.add(m);
-  system.timing = m;
-  return m;
-}
+registerScenario('swing_early', { seed: 4242, setup: () => { toPress(4242, -0.155); }, settle: 0.26 });
+registerScenario('swing_square', { seed: 4242, setup: () => { toPress(4242, 0.0); }, settle: 0.26 });
+registerScenario('swing_late', { seed: 4242, setup: () => { toPress(4242, 0.115); }, settle: 0.26 });
 
 export default system;

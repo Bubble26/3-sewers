@@ -68,6 +68,7 @@ import { provide, gameplay } from './plugins.js';
 import { LAYOUT, POSTS } from './layout.js';
 import { liveMatch } from './core.js';
 import { getKid } from '../chars/roster.js';
+import { KIDS_BY_ID } from '../chars/wardrobe.js';
 import { CHALK, INK, ACCENTS, PAVEMENT, hexCSS, mix, inkOf } from '../render/palette.js';
 import { slab, slabW, chalk } from '../chars/portraits.js';
 import { chalkStroke } from '../world/props.js';
@@ -148,7 +149,22 @@ const players = () => {
   return p && p.fielders && p.fielders.length ? p : null;
 };
 
-const nickOf = (kidId) => { const k = getKid(kidId); return (k && k.nick) || 'THE KID'; };
+/**
+ * What the block calls him.
+ *
+ * The layout casts by WARDROBE id (`rocco`, `reese`, `herman`) and the wardrobe
+ * carries more kids than the sixteen-strong roster does, so the nickname is read
+ * from src/chars/wardrobe.js first and only falls back to the roster. Reading it
+ * from the roster alone put the word SOCKS on all three tags at once, which is
+ * the kind of thing a screenshot catches and a unit test never would.
+ */
+function nickOf(postId) {
+  const id = (POST[postId] && POST[postId].kid) || postId;
+  const w = typeof id === 'string' ? KIDS_BY_ID.get(id) : null;
+  if (w && w.nick) return w.nick;
+  const k = getKid(id);
+  return (k && k.nick) || 'THE KID';
+}
 const accentOf = (postId) => ACCENTS[(POST[postId] && POST[postId].accent) || 'red'] || ACCENTS.red;
 
 /** A kid's own ceiling on how deep he may chase, per §17.3. Never bypass this. */
@@ -305,9 +321,14 @@ class Play {
         || pl.pitcher;
     }
 
-    // the little brother in right field, who is not paying attention
-    const deep = ranked[ranked.length - 1];
-    if (deep && deep !== primary && frng.chance(FT.dozyOdds)) this.dozy = deep;
+    // THE LITTLE BROTHER. Somebody out there is not paying attention, and on a
+    // real block it is always one of the deep kids — the one on the car roof,
+    // the one up the far end — because nothing has come to him in twenty minutes.
+    // He starts half a second late, and he starts by dropping a pigeon.
+    const idle = ['roof', 'center', 'right', 'left']
+      .map((id) => pool.find((f) => f.home && f.home.id === id))
+      .filter((f) => f && f !== primary && f !== this.backup);
+    if (idle.length && frng.chance(FT.dozyOdds)) this.dozy = idle[frng.int(0, idle.length - 1)];
 
     for (const k of pool) {
       k.fieldReact = k === primary ? FT.react.keen
@@ -433,24 +454,48 @@ class Play {
     const d = Math.hypot(pr.pos.x - ball.pos.x, pr.pos.y - ball.pos.z);
     const slow = ball.vel.lengthSq() < 90;
     const low = ball.pos.y < FT.gatherY;
-    if ((low && d < FT.reach) || (low && slow && d < FT.reach * 1.9) || this.t > 3.1) {
+    // A kid leaves his feet only when standing up will not do it: the ball is
+    // already past him, or going past. Diving at everything is how a fielding
+    // system ends up looking like a blooper reel.
+    const away = (ball.pos.x - pr.pos.x) * ball.vel.x + (ball.pos.z - pr.pos.y) * ball.vel.z > 0;
+    const reach = (this.isOut && away) ? FT.diveReach : FT.reach;
+    if ((low && d < reach) || (low && slow && d < FT.reach * 1.7) || (this.t > 2.9 && d < 9)) {
       this.gather(pl, d);
     }
   }
 
-  /** Follow the ball's own predicted landing point; that is what a kid reads. */
+  /**
+   * Where to run.
+   *
+   * A ball in the air is read off its own predicted landing point — that is what
+   * a kid does, and src/game/ballphysics.js already publishes it. A ball ON THE
+   * GROUND is a different problem: it is still travelling, and running at where
+   * it landed is how a fielder ends up watching it roll past his ankles. For
+   * those, solve a crude intercept instead — two passes of "where will it be by
+   * the time I could get there" is enough, and it is what makes the difference
+   * between converging on a grounder and trailing one.
+   */
   aim(sim) {
-    const bp = gameplay.ballphysics;
-    let x = sim.ball.pos.x, z = sim.ball.pos.z;
-    const pred = bp && bp.predict && bp.predict();
-    if (pred) { x = pred.x; z = pred.z; }
-    else {
+    const b = sim.ball;
+    const rolling = b.pos.y < 1.6 && b.vel.y < 6;
+    if (!rolling) {
+      const bp = gameplay.ballphysics;
+      const pred = bp && bp.predict && bp.predict();
+      if (pred) { this.spot.set(pred.x, pred.z); return; }
       const g = T.ball.gravity;
-      const vy = sim.ball.vel.y, y = Math.max(sim.ball.pos.y, 0.2);
+      const vy = b.vel.y, y = Math.max(b.pos.y, 0.2);
       const tf = (vy + Math.sqrt(Math.max(0, vy * vy + 2 * g * y))) / g;
-      x += sim.ball.vel.x * tf; z += sim.ball.vel.z * tf;
+      this.spot.set(b.pos.x + b.vel.x * tf, b.pos.z + b.vel.z * tf);
+      return;
     }
-    this.spot.set(x, z);
+    const k = this.primary;
+    let lead = 0;
+    for (let i = 0; i < 2; i++) {
+      const x = b.pos.x + b.vel.x * lead, z = b.pos.z + b.vel.z * lead;
+      if (!k) break;
+      lead = clamp(Math.hypot(k.pos.x - x, k.pos.y - z) / FT.sprint, 0, 1.1);
+    }
+    this.spot.set(b.pos.x + b.vel.x * lead, b.pos.z + b.vel.z * lead);
   }
 
   /* --- gather: the money frame -------------------------------------------- */
@@ -490,6 +535,10 @@ class Play {
       else style = 'bobble';
     }
     this.style = style;
+    // From here the ball is spoken for, whether or not it is actually in a hand.
+    // A bobbled ball has to keep existing somewhere while it is being bobbled.
+    this.claimed = true;
+    this.claimAt = new THREE.Vector3(ball.pos.x, Math.max(ball.pos.y, 1.0), ball.pos.z);
     this.applyStyle(pl, k, style);
   }
 
@@ -907,21 +956,36 @@ provide('fielding', {
 
   update(dt, sim) {
     if (!current) return null;
+
+    /**
+     * ANSWER BEFORE THE PHYSICS DOES.
+     *
+     * src/game/sim.js asks this slot first and src/game/ballphysics.js second,
+     * and if the ball is declared settled while this file is still returning
+     * null the play resolves through the placeholder in defaults.js — which
+     * re-judges the same batted ball through the core and produces a second,
+     * different verdict. So a dead ball (rest, roll-out, down a grate, on a
+     * roof) closes the play HERE, with the verdict the core already gave.
+     */
+    const bp = gameplay.ballphysics;
+    const mine = current.claimed || current.holder || current.arrow;
+    if (!mine && current.phase !== 'done') {
+      const dead = bp && bp.settled ? bp.settled(sim.ball, sim) : sim.playT > 2.4;
+      if (dead) current.close();
+    }
+
     const out = current.step(dt, sim);
 
-    // Hold the ball, if somebody has it. The fake upward speed is not decoration:
-    // src/game/ballphysics.js declares a ball "settled" after 0.30 s under
-    // 4 ft/s, and a settled ball makes src/game/sim.js resolve the play out from
-    // under this file with the placeholder verdict in defaults.js. Keeping it
-    // nominally alive (and pointed at the sky, so it never finds a collider) is
-    // the cheapest way to say "this ball is in a hand, not on the road".
-    if (current.holder && current.phase !== 'throw') {
-      sim.ball.vel.set(0, FT.holdLift, 0);
-    } else if (current.arrow && current.arrow.t >= 0) {
+    // The fake upward speed is not decoration: src/game/ballphysics.js declares a
+    // ball "settled" after 0.30 s under 4 ft/s, and a settled ball makes
+    // src/game/sim.js resolve the play out from under this file with the
+    // placeholder verdict in defaults.js. Keeping a ball that is in somebody's
+    // hands nominally alive — and pointed at the sky, where there is nothing to
+    // collide with — is the cheapest honest way to say "this one is spoken for".
+    if (current.claimed || current.holder) sim.ball.vel.set(0, FT.holdLift, 0);
+    else if (current.arrow && current.arrow.t >= 0) {
       const a = current.arrow;
-      const u = clamp(a.t / a.dur, 0, 1);
       sim.ball.vel.set((a.to.x - a.from.x) / a.dur, 0, (a.to.z - a.from.z) / a.dur);
-      void u;
     }
 
     if (out) { current.release(); current = null; }
@@ -996,133 +1060,172 @@ class Overlay {
   }
 
   /* --- the prompt --------------------------------------------------------- */
+  /**
+   * The prompt, in three reads, in this order of priority:
+   *
+   *   WHICH BAGS ARE LIVE   a chalk ring on each one and a torn paper tag over it
+   *   WHICH IS THE GOOD ONE the good one is fresh chalk, big, ringed and shouting;
+   *                         the others are last week's chalk
+   *   HOW LONG IS LEFT      five chalk strokes at the thrower's feet, rubbed out
+   *                         one at a time
+   */
   paintPrompt(app, g, p) {
     const pr = p.prompt;
     const U = this.U;
-    const k = p.holder;
-    const foot = k ? this.project(app, k.pos.x, (k.groundY || 0) + 0.06, k.pos.y) : null;
-    const hand = k ? this.project(app, k.pos.x, (k.groundY || 0) + 2.6, k.pos.y) : null;
+    const k = p.holder || p.primary;
+    if (!k) return;
+    const foot = this.project(app, k.pos.x, (k.groundY || 0) + 0.06, k.pos.y);
     const left = Math.max(0, pr.deadline - pr.t);
     const frac = clamp(left / pr.deadline, 0, 1);
+    const urgent = frac < 0.42;
+    const ball = app.sim.ball;
+    const bp = this.project(app, ball.pos.x, ball.pos.y, ball.pos.z);
 
-    // 1. the chalk arrows, drawn on the road in world space
+    // 1. the road: a chalk ring on every live bag, and an arrow to the good one
     for (const card of pr.cards) {
       const bag = BAG[card.bag];
-      if (!bag || !hand) continue;
+      if (!bag) continue;
       const best = card.bag === pr.best;
       const chosen = pr.choice === card.bag;
+      const lit = best || chosen;
+      const al = (chosen ? 1 : best ? 0.90 : 0.34) * (pr.expired ? 0.35 : 1);
+
+      // the ring, drawn as a circle of world radius 3 on the road
+      const ring = [];
+      for (let i = 0; i <= 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        const s = this.project(app, bag.x + Math.cos(a) * 3.0, LAYOUT.groundAt(bag.x) + 0.05, bag.z + Math.sin(a) * 3.0);
+        if (s) ring.push([s.x, s.y]);
+      }
+      if (ring.length > 3) chalkStroke(g, ring, (lit ? 5.4 : 3.0) * U, 19 + card.bag.length, al, C(CHALK));
+
+      // the arrow, only to the ones worth running the ball to
+      if (!lit) continue;
       const pts = [];
-      const n = 7;
-      for (let i = 0; i <= n; i++) {
-        const u = i / n;
-        const x = (k.pos.x) + (bag.x - k.pos.x) * u;
-        const z = (k.pos.y) + (bag.z - k.pos.y) * u;
+      for (let i = 1; i <= 7; i++) {
+        const u = 0.10 + (i / 7) * 0.78;
+        const x = k.pos.x + (bag.x - k.pos.x) * u;
+        const z = k.pos.y + (bag.z - k.pos.y) * u;
         const s = this.project(app, x, LAYOUT.groundAt(x) + 0.05, z);
         if (s) pts.push([s.x, s.y]);
       }
       if (pts.length < 2) continue;
-      const w = (best || chosen ? 5.6 : 3.0) * U;
-      const al = chosen ? 0.98 : best ? 0.86 : 0.30;
-      chalkStroke(g, pts, w, 31 + card.bag.length * 7, al * (0.55 + 0.45 * frac), C(CHALK));
-      // an arrowhead, two strokes, at the bag end
-      const a = pts[pts.length - 1], b = pts[Math.max(0, pts.length - 2)];
+      chalkStroke(g, pts, 6.2 * U, 37, al * 0.95, C(CHALK));
+      const a = pts[pts.length - 1], b = pts[pts.length - 2];
       const ang = Math.atan2(a[1] - b[1], a[0] - b[0]);
-      const L = 16 * U * (best ? 1.25 : 1);
-      for (const s of [0.62, -0.62]) {
-        chalkStroke(g, [[a[0], a[1]], [a[0] - Math.cos(ang + s) * L, a[1] - Math.sin(ang + s) * L]],
-          w, 61 + Math.round(s * 10), al, C(CHALK));
+      const L = 22 * U;
+      for (const sgn of [0.6, -0.6]) {
+        chalkStroke(g, [[a[0], a[1]], [a[0] - Math.cos(ang + sgn) * L, a[1] - Math.sin(ang + sgn) * L]],
+          6.2 * U, 63 + Math.round(sgn * 10), al, C(CHALK));
       }
     }
 
-    // 2. the tags, one per live bag
-    this.hits = [];
+    // 2. the tags. Solved so no two of them touch and none of them sits on the
+    //    ball — a UI element covering the ball is the one unforgivable one.
+    const boxes = [];
     for (const card of pr.cards) {
       const bag = BAG[card.bag];
       if (!bag) continue;
-      const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 5.4, bag.z);
+      const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 5.0, bag.z);
       if (!s) continue;
       const best = card.bag === pr.best;
-      const chosen = pr.choice === card.bag;
-      const sc = (best ? 1.16 : 1.0) * (chosen ? 1.0 + pr.pop * 0.12 : 1) * U;
-      const w = 176 * sc, h = 92 * sc;
-      const x = clamp(s.x - w / 2, 8 * U, this.w - w - 8 * U);
-      const y = clamp(s.y - h - 10 * U, 8 * U, this.h - h - 8 * U);
-      card.box = { x, y, w, h };
-      this.hits.push({ bag: card.bag, x, y, w, h });
-      this.tag(g, card, x, y, w, h, sc, best, chosen, pr.expired ? 0.3 : 1);
+      const sc = (best ? 1.14 : 0.94) * U * (pr.choice === card.bag ? 1 + pr.pop * 0.10 : 1);
+      const w = 130 * sc, h = 66 * sc;
+      boxes.push({ card, best, sc, w, h, x: s.x - w / 2, y: s.y - h - 8 * U });
+    }
+    boxes.sort((A, B) => A.y - B.y);
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      b.x = clamp(b.x, 10 * U, this.w - b.w - 10 * U);
+      b.y = clamp(b.y, 74 * U, this.h - b.h - 96 * U);
+      // clear of the ball
+      if (bp && bp.x > b.x - 40 * U && bp.x < b.x + b.w + 40 * U
+          && bp.y > b.y - 26 * U && bp.y < b.y + b.h + 26 * U) {
+        b.y = clamp(bp.y - b.h - 44 * U, 74 * U, this.h - b.h - 96 * U);
+      }
+      // clear of each other
+      for (let j = 0; j < i; j++) {
+        const o = boxes[j];
+        if (b.x < o.x + o.w + 8 * U && b.x + b.w + 8 * U > o.x
+            && b.y < o.y + o.h + 10 * U && b.y + b.h + 10 * U > o.y) {
+          b.y = o.y + o.h + 14 * U;
+        }
+      }
+    }
+    this.hits = [];
+    for (const b of boxes) {
+      b.card.box = { x: b.x, y: b.y, w: b.w, h: b.h };
+      this.hits.push({ bag: b.card.bag, x: b.x, y: b.y, w: b.w, h: b.h });
+      this.tag(g, b.card, b.x, b.y, b.w, b.h, b.sc, b.best, pr.choice === b.card.bag, pr.expired ? 0.34 : 1);
     }
 
-    // 3. the countdown, chalked on the road at his feet
-    if (foot) this.tally(g, foot.x, foot.y + 26 * U, U, pr, frac);
+    // 3. the clock
+    if (foot) {
+      this.tally(g,
+        clamp(foot.x, 138 * U, this.w - 138 * U),
+        clamp(foot.y + 40 * U, 120 * U, this.h - 62 * U),
+        U, pr, frac, urgent);
+    }
   }
 
-  /** One torn butcher-paper tag: accent band, key cap, bag name, kid's name. */
+  /** One torn butcher-paper tag: accent band, chalked key cap, bag, kid. */
   tag(g, card, x, y, w, h, sc, best, chosen, alpha) {
-    const U = this.U;
     const acc = accentOf(card.kid);
     const ink = inkOf(acc);
-    const tilt = (card.bag === 'home' ? -2.4 : card.bag === '2B' ? 3.1 : -1.6) * Math.PI / 180;
+    const tilt = (card.bag === 'home' ? -2.6 : card.bag === '2B' ? 3.2 : -1.5) * Math.PI / 180;
     g.save();
     g.globalAlpha = alpha;
     g.translate(x + w / 2, y + h / 2);
     g.rotate(tilt);
     g.translate(-w / 2, -h / 2);
 
-    // torn edge
-    const path = tornPath(g, 0, 0, w, h, card.bag.length * 13 + 3, 3.4 * sc);
+    const path = tornPath(g, 0, 0, w, h, card.bag.length * 13 + 3, 2.8 * sc);
     g.save();
-    g.translate(3 * sc, 5 * sc);
-    g.fillStyle = 'rgba(24,18,14,0.30)';
+    g.translate(3.5 * sc, 5.5 * sc);
+    g.fillStyle = 'rgba(20,15,12,0.34)';
     g.fill(path);
     g.restore();
     g.fillStyle = C(PAPER);
     g.fill(path);
-    // a printed rule down the paper, so it reads as paper and not as a card
     g.save(); g.clip(path);
+    g.globalAlpha = alpha * 0.30;
     g.fillStyle = C(PAPER_SHADE);
-    g.globalAlpha = alpha * 0.35;
-    for (let i = 1; i < 5; i++) g.fillRect(0, h * (i / 5), w, 1.1 * sc);
+    for (let i = 1; i < 4; i++) g.fillRect(0, h * (0.34 + i * 0.16), w, 1.1 * sc);
     g.globalAlpha = alpha;
-    // the accent band along the top — the kid's own colour, so you know who
     g.fillStyle = C(acc);
-    g.fillRect(0, 0, w, h * 0.28);
-    g.fillStyle = C(mix(acc, INK, 0.35));
-    g.fillRect(0, h * 0.28 - 2.4 * sc, w, 2.4 * sc);
+    g.fillRect(0, 0, w, h * 0.34);
+    g.fillStyle = C(ink);
+    g.fillRect(0, h * 0.34 - 2.2 * sc, w, 2.2 * sc);
     g.restore();
-    g.strokeStyle = C(INK); g.lineWidth = Math.max(1.4, 2.0 * sc); g.stroke(path);
+    g.strokeStyle = C(INK); g.lineWidth = Math.max(1.5, 2.2 * sc); g.stroke(path);
 
-    // the key cap — a chalked square with the key in it, on the band
-    const kx = 8 * sc, ky = 4 * sc, ks = h * 0.28 - 8 * sc;
+    // the key cap — a chalked square on the band with the key in it
+    const ks = h * 0.34 - 9 * sc, kx = 7 * sc, ky = 4.5 * sc;
     g.save();
-    g.strokeStyle = C(CHALK); g.lineWidth = Math.max(1.2, 2.2 * sc);
-    g.strokeRect(kx, ky, ks, ks);
-    slab(g, BAG_KEY[card.bag] || '?', kx + ks / 2, ky + ks * 0.80, ks * 0.86, {
-      color: C(CHALK), align: 'center', weight: 0.19, tracking: 0.02, jitter: 0.8, seed: 5,
+    g.strokeStyle = C(CHALK); g.lineWidth = Math.max(1.4, 2.4 * sc);
+    g.strokeRect(kx, ky, ks * 1.06, ks);
+    slab(g, BAG_KEY[card.bag] || '?', kx + ks * 0.53, ky + ks * 0.82, ks * 0.88, {
+      color: C(CHALK), align: 'center', weight: 0.20, tracking: 0.02, jitter: 0.8, seed: 5,
     });
     g.restore();
-    // the shout, on the band next to the key
-    slab(g, BAG_YELL[card.bag] || '', kx + ks + 7 * sc, ky + ks * 0.78, ks * 0.62, {
-      color: C(mix(acc, CHALK, 0.86)), align: 'left', weight: 0.20, tracking: 0.06, jitter: 1, seed: 9,
-      shadow: { dx: 1.2 * sc, dy: 1.4 * sc, color: C(ink) },
+    // the bag, on the band, in the kid's own colour's ink
+    slab(g, BAG_WORD[card.bag] || card.bag, kx + ks * 1.3, ky + ks * 0.84, ks * 0.98, {
+      color: C(mix(acc, CHALK, 0.88)), align: 'left', weight: 0.21, tracking: 0.05, condense: 0.92,
+      jitter: 1, seed: 13, shadow: { dx: 1.4 * sc, dy: 1.5 * sc, color: C(ink) },
+    });
+    // who is standing on it
+    slab(g, nickOf(card.kid), w * 0.5, h * 0.80, 21 * sc, {
+      color: C(INK), align: 'center', weight: 0.21, tracking: 0.07, condense: 0.94, jitter: 1.1, seed: 17,
+      shadow: { dx: 1.5 * sc, dy: 1.7 * sc, color: C(mix(PAPER, INK, 0.26)) },
     });
 
-    // the bag itself, big
-    slab(g, BAG_WORD[card.bag] || card.bag, w / 2, h * 0.72, 30 * sc, {
-      color: C(INK), align: 'center', weight: 0.21, tracking: 0.05, condense: 0.94, jitter: 1.1, seed: 13,
-      shadow: { dx: 1.6 * sc, dy: 1.8 * sc, color: C(mix(PAPER, INK, 0.30)) },
-    });
-    // the kid standing on it
-    slab(g, nickOf((POST[card.kid] || {}).kid || ''), w / 2, h * 0.93, 13 * sc, {
-      color: C(mix(INK, PAPER, 0.34)), align: 'center', weight: 0.22, tracking: 0.10, jitter: 1, seed: 17,
-    });
-
-    // the good one is scrawled round in fresh chalk; the others are not
+    // the good one is scrawled round in fresh chalk and it is shouting
     if (best || chosen) {
       const pad = 7 * sc;
       chalkStroke(g, [[-pad, -pad], [w + pad, -pad], [w + pad, h + pad], [-pad, h + pad], [-pad, -pad]],
-        3.6 * sc, 77, chosen ? 1 : 0.8, C(CHALK));
-      chalk(g, chosen ? 'THAT ONE' : 'THE SURE ONE', w / 2, -pad - 8 * sc, 15 * sc, {
-        align: 'center', color: C(CHALK), weight: 0.17, tracking: 0.12, alpha: 0.95, seed: 23,
+        4.0 * sc, 77, chosen ? 1 : 0.86, C(CHALK));
+      chalk(g, chosen ? 'THAT ONE!' : (BAG_YELL[card.bag] || 'HERE!'), w / 2, -pad - 9 * sc, 19 * sc, {
+        align: 'center', color: C(CHALK), weight: 0.17, tracking: 0.11, alpha: 0.95, seed: 23,
       });
     }
     g.restore();
@@ -1133,31 +1236,38 @@ class Overlay {
    * feet, rubbed out one at a time — the same material the scorebug is made of
    * (§11), and the reason there is no progress bar anywhere in this piece.
    */
-  tally(g, cx, cy, U, pr, frac) {
+  tally(g, cx, cy, U, pr, frac, urgent) {
     const n = FT.ticks;
     const leftN = pr.expired ? 0 : Math.ceil(frac * n - 1e-6);
-    const w = 210 * U, h = 74 * U;
+    const w = 250 * U, h = 92 * U;
     g.save();
     g.translate(cx, cy);
     g.rotate(-1.8 * Math.PI / 180);
-    // the scuffed patch
-    g.save();
-    g.globalAlpha = 0.30;
-    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.30));
+
+    // the patch: scuffed asphalt, rubbed pale, with an ink shadow under it so it
+    // reads on a mid-value road (§6.4 — chalk on asphalt is 5.6:1, but only if
+    // the chalk sits on something)
     const patch = new Path2D();
     const R = new RNG(404);
-    for (let i = 0; i <= 22; i++) {
-      const a = (i / 22) * Math.PI * 2;
-      const rx = (w / 2) * (0.86 + R.next() * 0.2), ry = (h / 2) * (0.80 + R.next() * 0.28);
+    for (let i = 0; i <= 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const rx = (w / 2) * (0.86 + R.next() * 0.20), ry = (h / 2) * (0.78 + R.next() * 0.30);
       const X = Math.cos(a) * rx, Y = Math.sin(a) * ry;
       if (i === 0) patch.moveTo(X, Y); else patch.lineTo(X, Y);
     }
     patch.closePath();
+    g.save();
+    g.globalAlpha = 0.34; g.fillStyle = C(INK);
+    g.translate(0, 4 * U); g.fill(patch); g.restore();
+    g.save();
+    g.globalAlpha = 0.46;
+    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.42));
     g.fill(patch);
     g.restore();
 
-    chalk(g, pr.expired ? 'TOO LATE' : 'THROW IT', 0, -h * 0.20, 20 * U, {
-      align: 'center', color: C(CHALK), weight: 0.16, tracking: 0.14, alpha: 0.95, seed: 31,
+    chalk(g, pr.expired ? 'TOO LATE' : 'THROW IT', 0, -h * 0.14, 26 * U, {
+      align: 'center', color: C(urgent && !pr.expired ? ACCENTS.red : CHALK),
+      weight: 0.17, tracking: 0.13, alpha: 1, seed: 31,
     });
 
     const step = (w * 0.70) / n;
@@ -1165,12 +1275,12 @@ class Overlay {
       const x = -w * 0.35 + step * (i + 0.5);
       const alive = i < leftN;
       const dying = alive && i === leftN - 1;
-      const a = alive ? (dying ? 0.55 + 0.45 * ((frac * n) % 1) : 0.95) : 0.11;
-      chalkStroke(g, [[x - 2 * U, h * 0.05], [x + 2 * U, h * 0.34]], 6.4 * U, 41 + i * 3, a, C(CHALK));
+      const a = alive ? (dying ? 0.45 + 0.55 * ((frac * n) % 1 || 1) : 1) : 0.13;
+      const col = alive && urgent ? ACCENTS.red : CHALK;
+      chalkStroke(g, [[x - 3 * U, h * 0.06], [x + 3 * U, h * 0.36]], 9.0 * U, 41 + i * 3, a, C(col));
     }
     g.restore();
   }
-
   /* --- the call ----------------------------------------------------------- */
   paintCall(app, g, p) {
     const U = this.U;
@@ -1326,13 +1436,31 @@ export default registerSystem({
     comicErrors = this.comicErrors;
     if (!current) return;
     const sim = app.sim;
+    // Belt and braces: if anything else ever ends the at-bat while a play is
+    // still open (a foul, a do-over, the half ending), let go of the bodies
+    // rather than leaving nine kids frozen mid-converge for the next pitch.
+    if (sim.state.phase !== 'in_play') { current.release(); current = null; return; }
 
     // Glue the ball to the hand that is holding it. This runs in `update` at
     // order 310 — after src/chars/players.js (20) has solved the frame's hands
     // and before src/game/ballview.js reads the ball in lateUpdate — so the ball
     // is never drawn a frame behind the kid carrying it.
-    if (current.holder && current.phase !== 'throw') {
+    if (current.holder) {
       handAt(current.holder, sim.ball.pos);
+      sim.ball.vel.set(0, FT.holdLift, 0);
+    } else if (current.claimed && !current.arrow && current.primary) {
+      // Not in a hand yet — being scooped, or being juggled. A bobble that does
+      // not visibly bobble THE BALL is a kid waving at nothing, so the ball hops
+      // around his mitts on a decaying wobble while he chases it (§5.6).
+      const k = current.primary;
+      const g = current.gatherT || 0;
+      const wob = current.clean === false ? Math.max(0, 1 - g / 1.15) : 0;
+      const h = handAt(k, _wp);
+      sim.ball.pos.set(
+        h.x + Math.sin(g * 15.5) * 1.35 * wob,
+        Math.max((k.groundY || 0) + 0.36, h.y + Math.sin(g * 21.0 + 1.1) * 1.15 * wob),
+        h.z + Math.cos(g * 12.5 + 0.6) * 1.0 * wob,
+      );
       sim.ball.vel.set(0, FT.holdLift, 0);
     } else if (current.arrow && current.arrow.t >= 0) {
       const a = current.arrow;
@@ -1415,32 +1543,31 @@ function stage(app, { seed = 1920, ball, vel, play, bases = [null, null, null], 
   if (settle) app.clock.advance(settle);
 }
 
-/** A hard one-hopper to short, and the throw beats him by a stride. */
+/** A hard one-hopper into the hole, and the throw beats him by a stride. */
 registerScenario('field_grounder', {
   seed: 3311,
   setup: ({ app }) => {
     stage(app, {
       seed: 3311,
-      ball: [-1.2, 2.4, 2.0], vel: [-13, 9, 46],
+      ball: [0, 2.6, 3.0], vel: [-12, 6, 22],
       play: { result: 'out_ground', loft: 'ground', fielder: 'SS', margin: -0.06, bases: 0, quality: 0.44, lane: -0.3 },
     });
   },
-  // late enough that the ball is fielded, the throw is in the air and the runner
-  // is inside the last third of the line
-  settle: 1.35,
+  // the throw has landed, the word is on the road and the runner is on his hip
+  settle: 2.18,
 });
 
-/** A lazy fly into short right; two kids converge and one of them is asleep. */
+/** A fly into the gap: two kids converge, and one of them was watching a pigeon. */
 registerScenario('field_fly', {
   seed: 8802,
   setup: ({ app }) => {
     stage(app, {
       seed: 8802,
-      ball: [1.0, 3.0, 1.5], vel: [15, 40, 44],
+      ball: [0.5, 3.0, 2.0], vel: [5, 31, 28],
       play: { result: 'out_fly', loft: 'fly', fielder: 'RF', margin: 0, bases: 0, quality: 0.82, lane: 0.6 },
     });
   },
-  settle: 1.55,
+  settle: 2.0,
 });
 
 /**
@@ -1454,7 +1581,7 @@ registerScenario('throw_prompt', {
     stage(app, {
       seed: 5150,
       bases: [true, null, true],
-      ball: [-1.0, 2.2, 2.0], vel: [-11, 8, 40],
+      ball: [0, 2.6, 3.0], vel: [-12, 6, 22],
       play: { result: 'out_ground', loft: 'ground', fielder: 'SS', margin: 0.04, bases: 0, quality: 0.42, lane: -0.25 },
     });
     // the prompt the core would have asked for, on the play it just decided
@@ -1464,6 +1591,7 @@ registerScenario('throw_prompt', {
       liveMatch.pendingThrow = { play: p.play, margin: p.play.margin };
     }
   },
-  // the ball is fielded at ~0.9 s; another 0.55 s puts the tally at three of five
-  settle: 1.45,
+  // the ball is fielded just before a second; another 0.6 s puts the tally at
+  // three strokes of five, which is what "how long is left" has to read as
+  settle: 1.55,
 });
