@@ -44,18 +44,25 @@ import { ROSTER, getKid, STAT_KEYS, STAT_LABEL, MAX_STAT } from './roster.js';
 /**
  * props.js draws A-Z 0-9 and a short list of marks. Anything else comes out as a
  * hole in the word, so every string in the game goes through here on its way to a
- * canvas. Curly quotes flatten, accents drop, and the two marks the face does not
- * own become the two it does.
+ * canvas. Curly quotes flatten and dashes straighten. The face now owns the
+ * question mark, the two inverted marks and seven accented caps, so those pass
+ * through untouched — the block speaks more than one language and the lettering
+ * is not allowed to be the reason it does not (§7.5). Every other accent folds
+ * to its bare letter rather than punching a hole in the word.
  */
+const KEEP_ACCENT = 'áéíóúñüÁÉÍÓÚÑÜ';
 export function say(text) {
   return String(text)
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFC')
+    // props.js owns nine marks beyond ASCII now — the inverted pair and the
+    // seven accented caps — so those survive and everything else folds.
+    .replace(/[^\u0000-\u007f\u00a1\u00bf]/g, (c) => (KEEP_ACCENT.includes(c)
+      ? c : c.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
     .replace(/[‘’ʼ]/g, "'")
     .replace(/[“”]/g, "'")
     .replace(/[–—]/g, '-')
-    .replace(/\?/g, '!')
     .replace(/;/g, ',')
-    .replace(/[^A-Za-z0-9 .,'\-:!/&()*·]/g, '')
+    .replace(/[^A-Za-z0-9 .,'\-:!?/&()*·¡¿áéíóúñüÁÉÍÓÚÑÜ]/g, '')
     .toUpperCase();
 }
 

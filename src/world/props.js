@@ -117,7 +117,10 @@ const G = {
   '-': [[[1, 4.8], [5, 4.8]]],
   '·': [[[2.7, 4.8], [3.3, 4.8]]],
   ':': [[[2.7, 7], [3.3, 7]], [[2.7, 1.4], [3.3, 1.4]]],
-  '!': [[[3, 10], [3, 2.8]], [[2.7, 0.4], [3.3, 0.4]]],
+  '!': [[[3, 10], [3, 4.6]], [[3, 1.2], [3, 0.2]]],
+  '?': [[[0.9, 8.2], [2.2, 10], [4.2, 9.8], [5.2, 8.2], [4.6, 6.0], [3, 4.8], [3, 3.2]], [[2.7, 0.4], [3.3, 0.4]]],
+  '¡': [[[3, 5.4], [3, 0]], [[3, 9.8], [3, 8.8]]],
+  '¿': [[[5.1, 2.0], [3.8, 0.2], [1.8, 0.4], [0.8, 2.0], [1.4, 4.2], [3, 5.4], [3, 7.0]], [[2.7, 9.8], [3.3, 9.8]]],
   '/': [[[0.8, -0.8], [5.2, 10.6]]],
   '&': [[[5.7, 0], [1.6, 6.8], [2.2, 9.6], [4, 9.7], [4.3, 7.8], [0.9, 4], [0.8, 1.5], [2.6, 0], [4.6, 1.4], [5.6, 3.4]]],
   '¢': [[[4.9, 7.6], [3.9, 9], [2.2, 9.2], [1, 7.6], [0.7, 5], [1, 2.4], [2.2, 0.8], [3.9, 1], [4.9, 2.4]], [[3, 10.4], [3, -0.4]]],
@@ -127,7 +130,33 @@ const G = {
   ' ': [],
 };
 
+/* Accented caps, because this block speaks more than one language and §7.5 says
+   so out loud. The skeleton is the plain letter; the mark is a short stroke sat
+   above the cap line, and it is deliberately under two glyph units long so the
+   serif pass below skips it — an acute that gets slabbed is a macron. */
+const ACUTE = [[2.3, 11.1], [3.8, 11.9]];
+const TILDE = [[1.9, 11.2], [2.6, 11.9], [3.4, 11.2], [4.1, 11.9]];
+const UML_L = [[2.0, 11.5], [2.4, 11.5]];
+const UML_R = [[3.6, 11.5], [4.0, 11.5]];
+G['\u00c1'] = [...G.A, ACUTE];
+G['\u00c9'] = [...G.E, ACUTE];
+G['\u00cd'] = [...G.I, ACUTE];
+G['\u00d3'] = [...G.O, ACUTE];
+G['\u00da'] = [...G.U, ACUTE];
+G['\u00d1'] = [...G.N, TILDE];
+G['\u00dc'] = [...G.U, UML_L, UML_R];
+
 const GW = 6, GH = 10;
+
+/** How long a glyph path runs, in glyph units. Dots, periods and accents are
+    short; stems, bars and bowls are not. The serif pass uses it to tell them
+    apart, because slabbing a full stop closes the gap under an exclamation
+    mark and turns it into a capital I. */
+function pathRun(path) {
+  let n = 0;
+  for (let i = 1; i < path.length; i++) n += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+  return n;
+}
 
 function glyphPaths(ch) { return G[ch] || G[ch.toUpperCase()] || G[' ']; }
 
@@ -179,7 +208,7 @@ export function slabText(g, text, x, y, size, opts = {}) {
           if (i === 0) g.moveTo(X, Y); else g.lineTo(X, Y);
         }
         g.stroke();
-        if (serif > 0 && path.length > 1) {
+        if (serif > 0 && path.length > 1 && pathRun(path) >= 2.0) {
           for (const [a, b] of [[0, 1], [path.length - 1, path.length - 2]]) {
             const p = path[a], q = path[b];
             const dxs = (q[0] - p[0]) * s, dys = (q[1] - p[1]) * s;

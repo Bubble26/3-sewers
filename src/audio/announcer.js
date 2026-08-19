@@ -99,7 +99,6 @@ const DOT = {
     'That is a strike on this block, and it would be a strike on any block.',
     'Strike {S}! {He} is still looking at where it was.',
     'Down the middle, {S}. {P} is enjoying this far too much.',
-    '{He} watched it go by like a trolley {he} did not want.',
     'Strike {S}. Clean as a whistle and twice as loud.',
     'That is a strike and I do not care who is arguing about it.',
   ],
@@ -109,8 +108,6 @@ const DOT = {
     'Whiffed {him}! That is {S}.',
     'All the way around, and nothing on the end of it.',
     'Strike {S}, and {he} swung hard enough for two.',
-    'Missed it by a foot and a half, and I measured.',
-    'That swing had ambition. No accuracy. But ambition.',
     'Cut at it! Cut at it and got air. Strike {S}.',
     '{He} swung so hard {his} cap came off. The cap is fine.',
     'Strike {S}! {He} is telling everybody {he} had it timed.',
@@ -178,6 +175,14 @@ const DOT = {
     '{He} is out, and the ash can goes back where it was.',
   ],
   hit: [
+    'Base hit! {He} is on!',
+    'Through! Clean through!',
+    'Right past everybody! Go!',
+    'On the tar and gone!',
+    'Got it! Up the gutter!',
+    'Safe! Safe and standing!',
+    'That is a hit. MOVE!',
+    'Past the hydrant! {He} is on!',
     'Base hit! Right past everybody.',
     '{He} got it! Through the gap and up the street.',
     'Solid! That is a clean one and it is rolling for the corner.',
@@ -212,6 +217,16 @@ const DOT = {
     'Three bases. Somebody go and get that ball. Somebody.',
   ],
   sewer: [
+    /* Short, fast, hot. She is three floors up shouting through a newspaper and
+       she has about four words before the ball lands (§7.2). */
+    'Gone! GONE! Chalk it!',
+    'That is TWO SEWERS!',
+    'Goodbye! Goodbye and gone!',
+    'Up and OUT! Two sewers!',
+    '{He} is a two-sewer man!',
+    'All of it! ALL of it!',
+    'Past the second casting! Gone!',
+    'Chalk on the curb! Now!',
     'SEWER SHOT! Past the second casting, on the fly!',
     'That is TWO SEWERS! I saw it, and {his} mark goes on the curb!',
     'Gone! Over everything! {B} is a two-sewer man!',
@@ -224,6 +239,14 @@ const DOT = {
     '{He} hit that into next Thursday and I am marking it down as Thursday!',
   ],
   run: [
+    '{He} is around second already!',
+    'Get it, get it, GET IT!',
+    'That is a run! Chalk!',
+    'In {he} comes! One in!',
+    'Home! {He} scores! Chalk it!',
+    'Across the cover! That is one!',
+    'Score it! I am scoring it!',
+    'Go! GO! {He} is home!',
     'That is a run! Chalk it up. I am chalking it up.',
     '{He} scores! Across the plate, and the plate is a manhole {he} stamped on.',
     '{He} scores standing! And Beans is already saying the number out loud.',
@@ -236,6 +259,14 @@ const DOT = {
 
   /* --- the plays that get told about ------------------------------------ */
   great: [
+    'Got it! {F} got it!',
+    'What a catch! WHAT a catch!',
+    'Bare hands! Bare HANDS!',
+    'Off the brick and caught!',
+    '{F} had that all the way!',
+    'Into the gutter and up with it!',
+    'Two hands! Nobody drops that!',
+    'Play of the afternoon! Right there!',
     'What a catch! {F} had no business with that!',
     'Off the wall, off the hands, and {F} still has it!',
     '{F} went into the gutter for that. Into the gutter. On purpose!',
@@ -280,7 +311,6 @@ const DOT = {
   lopsided: [
     'It is getting away from them, and I am obliged to say so.',
     'That is a lead you could park a wagon in.',
-    'One side is having a lovely afternoon. The other side is having a Tuesday.',
     'It is not close, and pretending otherwise is not calling a game.',
     'They are so far ahead the little ones are batting again.',
     'If it stays like this, somebody is going to take the ball home.',
@@ -309,12 +339,27 @@ const DOT = {
   ],
 
   /* --- the ball is climbing ---------------------------------------------- */
+  /* THE BUILD. Three rungs, and each rung is SHORTER and LOUDER than the one
+     under it, because that is what escalation sounds like out of a person: the
+     sentence runs out of room as the ball runs out of sky. The card gets bigger
+     on every rung (announcer.js CLIMB_GROW) and the last rung is a shout. */
   climb: [
-    ['That is UP —', '— that is way up —', '— that is going for the corner —'],
-    ['He got that one —', '— and it is climbing —', '— and the pigeons are off the cornice —'],
-    ['Up in the air —', '— nobody is under it —', '— somebody GET under it —'],
-    ['That is hit —', '— and it is still going —', '— and it is over the wagon —'],
-    ['Way back —', '— way BACK —', '— that is past the first casting —'],
+    ['That is UP —', '— way up, way back —', '— GET UNDER IT!'],
+    ['{He} got hold of that —', '— and it is climbing —', '— PIGEONS off the cornice!'],
+    ['Up in the air —', '— nobody is under it —', '— SOMEBODY get under it!'],
+    ['That is hit —', '— and it is still going —', '— OVER the wagon!'],
+    ['Way back —', '— way BACK —', '— past the first casting!'],
+    ['{He} got all of that —', '— and it is not coming down —', '— SECOND SEWER! SECOND SEWER!'],
+  ],
+  /* The ladder is spent and the ball has not landed. She stops calling and just
+     watches it, which is the loudest thing an announcer can do. */
+  climb_hang: [
+    '— it is still up —',
+    '— nobody has called it —',
+    '— and it is coming down somewhere —',
+    '— everybody on this street is looking at the same piece of sky —',
+    '— it has not landed. It has not landed —',
+    '— I am up here and it is still up there —',
   ],
   climb_down: [
     '— and it comes down about four feet from where it started.',
@@ -337,6 +382,9 @@ const DOT = {
 
 const GOOCH = {
   after_strike: [
+    'That swing had ambition. No accuracy. But ambition.',
+    '{He} watched it go by like a trolley {he} did not want.',
+    'Missed it by a foot and a half. The Gooch measured. The Gooch measures for a living.',
     'The Gooch would have swung at that. The Gooch would have missed it.',
     'In there like the rent. Right on time, and nobody wanted it.',
     'That is a good pitch. The Gooch does not say that often. The Gooch has now said it.',
@@ -369,6 +417,16 @@ const GOOCH = {
     'Good hands. The Gooch has hands like a pair of tongs. That is not praise.',
     '{He} is out. {His} mother will hear about it before {he} gets upstairs.',
     'That is the third one. The Gooch is going to go and stand somewhere else.',
+  ],
+  after_foul: [
+    'Foul. The Gooch has been hit by one of those. The Gooch was sitting down at the time.',
+    'Off the brick. That brick was here before the Gooch and it has not lost yet.',
+    'Straight up. Everybody looks up. The Gooch does not look up. The Gooch knows what is up there.',
+    'That is foul, and here comes the argument, right on schedule, like the El.',
+    'Foul ball. Somebody is about to be very sure about something.',
+    'The Gooch calls that foul. Nobody asked the Gooch. The Gooch is aware of that.',
+    'Off the awning. That awning has had a year.',
+    'A piece of it. The Gooch has had a piece of a lot of things.',
   ],
   after_hit: [
     'Base hit. The Gooch is going to allow it.',
@@ -417,6 +475,7 @@ const GOOCH = {
     'They are fine. The street is fine. The ball is at the curb, laughing.',
   ],
   between: [
+    'One side is having a lovely afternoon. The other side is having a Tuesday.',
     'Three out. The Gooch is going to go and check on the ice.',
     'Change over. The Gooch has not moved and does not intend to.',
     'Half an inning. That is about nine pounds of ice, if anybody is counting. Nobody is.',
@@ -545,7 +604,7 @@ const KID_LINES = {
     gooch: 'Nobody here will explain that name, and the Gooch has stopped asking.',
   },
   jesus: {
-    dot: 'Cheech Colon. No shoes since June. He says it is faster. It is faster.',
+    dot: 'Cheech Col\u00f3n. No shoes since June. He says it is faster. It is faster.',
     gooch: 'He goes on your second look. So do not take a second look. Everybody takes a second look.',
   },
   luz: {
@@ -625,7 +684,7 @@ const CHATTER = {
   ],
   /* the batter answers, because on this street the batter always answers */
   back: [
-    'Sez who!', 'Says you!', 'So\'s your old man!', 'Applesauce!', 'Banana oil!',
+    'Sez who?', 'Says you!', 'So\'s your old man!', 'Applesauce!', 'Banana oil!',
     'Chase yourself.', 'Beat it.', 'Just throw it.', 'Ah, ya bum.',
     'I am going to hit this over your head.', 'Watch the second sewer. Watch it.',
     'Keep talking. Keep talking.',
@@ -658,7 +717,30 @@ const CHATTER = {
     'CAR!', 'CAR! CAR!', 'HEADS UP!', 'CHEESE IT!', 'SEWER!', 'TIME!', 'DO OVER!',
     'HOLD IT!', 'MOVE IT!', 'OUT OF THE WAY!',
   ],
+
+  /* ------------------------------------------------------------------------
+   * The block is not monolingual and the game does not pretend it is.
+   * DESIGN-BIBLE §7.5 and BYB §6.2 both make this a hard requirement: at least
+   * two kids speak something other than English on the field, UNTRANSLATED,
+   * UNSUBTITLED, and never a punchline. So these are ordinary calls for the
+   * ball, ordinary encouragement, ordinary disgust. They are gated on the kid's
+   * own `home` field, so only the kids who would actually say them do. Nobody
+   * in the booth ever remarks on it, because on this street nobody would.
+   * ---------------------------------------------------------------------- */
+  es: [
+    '\u00a1Dale!', '\u00a1Corre!', 'M\u00eda, m\u00eda', 'Se fue', '\u00a1Ah\u00ed va!', 'Otra vez',
+    '\u00a1Aqu\u00ed! \u00a1Aqu\u00ed!', 'Ya est\u00e1', '\u00a1Vamos!', '\u00bfQu\u00e9?',
+  ],
+  yi: [
+    'Nu?', 'Genug shoyn', 'Oy, a klug', 'Shoyn', 'Gib a zets',
+    'Nu, shoyn', 'A gantse megile', 'Gey shoyn',
+  ],
 };
+
+/** Which bank a kid may draw on, off the roster's own `home` field. Nobody else
+    gets these lines, because a running joke in the wrong mouth is not a joke and
+    a language in the wrong mouth is worse. */
+const HOME_TONGUE = { 'Puerto Rican': 'es', Jewish: 'yi' };
 
 /**
  * The argument about whether it was foul. Every one is a setup, a beat, and a
@@ -666,10 +748,10 @@ const CHATTER = {
  * is settled by volume, then seniority, then by who owns the ball.
  */
 const ARGUMENTS = [
-  ['It was foul!', 'It was over!', 'It was foul. I have the ball.'],
+  ['That was foul!', 'It was over!', 'It was foul. I have the ball.'],
   ['That hit the wall on the fly!', 'It hit the sign!', 'The sign is ON the wall.', 'Do over.'],
-  ['You\'re blind!', 'Sez who!', 'Everybody!', 'Do over.'],
-  ['That is a ground rule double!', 'Says who!', 'Says the rules!', 'Whose rules!', 'Mine. I brought the ball.'],
+  ['You\'re blind?', 'Sez who?', 'Everybody!', 'Do over.'],
+  ['That is a ground rule double!', 'Says who?', 'Says the rules!', 'Whose rules?', 'Mine. I brought the ball.'],
   ['Off the stoop and out is live!', 'Dead ball!', 'It is live on Mulberry!', 'We are not on Mulberry.'],
   ['Foul!', 'Fair!', 'FOUL!', 'FAIR!', 'TIME. Everybody. TIME.'],
   ['He was out by a mile!', 'He was safe by a mile!', 'It cannot be both a mile.', 'Do over.'],

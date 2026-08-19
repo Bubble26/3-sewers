@@ -162,7 +162,7 @@ function sunAt(x, y, o) {
  * as a cast shadow with a direction, not as a horizontal band of paint.
  */
 const SUN = {
-  nearFacade: { shadowY: 11.5, shadowX: 0, shadowSlope: -0.055, pen: 0.65 },
+  nearFacade: { shadowY: 14.6, shadowX: 0, shadowSlope: -0.055, pen: 0.65 },
   midBlock: { shadowY: 19.5, shadowX: 0, shadowSlope: -0.050, pen: 0.85 },
   farBlock: { shadowY: 22.0, shadowX: 0, shadowSlope: -0.045, pen: 1.10 },
   sky: { shadowY: -30, shadowX: 0, shadowSlope: -0.030, pen: 2.20 },
@@ -556,15 +556,35 @@ function wagonBay(card, lot, r) {
     (f, n, c) => shadeLin(FACADE.brickShade, 0, 0.30), 'pz nz py ny', 8);
   Tb.box(xf + deep - 0.2, 0, cz - half, xf + deep, head, cz + half,
     () => shadeLin(0x6b4235, 0.10, 0.26), 'nx');
-  // the two doors, standing closed, one of them hung a little low
+  /* THE QUIET BAY IS QUIET, NOT COLOURLESS.
+   *
+   * Dead centre of the near card, on the axis the ball travels, this bay carries no lettering
+   * and no glass on purpose — nothing here is allowed to compete with the ball. Round 1 read
+   * that as "nothing here at all" and shipped the frame's worst Law 4 failure: 128 px tiles at
+   * mean S 0.12–0.16 right behind the pitcher, in `cam_batting`, `pitch` and `wide`.
+   *
+   * Saturation is not lettering. A pair of freight doors painted oxblood over red lead, with
+   * bottle-green strap hinges and a red-lead lintel, is loud in CHROMA and silent in
+   * INFORMATION — which is exactly the trade Law 4 is asking for. */
+  const DOOR = 0x7b1f1f, HINGE = 0x1f4038, LEAD = 0xc8402f;
   for (const [a, b, drop] of [[cz - half + 0.25, cz - 0.12, 0], [cz + 0.12, cz + half - 0.25, 0.18]]) {
     Tb.box(xf - 0.42, 0, a, xf - 0.18, spring + 0.4 - drop, b,
-      (f, n, c) => shadeLin(lot.doorHex, litOf(n, c[0], c[1], c[2]) * 0.62, f === 'nx' ? 0 : 0.3), 'nx py pz nz');
+      (f, n, c) => shadeLin(DOOR, litOf(n, c[0], c[1], c[2]) * 0.78, f === 'nx' ? 0 : 0.22), 'nx py pz nz');
+    // tongue-and-groove boarding: eight planks, each a hair off its neighbour
+    for (let k = 0; k * 1.05 < b - a - 0.4; k++) {
+      Tb.box(xf - 0.5, 0.2, a + 0.22 + k * 1.05, xf - 0.42, spring + 0.2 - drop, a + 0.30 + k * 1.05,
+        () => shadeLin(0x5c1717, 0.16, 0.18), 'nx px pz nz');
+    }
     for (const hy of [1.2, spring - 1.1]) {
-      Tb.box(xf - 0.52, hy - 0.16, a + 0.1, xf - 0.4, hy + 0.16, a + 2.6,
-        (f, n, c) => shadeLin(lot.ironHex, litOf(n, c[0], c[1], c[2]) * 0.5, 0.12), 'nx py ny');
+      Tb.box(xf - 0.58, hy - 0.22, a + 0.1, xf - 0.4, hy + 0.22, a + 3.1,
+        (f, n, c) => shadeLin(HINGE, litOf(n, c[0], c[1], c[2]) * 0.85, 0.05), 'nx py ny pz nz');
     }
   }
+  // red-lead lintel plate over the opening, and a green kick-board along its foot
+  Tb.box(xf - 0.66, spring + 0.4, cz - half - 0.3, xf - 0.34, spring + 1.35, cz + half + 0.3,
+    (f, n, c) => shadeLin(LEAD, litOf(n, c[0], c[1], c[2]) * 0.9, f === 'ny' ? 0.25 : 0), 'nx py ny pz nz');
+  Tb.box(xf - 0.62, 0, cz - half - 0.3, xf - 0.34, 1.05, cz + half + 0.3,
+    (f, n, c) => shadeLin(HINGE, litOf(n, c[0], c[1], c[2]) * 0.8, 0.1), 'nx py pz nz');
   // segmental arch head in stepped brick
   for (let i = 0; i < 11; i++) {
     const t = (i + 0.5) / 11;
@@ -685,9 +705,13 @@ function curbDressing(card, r) {
         (f, n, c) => shadeLin(0xd8cfb8, litOf(n, c[0], c[1], c[2]) * 0.9, 0), 'nx px py pz nz');
       Tb.box(x - 0.5, y + 15.2, z - 0.5, x + 0.5, y + 16.0, z + 0.5, () => shadeLin(0x2e4034, 0.2), 'nx px py pz nz');
     } else if (kind === 'cans') {
+      // Galvanised ash cans are near-neutral, and a kerb full of them is a Law 4 dead zone —
+      // measured at S 0.12–0.16 in round 1. Every second one is therefore a painted can, which
+      // is what a janitor with a half-tin of porch paint and a numbered building actually did.
       for (let i = 0; i < 2 + r.int(0, 1); i++) {
         const cz = z - 1.6 + i * 2.3, cx = x + r.range(-0.6, 0.6);
-        Tb.cyl(cx, cz, 1.02, y, y + 2.7, 10, (n, c) => shadeLin(0x8e877a, litOf(n, c[0], c[1], c[2]) * 0.8, 0.06));
+        const body = i % 2 ? ACC[(i + Math.abs(Math.round(z))) % 4] : 0x8e877a;
+        Tb.cyl(cx, cz, 1.02, y, y + 2.7, 10, (n, c) => shadeLin(body, litOf(n, c[0], c[1], c[2]) * 0.8, 0.06));
         Tb.cyl(cx, cz, 1.1, y + 2.7, y + 3.0, 10, (n, c) => shadeLin(0x6e675c, litOf(n, c[0], c[1], c[2]) * 0.9));
       }
     } else if (kind === 'crates') {
@@ -696,8 +720,9 @@ function curbDressing(card, r) {
         const cx = x + r.range(-0.5, 0.5);
         Tb.box(cx - 1.6, cy, cz - 1.6, cx + 1.6, cy + 2.1, cz + 1.6,
           (f, n, c) => shadeLin(0x8a6a44, litOf(n, c[0], c[1], c[2]) * 0.92, f === 'ny' ? 0.4 : 0), 'nx px py pz nz');
-        Tb.box(cx - 1.7, cy + 0.85, cz - 1.65, cx + 1.7, cy + 1.2, cz + 1.65,
-          (f, n, c) => shadeLin(0x6b4235, litOf(n, c[0], c[1], c[2]) * 0.7, 0.14), 'nx px py');
+        // the stencilled end board: every crate on a 1925 kerb had the shipper painted on it
+        Tb.box(cx - 1.7, cy + 0.75, cz - 1.65, cx + 1.7, cy + 1.45, cz + 1.65,
+          (f, n, c) => shadeLin(ACC[i % 4], litOf(n, c[0], c[1], c[2]) * 0.86, 0.06), 'nx px py');
       }
     } else if (kind === 'stack') {
       // sacks of coal, or of anything: the shape a 1925 sidewalk was actually cluttered with
@@ -705,11 +730,14 @@ function curbDressing(card, r) {
         const cx = x + r.range(-0.9, 0.9), cz = z - 2.6 + i * 1.35;
         const hh = 1.5 + r.range(0, 0.5), lift = i === 2 || i === 3 ? 1.5 : 0;
         Tb.box(cx - 1.25, y + lift, cz - 0.72, cx + 1.25, y + lift + hh, cz + 0.72,
-          (f, n, c) => shadeLin(i % 3 === 1 ? 0x8a7f70 : 0x9a8a68, litOf(n, c[0], c[1], c[2]) * 0.85,
+          (f, n, c) => shadeLin(i % 3 === 1 ? 0x9a6a3c : 0x9a8a68, litOf(n, c[0], c[1], c[2]) * 0.85,
             f === 'ny' ? 0.35 : 0.04), 'nx px py pz nz');
       }
+      // a bolt of cloth or a rolled awning leaning on the stack, in one loud colour
+      Tb.box(x - 0.7, y, z + 3.4, x + 0.7, y + 6.2, z + 4.3,
+        (f, n, c) => shadeLin(ACC[Math.abs(Math.round(z)) % 4], litOf(n, c[0], c[1], c[2]) * 0.88, 0.05), 'nx px py pz nz');
     } else {
-      Tb.cyl(x, z, 1.35, y, y + 3.4, 10, (n, c) => shadeLin(0x7a6244, litOf(n, c[0], c[1], c[2]) * 0.85, 0.05));
+      Tb.cyl(x, z, 1.35, y, y + 3.4, 10, (n, c) => shadeLin(0x8a5a2c, litOf(n, c[0], c[1], c[2]) * 0.85, 0.05));
       Tb.cyl(x, z, 1.42, y + 1.5, y + 1.8, 10, (n, c) => shadeLin(0x4a4038, litOf(n, c[0], c[1], c[2]) * 0.6));
       Tb.cyl(x, z, 1.4, y + 3.4, y + 3.55, 10, (n, c) => shadeLin(0x5a4e46, litOf(n, c[0], c[1], c[2]) * 0.7));
     }
@@ -735,13 +763,13 @@ function apron(card, z0, z1, half) {
  * step is the whole trick of a stage set — it buys depth the lens is not allowed to.
  */
 const MID = [
-  { x: 0, st: 5, brick: 'red', fe: 1, pigeons: 1, flankSign: 'goldDust' },
-  { x: 25, st: 4, brick: 'brown', fe: 1, tank: 1 },
-  { x: 50, st: 5, brick: 'ochre', fe: 1, tank: 1 },
-  { x: 75, st: 4, brick: 'red', fe: 1, coop: 1 },
-  { x: -75, st: 5, brick: 'brown', fe: 1, coop: 1, pigeons: 1 },
-  { x: -100, st: 4, brick: 'red', fe: 1, tank: 1 },
-  { x: -125, st: 5, brick: 'ochre', fe: 1, tank: 1 },
+  { x: 8, st: 5, brick: 'red', fe: 1, pigeons: 1, flankSign: 'goldDust' },
+  { x: 33, st: 4, brick: 'brown', fe: 1, tank: 1 },
+  { x: 58, st: 5, brick: 'ochre', fe: 1, tank: 1 },
+  { x: 83, st: 4, brick: 'red', fe: 1, coop: 1 },
+  { x: -85, st: 5, brick: 'brown', fe: 1, coop: 1, pigeons: 1 },
+  { x: -110, st: 4, brick: 'red', fe: 1, tank: 1 },
+  { x: -135, st: 5, brick: 'ochre', fe: 1, tank: 1 },
 ];
 
 function buildMidBlock(card) {
@@ -947,22 +975,33 @@ function massRow(card, o) {
  */
 function gasholder(card, cx, z, T) {
   const Tb = card.b('trim');
-  const rad = 21, top = 62;
-  Tb.cyl(cx, z, rad, 0, top, 22, (n, c) => shadeLin(0x6e675c, farLit(n, c, T) * 0.86), 'py');
-  for (const hy of [12, 24, 36, 48]) {                 // the lifts, each a riveted ring
-    Tb.cyl(cx, z, rad + 0.5, hy - 0.6, hy + 0.6, 22, (n, c) => shadeLin(0x4a4440, farLit(n, c, T) * 0.7), '');
+  const rad = 17, top = 44;
+  // The drum, in three telescoping lifts. Each lift is a slightly different value, because a
+  // gasholder that has been up and down for thirty years does not weather evenly, and because
+  // one flat cylinder at this size is the same mistake as one flat wall.
+  const lifts = [[0, 15.5, 0x6b6156], [15.5, 30, 0x7a6f61], [30, top, 0x87796a]];
+  for (const [a, b, hex] of lifts) {
+    Tb.cyl(cx, z, rad, a, b, 22, (n, c) => shadeLin(hex, farLit(n, c, T) * 0.88), b === top ? 'py' : '');
+    Tb.cyl(cx, z, rad + 0.55, b - 0.75, b + 0.35, 22, (n, c) => shadeLin(0x4a4440, farLit(n, c, T) * 0.66), '');
   }
-  Tb.cyl(cx, z, rad + 0.6, top - 1.4, top + 0.4, 22, (n, c) => shadeLin(0x4a4440, farLit(n, c, T) * 0.8), 'py');
-  // the guide frame: sixteen standards and two girt rings, which is what makes it read
+  // vertical riveted seams — six of them, which is what stops it reading as a grey drum
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2;
+    if (Math.sin(a) > 0.25) continue;
+    Tb.box(cx + Math.cos(a) * rad - 0.28, 1, z + Math.sin(a) * rad - 0.28,
+      cx + Math.cos(a) * rad + 0.28, top - 1, z + Math.sin(a) * rad + 0.28,
+      () => shadeLin(0x574f47, 0.30), 'nz px nx');
+  }
+  // the guide frame: standards and two girt rings, which is what makes it a gasholder
   for (let k = 0; k < 14; k++) {
     const a = (k / 14) * Math.PI * 2;
-    const px = cx + Math.cos(a) * (rad + 3.4), pz = z + Math.sin(a) * (rad + 3.4);
-    if (Math.sin(a) > 0.4) continue;                   // only the standards we can see
-    Tb.box(px - 0.5, 0, pz - 0.5, px + 0.5, top + 9, pz + 0.5,
-      () => shadeLin(0x413b37, 0.20), 'nz px nx py');
+    const px = cx + Math.cos(a) * (rad + 3.0), pz = z + Math.sin(a) * (rad + 3.0);
+    if (Math.sin(a) > 0.4) continue;
+    Tb.box(px - 0.45, 0, pz - 0.45, px + 0.45, top + 7, pz + 0.45,
+      () => shadeLin(0x413b37, 0.22), 'nz px nx py');
   }
-  for (const hy of [top - 4, top + 7]) {
-    Tb.cyl(cx, z, rad + 3.9, hy, hy + 1.0, 22, () => shadeLin(0x413b37, 0.22), '');
+  for (const hy of [top - 6, top + 5]) {
+    Tb.cyl(cx, z, rad + 3.4, hy, hy + 0.9, 22, () => shadeLin(0x413b37, 0.24), '');
   }
 }
 
@@ -988,27 +1027,26 @@ function church(card, cx, z, T) {
     (f, n, c) => shadeLin(stone, farLit(n, c, T) * 0.95, f === 'ny' ? 0.4 : 0), 'nz px nx py');
   Tb.box(cx + 8.2, 52, z + 1.2, cx + 21.8, 55, z + 16.8,
     (f, n, c) => shadeLin(stone, farLit(n, c, T), f === 'ny' ? 0.5 : 0), 'nz py ny px nx');
-  for (let k = 0; k < 8; k++) {
-    const t = k / 8, hw = 6.4 * (1 - t) + 0.5;
-    Tb.box(cx + 15 - hw, 55 + k * 3.4, z + 9 - hw, cx + 15 + hw, 58.4 + k * 3.4, z + 9 + hw,
+  for (let k = 0; k < 7; k++) {
+    const t = k / 7, hw = 6.2 * (1 - t) + 0.5;
+    Tb.box(cx + 15 - hw, 55 + k * 2.1, z + 9 - hw, cx + 15 + hw, 57.1 + k * 2.1, z + 9 + hw,
       (f, n, c) => shadeLin(0x53483f, farLit(n, c, T) * (0.9 - t * 0.15), f === 'ny' ? 0.4 : 0), 'nz px nx py');
   }
-  Tb.box(cx + 14.7, 82, z + 8.7, cx + 15.3, 87, z + 9.3, () => shadeLin(0xc8924e, 0.62), 'nz px nx py');
-  Tb.box(cx + 13.4, 84.2, z + 8.8, cx + 16.6, 85.0, z + 9.2, () => shadeLin(0xc8924e, 0.62), 'nz px nx py');
+  Tb.box(cx + 14.7, 69.7, z + 8.7, cx + 15.3, 74, z + 9.3, () => shadeLin(0xc8924e, 0.62), 'nz px nx py');
+  Tb.box(cx + 13.4, 71.6, z + 8.8, cx + 16.6, 72.4, z + 9.2, () => shadeLin(0xc8924e, 0.62), 'nz px nx py');
 }
 
 function buildFarBlock(card) {
   const T = FAR_SUN;
   massRow(card, {
-    z: card.z, x0: -170, x1: 170, gap: [-39, 5], seed: 4177,
+    z: card.z, x0: -170, x1: 170, gap: [-58, 12], seed: 4177,
     wMin: 14, wSpan: 13, hMin: 24, hSpan: 17, crest: 15, crestIn: 40, crestW: 100,
     depth: 32, jitter: 6, shadeTo: 30, terminator: T,
   });
   // The two period silhouettes, set in the notch's own sightline so they are what the eye
   // lands on when it travels down the street.
-  gasholder(card, -30, card.z + 52, T);
-  church(card, 8, card.z + 44, T);
-  gasholder(card, -128, card.z + 40, T);
+  gasholder(card, -44, card.z + 56, T);
+  church(card, -4, card.z + 46, T);
   apron(card, 190, CARD_Z.elevated - 4, 170);
   hazeCard(card, 0.30);
   liftFloor(card, 0.064);
@@ -1022,9 +1060,14 @@ function buildFarBlock(card) {
 function buildSky(card) {
   const Tb = card.b('trim');
   const r = new RNG(90125);
+  // Heights halved from round 1. §17 is explicit — "from a tenement cross street in 1925 you
+  // do not see a skyline, you see the El" — and round 1's 84 ft towers stood ABOVE the frame's
+  // top edge across the whole notch, which is most of why the measured open sky in
+  // `stage_wide` was 3.4% against §14 check 10's 8–18%. A skyline you can see over is both
+  // more period-true and the only way this set gets any air in it.
   const towers = [
-    [-236, 78, 54], [-158, 62, 76], [-92, 50, 48], [-34, 70, 84],
-    [40, 56, 60], [102, 84, 88], [200, 66, 52], [272, 74, 68],
+    [-236, 78, 30], [-158, 62, 44], [-92, 50, 26], [-34, 70, 47],
+    [40, 56, 33], [102, 84, 50], [200, 66, 29], [272, 74, 38],
   ];
   for (const [x, w, h] of towers) {
     const hex = r.chance(0.5) ? FACADE.partyWall : FACADE.ochreShade;
@@ -1039,14 +1082,14 @@ function buildSky(card) {
     }
   }
   // a steeple, because a skyline of boxes is a skyline nobody drew
-  const sx = -6, sy = 74;
+  const sx = -6, sy = 40;
   Tb.box(sx - 7, 0, card.z + 4, sx + 7, sy, card.z + 22,
     (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, SUN.sky) * 0.82, 0), 'nz px nx py');
   Tb.box(sx - 8.5, sy, card.z + 2, sx + 8.5, sy + 3, card.z + 24,
     (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, SUN.sky) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
   for (let i = 0; i < 7; i++) {
     const t = i / 7, ww = 6.5 * (1 - t) + 0.9;
-    Tb.box(sx - ww, sy + 3 + i * 4.6, card.z + 6 + t * 3, sx + ww, sy + 7.6 + i * 4.6, card.z + 20 - t * 3,
+    Tb.box(sx - ww, sy + 3 + i * 3.1, card.z + 6 + t * 3, sx + ww, sy + 6.1 + i * 3.1, card.z + 20 - t * 3,
       (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, SUN.sky) * (0.8 - t * 0.1), 0), 'nz px nx py');
   }
   hazeCard(card, 0.78);
@@ -1157,7 +1200,7 @@ function liveMats(atlas) {
     blending: THREE.NormalBlending,
   });
   smoke.color.setRGB(0.92, 0.895, 0.845);
-  return { wash: cut(0.55), fig: cut(0.30), bird: cut(0.62), sign: cut(0.50), smoke };
+  return { wash: cut(0.34), fig: cut(0.26), bird: cut(0.58), sign: cut(0.46), smoke };
 }
 
 /** A quad in the XY plane facing −z, pivoted at (0,0) so a rotation about z reads as a swing. */
@@ -1318,8 +1361,8 @@ function dressLive(card, M2) {
   if (card.key === 'nearFacade') {
     // Low, over the notch, where BATTING can actually see it — and one high line for the
     // wide shots, out of phase with the first.
-    ticks.push(washLine(g, M2, A, -6, 11, 15.2, 82.2, 0));
-    ticks.push(washLine(g, M2, A, 20, 37, 30.6, 82.2, 1.55));
+    ticks.push(washLine(g, M2, A, -31, -17, 15.6, 82.2, 0));
+    ticks.push(washLine(g, M2, A, 19, 33, 30.6, 82.2, 1.55));
     ticks.push(hangingSign(g, M2, A, 'bd:hang0', 27, 10.4, 81.4, 5.4, 0.4));
     ticks.push(hangingSign(g, M2, A, 'bd:hang1', -44, 10.4, 81.4, 5.4, 2.1));
     ticks.push(pigeonLift(g, M2, A, 4, 18.0, 82.6));
@@ -1494,7 +1537,7 @@ registerScenario('stage_wide', {
   setup: ({ app }) => {
     app.sim.reset(1925);
     app.clock.advance(0.6);
-    setCam(app, [0, 9, -86], [0, 15.0, 84], 16);
+    setCam(app, [0, 8, -86], [0, 14.2, 84], 16);
   },
   settle: 0.4,
 });
