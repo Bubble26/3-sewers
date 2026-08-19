@@ -145,7 +145,7 @@ export const BASES = [FIRST, SECOND, THIRD];
  */
 
 /** The batter's box: he stands off the casting, on the open side, half a step back. */
-export const PLATE_BOX = { x: 2.9, z: 2.0, kid: 'otto', look: [0.9, 27], slot: 0.034 };
+export const PLATE_BOX = { x: 2.9, z: 2.0, kid: 'otto', look: [0.9, 24], slot: 0.034 };
 // He stands a foot UP-STREET of the casting rather than level with it, and that foot is not
 // decoration. He is the biggest body in the frame and the solver parks him against the 26%
 // lead ceiling, so a pose that raises the broom handle an inch tips him over it — measured,
@@ -153,7 +153,7 @@ export const PLATE_BOX = { x: 2.9, z: 2.0, kid: 'otto', look: [0.9, 27], slot: 0
 // without moving him out of his own chalk box, which runs z −2.6…2.4.
 
 /** The pitcher's scratch, kept next to the pitcher so the two can never drift. */
-export const PITCH_SCRATCH = { x: 0.9, z: 27.0 };
+export const PITCH_SCRATCH = { x: 0.9, z: 24.0 };
 
 /**
  * The nine. `slot` is the screen slot each body was placed for — x/(z+83), which is very
@@ -180,7 +180,7 @@ export const POSTS = [
         + 'standing in the room he leaves.',
   },
   {
-    id: 'pitcher', x: 0.9, z: 27.0, kid: 'irving', clip: 'pitch_set', look: [2.9, 0], slot: 0.008,
+    id: 'pitcher', x: 0.9, z: 24.0, kid: 'irving', clip: 'pitch_set', look: [2.9, 0], slot: 0.008,
     note: 'The Beanpole, all leg. Halfway to second on the scratch — 27, not the old 42. At 42 '
         + 'he is 1.5x the catcher\'s depth and cannot reach 18% of frame at any legal lens; '
         + 'casting the tallest kid here buys back the rest.',
@@ -246,8 +246,8 @@ export const ON_DECK = { x: 12.5, z: -4.5, kid: 'bessie', clip: 'bat_wait', look
  */
 export const BENCH = [
   { x: 12.0, z: 6.0, kid: 'connie', clip: 'curb_wait', look: [2.9, -0.6], slot: 0.135 },
-  { x: 13.0, z: 11.0, kid: 'peggy', clip: 'idle_slouch', look: [0.9, 27], slot: 0.138 },
-  { x: 14.0, z: 16.0, kid: 'gertie', clip: 'idle', look: [0.9, 27], slot: 0.141 },
+  { x: 13.0, z: 11.0, kid: 'peggy', clip: 'idle_slouch', look: [0.9, 24], slot: 0.138 },
+  { x: 14.0, z: 16.0, kid: 'gertie', clip: 'idle', look: [0.9, 24], slot: 0.141 },
 ];
 
 /**
