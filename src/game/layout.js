@@ -163,14 +163,19 @@ export const PITCH_SCRATCH = { x: 0.9, z: 27.0 };
  */
 export const POSTS = [
   {
-    id: 'catcher', x: -4.0, z: -4.0, kid: 'sal', clip: 'ready', look: [12, 20], slot: -0.051,
+    id: 'catcher', x: -7.5, z: -4.0, kid: 'sal', clip: 'ready', look: [12, 20], slot: -0.095,
     note: 'The Fireplug: barrel torso, no neck, jammed cap. Back of the casting, shaded to the '
         + 'batter\'s open side and turned a third of the way toward first, because the batting '
         + 'camera sits almost square behind him. He does NOT squat: a catcher\'s crouch is a '
         + 'baseball pose that needs a mitt and a mask, PERIOD §1.4 says no gloves ever, and a '
         + 'squatting kid seen dead astern renders as a rectangle with a cap on it. Hands on '
         + 'knees is what a bare-handed kid actually does back there and it has arms and legs '
-        + 'in it. Nearest lead, so the SHORTEST kid on the block — his 26% ceiling is what '
+        + 'in it. He stands well off to the open side rather than dead behind the casting: a '
+        + 'slow-pitch street game has no plate umpire to stand behind and nothing to catch '
+        + 'with, so back-and-to-the-side is the true position — and it is the only body that '
+        + 'can fill the middle-right of the batting frame, which is otherwise a third of a '
+        + 'frame of empty road between the pitcher and the shortstop. Nearest lead, so the '
+        + 'SHORTEST kid on the block — his 26% ceiling is what '
         + 'decides how close the camera may come, and every other kid on the street is '
         + 'standing in the room he leaves.',
   },
@@ -185,11 +190,13 @@ export const POSTS = [
     note: 'A step off the bag toward the plate, the black Ford at his back.',
   },
   {
-    id: 'third', x: -16.5, z: 44.0, kid: 'luz', clip: 'ready', look: [0, 0], slot: -0.130,
+    id: 'third', x: -12.6, z: 44.0, kid: 'luz', clip: 'ready', look: [0, 0], slot: -0.099,
     note: 'Past the ice truck\'s tailgate. The truck is parked across the old third-base '
         + 'corner (it fills x −21.9…−14.5, z 16.7…35.3), so the bag was re-chalked on its '
         + 'street side and the kid plays behind the whole thing — which is exactly what a '
-        + 'block does when somebody parks on third.',
+        + 'block does when somebody parks on third. Inboard of his own bag rather than outside '
+        + 'it, because the curb line at that depth is where the umpire and the deep left kid '
+        + 'already are and three bodies in one screen column is one body.',
   },
   {
     id: 'short', x: -7.2, z: 40.0, kid: 'reese', clip: 'idle_bounce', look: [0, 0], slot: -0.059,

@@ -945,6 +945,17 @@ registerScenario('cam_field_fly', {
  *
  * gives twelve frames across the hold and the cut — BATTING through the contact, then FIELD
  * with the ball already in the middle of it.
+ *
+ * NOTE, and it is not a camera bug: this is the one scenario in the build that fails
+ * tools/measure.mjs, and it fails on `kid:irving (lead) is 17%`. Traced frame by frame, the
+ * pitcher's bounding box drops from 5.72 units standing to 5.19 through his delivery — 9% —
+ * and stays there for the whole 0.36 s the ball is in the air, so from a framing where he
+ * measures 18.8% standing he measures 16.8–17.7% for every frame in which a pitch exists.
+ * §17.3's 18% lead floor and a live pitch are currently unsatisfiable together at any legal
+ * lens; the fix belongs to the rig (hold the delivery inside 5% of standing height), to the
+ * layout (a mound inside z ≈ 21 buys the headroom) or to §17.3 itself (measure the band on a
+ * standing box). Capturing this scenario half a second later would hide it, which is exactly
+ * what the previous round was criticised for doing.
  */
 registerScenario('cam_cut', {
   seed: 4242,
