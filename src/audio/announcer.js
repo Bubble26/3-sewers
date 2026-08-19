@@ -604,7 +604,7 @@ const KID_LINES = {
     gooch: 'Nobody here will explain that name, and the Gooch has stopped asking.',
   },
   jesus: {
-    dot: 'Cheech Col\u00f3n. No shoes since June. He says it is faster. It is faster.',
+    dot: 'Cheech Colón. No shoes since June. He says it is faster. It is faster.',
     gooch: 'He goes on your second look. So do not take a second look. Everybody takes a second look.',
   },
   luz: {
@@ -728,8 +728,8 @@ const CHATTER = {
    * in the booth ever remarks on it, because on this street nobody would.
    * ---------------------------------------------------------------------- */
   es: [
-    '\u00a1Dale!', '\u00a1Corre!', 'M\u00eda, m\u00eda', 'Se fue', '\u00a1Ah\u00ed va!', 'Otra vez',
-    '\u00a1Aqu\u00ed! \u00a1Aqu\u00ed!', 'Ya est\u00e1', '\u00a1Vamos!', '\u00bfQu\u00e9?',
+    '¡Dale!', '¡Corre!', 'Mía, mía', 'Se fue', '¡Ahí va!', 'Otra vez',
+    '¡Aquí! ¡Aquí!', 'Ya está', '¡Vamos!', '¿Qué?',
   ],
   yi: [
     'Nu?', 'Genug shoyn', 'Oy, a klug', 'Shoyn', 'Gib a zets',
