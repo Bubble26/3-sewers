@@ -11,46 +11,49 @@ import {
 } from './facade.js';
 import { SHOPS, registerSignSprites, buildStorefront } from './storefronts.js';
 import { EL, registerElSprites, buildElevated, buildTrain } from './elevated.js';
+import { buildBackdrop } from './backdrop.js';
 
 /**
- * The block: one mid-block stretch of a New York cross street, September 1925.
+ * THE SET — one mid-block stretch of a New York cross street, September 1925, staged.
  *
- * 60ft facade to facade, 60ft of building each side — the 1:1 canyon that is the whole visual
- * identity. Twenty-one 25ft lots, no gaps, party wall to party wall. A one-storey taxpayer on
- * the south corner behind the camera, which is what lets the 3:50pm sun onto home plate. The
- * Third Avenue El closing the far end.
+ * DESIGN-BIBLE §17: the game is 3D characters on a 2D stage, so this file no longer builds a
+ * street. It builds the two WINGS of a set — four bays of real tenement down each side of the
+ * play plane, from the corner taxpayer at z=-46 to the end of the block at z=80 — and hands
+ * everything past that to src/world/backdrop.js, which stands it up as flat cards at the five
+ * fixed depths in T.stage.backdrop.
  *
- * Everything is merged into seven meshes. Nothing here casts a shadow map: the light is baked,
- * so the only shadows on the roadway are the ones the kids and the ball throw.
+ * What that buys: the wings are the only architecture a kid can ever stand next to, so they
+ * get the full kit — stoops, fire escapes, storefronts, ghost signs, water tanks, pigeons —
+ * at four bays instead of sixteen, and the budget that used to go on a canyon nobody could
+ * read at 300ft goes into the cards instead.
+ *
+ * The 1:1 canyon survives, because it is the whole visual identity: 60ft facade to facade,
+ * 60ft of building each side, and the 16ft taxpayer on the south corner that is the only
+ * reason 3:50pm sun reaches home plate. Everything is merged into seven meshes per layer and
+ * nothing here casts a shadow map: the light is baked, so the only shadows on the roadway are
+ * the ones the kids and the ball throw.
  */
 
 const ROAD_HALF = M.roadHalf;
 const WALK = M.walkY;
-const SEWER = 95;                 // §1.3 — sewers 95ft apart, and every boast in the game agrees
+const BLOCK_END = 80;             // the wings stop here; the near facade card stands at 84
 
 // ─── the lot plan ─────────────────────────────────────────────────────────────
 // Hand-authored, because composition is not something you seed a random number generator for.
+// Four bays a side. Every one of them is inside T.stage.playDepth of the plate, so every one
+// of them is a wall a kid can be silhouetted against.
 const NORTH = [
   { st: 1, brick: 'red', shop: 'grocer', roofsign: 1 },   // the north corner taxpayer
   { st: 6, brick: 'ochre', shop: 'cigar', fe: 1, ghost: 'goldDust' },
   { st: 4, brick: 'brown', stoop: 1, fe: 1, basement: 'shoe' },
-  { st: 6, brick: 'red', stoop: 1, fe: 1, ghost: 'castoria', tank: 1 },
-  { st: 5, brick: 'brown', shop: 'barber', fe: 1 },
-  { st: 6, brick: 'red', shop: 'fivedime', fe: 1, coop: 1 },
-  { st: 4, brick: 'brown', stoop: 1, alley: 1, bills: 'bills' },
-  { st: 6, brick: 'red', shop: 'lunch', fe: 1, ghost: 'uneeda', tank: 1 },
+  { st: 6, brick: 'red', shop: 'fivedime', fe: 1, ghost: 'castoria', tank: 1, coop: 1 },
 ];
 const SOUTH = [
   { st: 6, brick: 'red', shop: 'deli', fe: 1, ghost: 'castoria', tank: 1 },
   { st: 5, brick: 'brown', stoop: 1, fe: 1, basement: 'tailor' },
-  { st: 4, brick: 'red', shop: 'tailor' },
-  { st: 6, brick: 'brown', stoop: 1, fe: 1, ghost: 'uneeda', coop: 1 },
-  { st: 5, brick: 'ochre', shop: 'laundry', fe: 1 },
-  { st: 6, brick: 'red', stoop: 1, fe: 1, tank: 1 },
-  { st: 4, brick: 'red', shop: 'shoe' },
-  { st: 6, brick: 'brown', shop: 'ice', fe: 1, ghost: 'goldDust', tank: 1 },
+  { st: 6, brick: 'red', shop: 'barber', fe: 1, ghost: 'uneeda', tank: 1 },
 ];
-const NORTH_Z0 = -15, SOUTH_Z0 = 5;
+const NORTH_Z0 = -20, SOUTH_Z0 = 5;
 const TAX = { z0: -46, z1: 5, h: 16 };     // the corner taxpayer, DESIGN-BIBLE §3.2
 
 const CORNICE = FACADE.cornice;            // three paints
@@ -104,7 +107,6 @@ function makeLots() {
         escapeProps: { level: r.int(0, 2), crate: r.int(0, 2) },
         lod: 0,
       };
-      lot.lod = 0;
       lots.push(lot);
     });
   };
@@ -161,6 +163,36 @@ function buildTaxpayer(ctx) {
   }
 }
 
+/**
+ * The wings are cut off at the end of the block, so each row finishes on a raw party wall
+ * looking down the cross street. Painted out, papered, and — because the sun is in the west —
+ * the brightest big plane on the north side and the deepest shade on the south.
+ */
+function blockEndWall(ctx, lots) {
+  const W = ctx.b('wallStone'), S = ctx.b('sign');
+  for (const side of [1, -1]) {
+    const row = lots.filter((l) => l.side === side);
+    const last = row[row.length - 1];
+    if (!last) continue;
+    const z = last.z0 + M.lot;
+    const y1 = buildingTop(last.storeys);
+    const xf = last.xf, o = last.out;
+    const [xa, xb] = o < 0 ? [xf, xf + M.depth] : [xf - M.depth, xf];
+    const n = [0, 0, 1];
+    const lit = litOf(n, (xa + xb) / 2, y1 / 2, z);
+    const k = 1 + 0.30 * Math.min(1, lit / 0.4);
+    W.quad([xa, 0, z], [xb, 0, z], [xb, y1, z], [xa, y1, z],
+      [k * 0.98, k * 0.99, k], [[0, 0], [M.depth / 8, 0], [M.depth / 8, y1 / 8], [0, y1 / 8]], n);
+    const slot = ctx.atlas.get(side > 0 ? 'ghost:uneeda' : 'ghost:castoria');
+    const h = Math.min(34, y1 - 16);
+    const w = Math.min(M.depth - 8, h * (slot.w / slot.h));
+    const ax = o < 0 ? xf + 4 : xf - 4 - w;
+    const ay = y1 - 8 - h;
+    S.quad([ax, ay, z + 0.07], [ax + w, ay, z + 0.07], [ax + w, ay + h, z + 0.07], [ax, ay + h, z + 0.07],
+      texTint(lit), rectUV(slot), n);
+  }
+}
+
 /** A horse-walk through the ground floor: the break in the wall, without a gap in the wall. */
 function alleyArch(ctx, lot) {
   const T = ctx.b('trim'), W = ctx.b(lot.brickKey);
@@ -200,12 +232,10 @@ function alleyArch(ctx, lot) {
 }
 
 // ─── the system ───────────────────────────────────────────────────────────────
-const TOUR = {
-  pos: [[7, 32, -58], [13, 19, -2], [-16, 25, 54], [-6, 16, 112], [3, 13, 158]],
-  look: [[1, 22, 96], [-8, 15, 84], [32, 28, 114], [10, 24, 182], [0, 22, 212]],
-  time: 14,
-};
-const DEFAULT_CAM = { pos: [0, 12, -34], look: [0, 4, 30] };
+// §17.4: the camera CUTS, it does not fly. These are locked framings, nothing more.
+const DEFAULT_CAM = { pos: [0, 12, -34], look: [0, 4, 30], fov: 46 };
+const BLOCK_CAM = { pos: [-2.5, 18, -56], look: [1.5, 17.4, 78], fov: 20 };
+const DETAIL_CAM = { pos: [-13.5, 15.5, -14], look: [30, 26, 62], fov: 30 };
 
 export default registerSystem({
   name: 'street',
@@ -230,6 +260,7 @@ export default registerSystem({
       },
     };
 
+    // ── the wings ──────────────────────────────────────────────────────────
     const lots = makeLots();
     for (const lot of lots) {
       if (lot.alley) lot.holes = [alleyArch(ctx, lot)];
@@ -237,7 +268,10 @@ export default registerSystem({
       if (lot.ground === 'store') buildStorefront(ctx, lot);
     }
     buildTaxpayer(ctx);
-    buildElevated(ctx);
+    blockEndWall(ctx, lots);
+
+    // ── the cards ──────────────────────────────────────────────────────────
+    const layers = buildBackdrop(atlas);
 
     const atlasTex = atlas.texture();
     const mats = {
@@ -248,16 +282,39 @@ export default registerSystem({
       trim: new THREE.MeshBasicMaterial({ vertexColors: true }),
       sign: new THREE.MeshBasicMaterial({ map: atlasTex, vertexColors: true, alphaTest: 0.5 }),
     };
+    this.mats = mats;
+
+    const meshesOf = (map, tag, renderOrder) => {
+      const out = [];
+      for (const [key, b] of map) {
+        if (!b.count) continue;
+        const mesh = b.toMesh(mats[key] || mats.trim, `${tag}:${key}`);
+        mesh.castShadow = false; mesh.receiveShadow = false;
+        mesh.renderOrder = key === 'sign' ? (renderOrder ?? 1) : 0;
+        out.push(mesh);
+      }
+      return out;
+    };
 
     const group = new THREE.Group();
     group.name = 'street';
     let tris = 0;
-    for (const [key, b] of builders) {
-      const mesh = b.toMesh(mats[key] || mats.trim, `street:${key}`);
-      mesh.castShadow = false; mesh.receiveShadow = false;
-      mesh.renderOrder = key === 'sign' ? 1 : 0;
-      tris += b.count / 3;
-      group.add(mesh);
+    for (const m of meshesOf(builders, 'street')) { tris += m.geometry.attributes.position.count / 3; group.add(m); }
+    app.scene.add(group);
+
+    // Each card is one group so it can slide on a cut. Render far to near: the sky card is a
+    // wall of haze and every layer in front of it is meant to paint over it.
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const L = layers[i];
+      const g = new THREE.Group();
+      g.name = `backdrop:${L.key}`;
+      for (const m of meshesOf(L.builders, `backdrop:${L.key}`)) {
+        tris += m.geometry.attributes.position.count / 3;
+        g.add(m);
+      }
+      g.position.copy(L.base);
+      L.group = g;
+      app.scene.add(g);
     }
 
     // the one moving thing at the end of the street
@@ -265,66 +322,49 @@ export default registerSystem({
     this.train = trainB.toMesh(mats.sign, 'street:train');
     this.train.matrixAutoUpdate = true;
     this.train.castShadow = false;
-    group.add(this.train);
+    const el = layers.find((L) => L.key === 'elevated');
+    (el && el.group ? el.group : group).add(this.train);
 
-    app.scene.add(group);
     this.group = group;
+    this.layers = layers;
     this.lots = lots;
     this.tris = Math.round(tris);
     this.t = 0;
-    this.tour = -1;
-    this.curvePos = new THREE.CatmullRomCurve3(TOUR.pos.map((p) => new THREE.Vector3(...p)));
-    this.curveLook = new THREE.CatmullRomCurve3(TOUR.look.map((p) => new THREE.Vector3(...p)));
   },
 
   onScenario(name, app) {
-    this.t = 0;
-    if (name === 'block_tour') { this.tour = 0; this.applyTour(app, 0); }
-    else {
-      if (this.tour >= 0 || this.camDirty) {
-        app.camera.position.set(...DEFAULT_CAM.pos);
-        app.camera.lookAt(...DEFAULT_CAM.look);
-      }
-      this.tour = -1;
-      this.camDirty = name === 'facade_detail' || name === 'wide';
-    }
-  },
-
-  applyTour(app, u) {
-    const p = this.curvePos.getPoint(Math.min(0.999, u));
-    const l = this.curveLook.getPoint(Math.min(0.999, u));
-    app.camera.position.copy(p);
-    app.camera.lookAt(l);
-    this.camDirty = true;
+    // the train's phase is part of the frame, so it has to be deterministic per scenario
+    this.t = name === 'stage_wide' || name === 'block_tour' ? 6.4 : name === 'backdrop_layers' ? 3.1 : 0;
   },
 
   update(dt, app) {
     this.t += dt;
     if (this.train) {
+      // one train every couple of minutes, and it is the only thing in the backdrop that moves
       const x = ((this.t * 26 + 132) % 520) - 300;
       this.train.position.set(x, 0, 0);
-    }
-    if (this.tour >= 0) {
-      this.tour += dt / TOUR.time;
-      if (this.tour > 1) this.tour = 0;
-      this.applyTour(app, this.tour);
     }
   },
 });
 
 // ─── scenarios ────────────────────────────────────────────────────────────────
+function lock(app, cam) {
+  app.camera.position.set(...cam.pos);
+  app.camera.lookAt(...cam.look);
+  app.camera.fov = cam.fov;
+  app.camera.updateProjectionMatrix();
+}
+
+/** The block, long lens, from the batter's end: the wings and the notch in one frame. */
 registerScenario('block_tour', {
   seed: 1925,
-  setup: ({ app }) => { app.sim.reset(1925); },
+  setup: ({ app }) => { app.sim.reset(1925); lock(app, BLOCK_CAM); },
   settle: 0.4,
 });
 
+/** Close on the wing relief — cornice, fire escape, sills, sign band. */
 registerScenario('facade_detail', {
   seed: 1925,
-  setup: ({ app }) => {
-    app.sim.reset(1925);
-    app.camera.position.set(-21, 21, 12);
-    app.camera.lookAt(32, 29, 96);
-  },
+  setup: ({ app }) => { app.sim.reset(1925); lock(app, DETAIL_CAM); },
   settle: 0.4,
 });
