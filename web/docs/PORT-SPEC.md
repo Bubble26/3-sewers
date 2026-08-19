@@ -1,10 +1,16 @@
 # Porting the Three Sewers rules core
 
-`docs/godot-reference/` holds files from a **separate, more mature stickball project** built in
-Godot (repo `Bubble26/3-sewers`, branch `claude/match-view-presentation-4fxd34`). Its rules core
-is finished and soak-tested. Ours is not written at all. We port theirs.
+The Godot game lives in this same repository at `../threesewers/`. Its rules core is finished
+and soak-tested; ours was not written at all, so we ported theirs. Read the originals directly —
+they are siblings now, not copies, so there is nothing to drift:
 
-**Read `docs/godot-reference/match_core.gd` and `tuning.gd` before writing a line of gameplay.**
+    ../threesewers/scripts/match_core.gd     the rules engine we ported
+    ../threesewers/scripts/tuning.gd         the measured feel constants
+    ../threesewers/tests/sim_test.gd         the soak our tools/soak.mjs reproduces
+    ../threesewers/data/characters.json      the twelve kids and their quirks
+    ../threesewers/ART.md, AUDIO_HOOKS.md    their art and audio direction
+
+**Read `../threesewers/scripts/match_core.gd` and `tuning.gd` before writing a line of gameplay.**
 
 ## Why this beats inventing our own
 
@@ -30,11 +36,11 @@ without re-running the measurement that produced them.
 
 | From | To | Notes |
 |---|---|---|
-| `match_core.gd` | `src/game/core.js` | The whole rules engine, faithfully. Pure logic, no rendering, no THREE import. |
-| `tuning.gd` constants | `src/core/tuning.js` under `T.play` | Pitch times, bounce times, swing windows, ballistics. Keep their comments — the comments are the evidence. |
-| `sim_test.gd` | `tools/soak.mjs` | 40 CPU-vs-CPU games, same seeds, must print the same shape of result. |
-| `characters.json` quirks | `src/chars/roster.js` | We already have 16 kids; graft the *quirk mechanics* onto them, keep our names and writing. |
-| `announcer.gd` banks | reference only | Our announcer is already written and is ours. Steal structure, not lines. |
+| `../threesewers/scripts/match_core.gd` | `src/game/core.js` | The whole rules engine, faithfully. Pure logic, no rendering, no THREE import. |
+| `../threesewers/scripts/tuning.gd` constants | `src/core/tuning.js` under `T.play` | Pitch times, bounce times, swing windows, ballistics. Keep their comments — the comments are the evidence. |
+| `../threesewers/tests/sim_test.gd` | `tools/soak.mjs` | 40 CPU-vs-CPU games, same seeds, must print the same shape of result. |
+| `../threesewers/data/characters.json` quirks | `src/chars/roster.js` | We already have 16 kids; graft the *quirk mechanics* onto them, keep our names and writing. |
+| `../threesewers/scripts/announcer.gd` banks | reference only | Our announcer is already written and is ours. Steal structure, not lines. |
 
 ## Acceptance — the port is done when
 

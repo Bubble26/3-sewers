@@ -3,7 +3,7 @@
  * ============================================================================
  * A port, not an invention. Every rule in here came from a finished, soak-tested
  * stickball engine written in GDScript for the project `3-sewers`, which lives in
- * docs/godot-reference/match_core.gd. Read docs/PORT-SPEC.md for why we ported it
+ * ../threesewers/scripts/match_core.gd. Read docs/PORT-SPEC.md for why we ported it
  * instead of writing our own, then read that file next to this one: the method
  * names below are deliberately one-to-one with theirs so the two can be diffed by
  * a human in an afternoon.

@@ -590,7 +590,7 @@ export const QUIRK_HOLDER = (() => {
 /**
  * A kid's card as the rules core wants it: the five axes it reads, on its scale, plus
  * the quirk mechanic id. PWR/CON/SPD/ARM/GLV are named in the engine's shouty style so
- * a reader can diff src/game/core.js against docs/godot-reference/match_core.gd line by
+ * a reader can diff src/game/core.js against ../threesewers/scripts/match_core.gd line by
  * line. NERVE is ours and the ported core does not read it yet.
  */
 export function playCard(ref) {

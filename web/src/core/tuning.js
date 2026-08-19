@@ -36,7 +36,7 @@ export const T = {
 
   /**
    * THE RULES CORE — ported from the Godot project `3-sewers`
-   * (docs/godot-reference/tuning.gd + match_core.gd, see docs/PORT-SPEC.md).
+   * (../threesewers/scripts/tuning.gd + match_core.gd, see docs/PORT-SPEC.md).
    *
    * Every number under T.play arrived here from a rules engine that was already
    * soak-tested over 40 CPU games: 13.8 runs a game, 3.6 sewer shots, a smashed

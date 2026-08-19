@@ -9,7 +9,7 @@ export const meta = {
   ],
 };
 
-const REPO = '/home/user/logicposter/stickball';
+const REPO = '/workspace/3-sewers/web';
 const MAX = args?.maxRounds ?? 4;
 const PIECES = args?.pieces ?? [];
 const WAVE = args?.wave ?? '?';
