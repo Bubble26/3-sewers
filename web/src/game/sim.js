@@ -120,6 +120,18 @@ export class Sim {
      * arrive. Never set during play; the game reads a human's hands or `core.cpuSwing`.
      */
     this.autoPress = null;
+    /**
+     * SCENARIOS ONLY. Seconds after `reset()` at which the pitch must leave the hand.
+     * The wind-up is a ritual owned by the pitching piece and its length is that piece's
+     * business, so a scenario that says "advance 0.9 s, then swing" is written against a
+     * number it does not control — which is exactly how `contact` came to screenshot a
+     * called ball. When this is set the sim reads `sim.timer` (the pitching contract:
+     * seconds of theatre still to run) every tick and rates the wind-up so release lands
+     * on the beat asked for, whatever the ritual's length happens to be this week. It is
+     * cleared the moment the ball is released, so only the first pitch is steered.
+     */
+    this.releaseAt = null;
+    this.simT = 0;              // seconds since reset — the clock `releaseAt` is measured on
     this.__forcePlay = null;    // the decided play, handed to the fielding slot at the crack
     this.shown = { away: 0, home: 0 };   // runs already announced on the bus
   }
@@ -130,7 +142,7 @@ export class Sim {
     resetMatch(this.core);
     this.core.rng = rng;                 // one PRNG for the whole app: same seed, same ball game
     this.timer = 0; this.beat = 0; this.tailT = 0; this.freeze = 0;
-    this.pitchT = 0; this.playT = 0;
+    this.pitchT = 0; this.playT = 0; this.simT = 0;
     this.swingAt = -1; this.jumpedAt = -1; this.cpuAt = -1; this.cpuErrMs = 0; this.pressBy = '';
     this.pitch = null; this.hop = null; this.corePitch = null;
     this.lastContact = null; this.lastPlay = null; this.pendingEv = null; this.lastEv = null;
@@ -232,11 +244,13 @@ export class Sim {
     this.ball.live = false;
     this.tailT = 0;
     slot('pitching', 'beginWindup', defaults.beginWindup)(this);
-    if (this.windupRate > 1) this.timer /= this.windupRate;
+    if (this.releaseAt !== null) this.windupRate = 1;    // re-derived every tick, below
+    else if (this.windupRate > 1) this.timer /= this.windupRate;
   }
 
   throwPitch() {
     this.state.phase = 'pitch';
+    this.releaseAt = null;          // it steers the first pitch only; the rest run at speed
     this.pitchT = 0;
     this.ball.live = true; this.ball.inFlight = false;
     slot('pitching', 'release', defaults.release)(this);
@@ -293,6 +307,11 @@ export class Sim {
     const w = this.swingWindow();
     this.swingKind = kind;
     if (this.pitchT < w.open) {
+      // SCENARIOS ONLY. With a press already booked (`autoPress`), a stray early press —
+      // a scenario that says "advance 0.9 s, then swing" against a wind-up whose length it
+      // does not own — is dropped rather than charged as a jump, and the booked press
+      // still lands. Never true in play: `autoPress` is null the whole time a human plays.
+      if (this.autoPress !== null) return false;
       // He jumped. The stick is already coming and the ball has not got here — that is a
       // swing and a miss with extra steps, and it is why mashing does not work.
       this.jumpedAt = this.pitchT;
@@ -479,6 +498,7 @@ export class Sim {
   update(dt) {
     const s = this.state;
     if (s.phase === 'over' || s.phase === 'idle') return;
+    this.simT += dt;
 
     if (this.freeze > 0) {                  // hitstop: the ball is nailed to the air, briefly
       this.freeze -= dt;
@@ -493,6 +513,13 @@ export class Sim {
         this.beat -= dt;
         if (this.beat <= 0) this.startWindup();
         return;
+      }
+      // A scenario that has booked a release time rates the ritual to land on it. `timer`
+      // is the pitching piece's own contract — seconds of theatre left — so this converges
+      // on the asked-for beat however long that piece's wind-up is.
+      if (this.releaseAt !== null) {
+        const rem = this.releaseAt - this.simT;
+        this.windupRate = rem > dt ? THREE.MathUtils.clamp(this.timer / rem, 1, 90) : 90;
       }
       if (slot('pitching', 'updateWindup', defaults.updateWindup)(dt * this.windupRate, this)) this.throwPitch();
       return;

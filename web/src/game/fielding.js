@@ -162,6 +162,90 @@ const BAG_KEEPER = { '1B': 'first', '2B': 'short', '3B': 'third', home: 'catcher
 /** Which bag a runner is coming FROM, which is the line the receiver must clear. */
 const BAG_FROM = { '1B': LAYOUT.HOME, '2B': LAYOUT.FIRST, '3B': LAYOUT.SECOND, home: LAYOUT.THIRD };
 
+/* ----------------------------------------------------------------------------
+   STAGING IS A SCREEN PROBLEM, NOT A BASEBALL ONE.
+
+   Everything in this file that puts a body somewhere used to solve it in feet,
+   and feet are the wrong unit: the lens is 20 degrees and sits fourteen degrees
+   above a road that runs AWAY from it, so five feet of depth is thirty pixels
+   and five feet across is a hundred and forty. Measured on round 1 of wave G3,
+   the pitcher backing up first was posted eight feet behind the first baseman
+   and landed THIRTY PIXELS from him: one creature with two caps, in the exact
+   corner of the frame the whole play resolves in.
+
+   So a spot is now CHOSEN rather than computed. The caller offers three or four
+   seats it would be happy with, in order of preference, and this picks whichever
+   one the lens keeps clear of the bodies that matter. It is the same arithmetic
+   a storyboard artist does by eye and it costs one projection per candidate,
+   once, at the moment the kid is sent.
+--------------------------------------------------------------------------- */
+
+/** The reference frame every pixel threshold in this file is written against. */
+const REF_W = 1600, REF_H = 900;
+const _sv = new THREE.Vector3();
+
+/** A world point in reference pixels, or null if it is behind the lens. */
+function toScreen(x, y, z) {
+  const cam = APP.camera;
+  if (!cam) return null;
+  _sv.set(x, y, z).project(cam);
+  if (_sv.z > 1) return null;
+  return { x: (_sv.x * 0.5 + 0.5) * REF_W, y: (-_sv.y * 0.5 + 0.5) * REF_H };
+}
+/** Where a kid's chest is on screen — the part of him another body actually hides. */
+const bodyAt = (k) => (k ? toScreen(k.pos.x, (k.groundY || 0) + 2.4, k.pos.y) : null);
+/** ... and where a spot on the road puts a chest that is not standing there yet. */
+const spotAt = (x, z) => toScreen(x, LAYOUT.groundAt(x) + 2.4, z);
+
+/**
+ * How far apart two kids have to be before a player reads them as two kids.
+ * A kid is about 110 px tall in the wide framing; a body-and-a-bit of daylight
+ * is the difference between a play and a pile.
+ */
+const DAYLIGHT = 140;
+
+/**
+ * Pick the seat the lens likes. `cands` are world spots in preference order,
+ * `avoid` is a list of reference-pixel points nothing should sit on top of.
+ */
+/**
+ * Everybody the lens can see, as pixels, so a staged body is never posted on top
+ * of one. The SPECTATORS matter as much as the fielders: src/game/layout.js sits
+ * two kids playing cards on the kerb at (20.2, 34), which is four feet behind
+ * first base and directly between the receiver and the runner from this seat.
+ */
+function crowdAt(exclude) {
+  const pl = players();
+  const out = [];
+  if (!pl) return out;
+  const all = pl.fielders.concat(pl.spectators || [], pl.batter ? [pl.batter] : []);
+  for (const k of all) {
+    if (!k || (exclude && exclude.includes(k))) continue;
+    const s = bodyAt(k);
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+function stagePlace(kid, cands, avoid) {
+  let best = null, bestScore = -1e9;
+  for (let i = 0; i < cands.length; i++) {
+    const c = reachable(kid, cands[i].x, cands[i].z);
+    const s = spotAt(c.x, c.z);
+    let score = -i * 26;                       // the caller's own order is worth something
+    if (s) {
+      let near = DAYLIGHT;
+      for (const a of avoid) if (a) near = Math.min(near, Math.hypot(s.x - a.x, s.y - a.y));
+      score += near * 3.2;
+      // and nothing gets staged into the frame edge or up among the shop signs
+      score -= Math.max(0, 170 - Math.min(s.x, REF_W - s.x)) * 1.6;
+      score -= Math.max(0, 300 - s.y) * 1.1;
+    }
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return best || reachable(kid, cands[0].x, cands[0].z);
+}
+
 /**
  * WHERE THE KID COVERING THE BAG ACTUALLY STANDS.
  *
@@ -173,7 +257,7 @@ const BAG_FROM = { '1B': LAYOUT.HOME, '2B': LAYOUT.FIRST, '3B': LAYOUT.SECOND, h
  * kid with no glove and a healthy respect for shins does anyway. Two bodies,
  * forty pixels apart, both whole.
  */
-function keeperSpot(tag) {
+function keeperSeats(tag) {
   const bag = BAG[tag] || LAYOUT.FIRST;
   const from = BAG_FROM[tag] || LAYOUT.HOME;
   let ax = bag.x - from.x, az = bag.z - from.z;
@@ -193,7 +277,40 @@ function keeperSpot(tag) {
    */
   let sx = az, sz = -ax;
   if (sx * (bag.x - 0) + sz * (bag.z - 30) < 0) { sx = -sx; sz = -sz; }
-  return { x: bag.x + sx * 3.6, z: bag.z + sz * 3.6 };
+  /**
+   * ... and OUTSIDE is only the first offer. On a bag jammed against the curb —
+   * first is chalked at x 18.4 and the chase limit is 21.0 — the outside seat and
+   * the seat the pitcher backs up to collapse onto the same screen column, which
+   * is how round 1's play at first became one creature with two caps. So four
+   * seats are offered and stagePlace() takes whichever the lens keeps clear.
+   */
+  return [
+    { x: bag.x + sx * 3.6, z: bag.z + sz * 3.6 },                     // outside the line
+    { x: bag.x + sx * 5.4 + ax * 1.2, z: bag.z + sz * 5.4 + az * 1.2 }, // ... wider
+    { x: bag.x - sx * 4.2 + ax * 1.6, z: bag.z - sz * 4.2 + az * 1.6 }, // inside, half a step past
+    { x: bag.x + ax * 4.0, z: bag.z + az * 4.0 },                     // straight past it
+  ];
+}
+
+/** Where the runner will be when the ball lands: a stride short, up the line. */
+function runnerLane(tag) {
+  const bag = BAG[tag] || LAYOUT.FIRST;
+  const from = BAG_FROM[tag] || LAYOUT.HOME;
+  let ax = bag.x - from.x, az = bag.z - from.z;
+  const m = Math.max(1e-3, Math.hypot(ax, az));
+  return { x: bag.x - (ax / m) * 3.0, z: bag.z - (az / m) * 3.0 };
+}
+
+/**
+ * The seat the kid covering this bag actually takes, solved against the lens.
+ * `avoid` is everything the lens must keep him clear of — the runner's lane
+ * first of all, because those two are the pair the payoff frame is about.
+ */
+function keeperSpot(tag, kid, avoid) {
+  const seats = keeperSeats(tag);
+  if (!kid) return { x: seats[0].x, z: seats[0].z };
+  const lane = runnerLane(tag);
+  return stagePlace(kid, seats, [spotAt(lane.x, lane.z), ...(avoid || [])]);
 }
 
 /** The core talks in six positions; the stage stands nine kids. This is the bridge. */
@@ -320,6 +437,7 @@ class Play {
     this.aimed = new THREE.Vector2(-999, -999);
     this.primary = null; this.backup = null; this.relay = null; this.dozy = null; this.backer = null;
     this.keeper = null;       // the body standing on the bag this play is going to
+    this.keeperAt = null;     // ... and the seat the lens picked for him
     this.keeperTag = '1B';
     this.watchers = [];       // everybody else, tracking the ball
     this.movers = [];         // every kid this play took control of
@@ -650,12 +768,17 @@ class Play {
         pr.setFace('determined', 1.2);
       }
     }
-    // the backup, in behind and to the side
+    // the backup, in behind and to the side — on whichever side the lens has room
     const bk = this.backup;
     if (bk && bk.fieldReact <= 0 && !bk.fieldPlaced) {
       bk.fieldPlaced = 1;
-      const s = Math.sign(this.spot.x || 1);
-      const to = reachable(bk, this.spot.x - s * 6.5, this.spot.y + 7.0);
+      const sx = this.spot.x, sz = this.spot.y;
+      const to = stagePlace(bk, [
+        { x: sx - 7.5, z: sz + 7.0 },
+        { x: sx + 7.5, z: sz + 7.0 },
+        { x: sx - 9.5, z: sz + 2.0 },
+        { x: sx + 9.5, z: sz + 2.0 },
+      ], [spotAt(sx, sz), bodyAt(this.primary), bodyAt(this.keeper)]);
       bk.goTo(to.x, to.z, { speed: FT.chaseSpeed * 0.95 });
       this.own(bk);
     }
@@ -663,8 +786,8 @@ class Play {
     const kp = this.keeper;
     if (kp && kp.fieldReact <= 0 && !kp.fieldPlaced) {
       kp.fieldPlaced = 1;
-      const spot2 = keeperSpot(this.keeperTag);
-      const to = reachable(kp, spot2.x, spot2.z);
+      const to = keeperSpot(this.keeperTag, kp, crowdAt([kp]));
+      this.keeperAt = to;
       kp.goTo(to.x, to.z, {
         speed: FT.sprint,
         onArrive: (k) => { k.act('ready', { state: 'catch', lock: 2.2 }); k.lookAt(this.spot.x, this.spot.y); },
@@ -679,7 +802,24 @@ class Play {
       const bag = BAG[this.keeperTag] || LAYOUT.FIRST;
       let dx = bag.x - this.spot.x, dz = bag.z - this.spot.y;
       const m = Math.max(1e-3, Math.hypot(dx, dz));
-      const to = reachable(bk2, bag.x + (dx / m) * 7.5, bag.z + (dz / m) * 7.5);
+      dx /= m; dz /= m;
+      const px = dz, pz = -dx;
+      /**
+       * BEHIND THE BAG, AND NOT BEHIND THE KID ON IT. Backing up first means
+       * standing where an overthrow would go, and there are two of those — one
+       * on each side of the line — plus the deep one straight past. The one the
+       * lens keeps clear of the receiver is the one he takes; posting him at a
+       * fixed eight feet put him thirty pixels off the first baseman's shoulder
+       * and fused the pair in every frame of `field_grounder`.
+       */
+      const kAt = this.keeperAt ? spotAt(this.keeperAt.x, this.keeperAt.z) : bodyAt(this.keeper);
+      const to = stagePlace(bk2, [
+        { x: bag.x + dx * 7.5 - px * 7.0, z: bag.z + dz * 7.5 - pz * 7.0 },
+        { x: bag.x + dx * 7.5 + px * 7.0, z: bag.z + dz * 7.5 + pz * 7.0 },
+        { x: bag.x + dx * 10.0, z: bag.z + dz * 10.0 },
+        { x: bag.x - px * 9.5, z: bag.z - pz * 9.5 },
+        { x: bag.x + px * 9.5, z: bag.z + pz * 9.5 },
+      ], [kAt, spotAt(bag.x, bag.z), spotAt(runnerLane(this.keeperTag).x, runnerLane(this.keeperTag).z)]);
       bk2.goTo(to.x, to.z, {
         speed: FT.chaseSpeed,
         onArrive: (k2) => { k2.act('ready', { state: 'catch', lock: 1.6 }); k2.lookAt(this.spot.x, this.spot.y); },
@@ -1073,6 +1213,31 @@ class Play {
       ? { x: this.relay.pos.x, z: this.relay.pos.y }
       : (BAG[tag] || LAYOUT.FIRST);
     k.lookAt(bag.x, bag.z);
+
+    /**
+     * ONE LAST LOOK THROUGH THE LENS.
+     *
+     * The receiver was sent to his bag at the crack, and at the crack the camera
+     * can still be sitting in the batting seat — a seat solved against the wrong
+     * lens is a seat solved against nothing. The throw is the frame that
+     * matters, so it is re-solved here, a beat before the ball leaves, and he
+     * takes the two steps if the answer moved. Two steps is all it ever is: the
+     * seats are a yard apart and he has the exchange to walk them.
+     */
+    const kp = this.keeper;
+    if (kp && kp !== k && tag !== 'relay') {
+      const pl2 = players();
+      const want = keeperSpot(tag, kp, crowdAt([kp]).concat(pl2 && pl2.batter ? [bodyAt(pl2.batter)] : []));
+      if (Math.hypot(want.x - kp.pos.x, want.z - kp.pos.y) > 2.2) {
+        kp.target = null; kp.lock = 0;
+        kp.goTo(want.x, want.z, {
+          speed: FT.sprint,
+          onArrive: (kk) => { kk.act('ready', { state: 'catch', lock: 2.0 }); kk.lookAt(k.pos.x, k.pos.y); },
+        });
+        this.own(kp);
+      }
+      this.keeperAt = want;
+    }
     bus.emit('field:set', { kid: k.home && k.home.id, to: tag });
   }
 
@@ -1139,8 +1304,7 @@ class Play {
       if (k === this.holder) k = null;
       const bag = BAG[tg];
       if (k && bag) {
-        const sp = keeperSpot(tg);
-        const to = reachable(k, sp.x, sp.z);
+        const to = keeperSpot(tg, k, crowdAt([k]));
         k.target = null; k.lock = 0;
         k.goTo(to.x, to.z, {
           speed: FT.sprint,
@@ -1328,10 +1492,37 @@ class Play {
     if (keeper) {
       keeper.target = null;
       keeper.lock = 0;
-      keeper.act('ready', { state: 'catch', lock: 0.7 });
-      keeper.setFace(this.isOut ? 'grin' : 'shock', 1.6);
-      if (this.isOut) keeper.flavour('cheer_arms', { life: 0.5, amp: 0.6 });
+      keeper.setFace(this.isOut ? 'grin' : 'shock', 1.8);
+      /**
+       * HE SHOWS THE BALL.
+       *
+       * The single frame this whole file exists to produce is a boy holding a
+       * ball up where everyone can see it while the runner stands four feet
+       * short of the bag — and round 1 of wave G3 did not produce it. The catch
+       * ended in `ready`, which is a half-crouch with both hands at chest
+       * height, in the busiest corner of the frame, against a fire hydrant that
+       * is very nearly the ball's own colour. Measured on `field_grounder`: the
+       * ball was eleven pixels of pink inside a hundred-pixel lump of kid.
+       *
+       * The ball in this file lives at whichever hand src/chars/players.js
+       * solves, so the fix is a pose, not a hack — but it has to be the RIGHT
+       * pose. `cheer_arms` was tried and measured first: these kids are 3.2 head
+       * heights tall and their arms are barely longer than their heads, so both
+       * arms up put the ball at 4.2 units, level with his own ear and BELOW the
+       * top of his cap. Beside his head is not above the crowd.
+       *
+       * `cheer_jump` takes the whole body up 1.9 units at the apex and holds it
+       * for four frames, which puts the ball at six — a clear head and a half
+       * over every cap on the block, silhouetted against road instead of against
+       * a fire hydrant of very nearly its own colour. It is also, plainly, what
+       * a nine-year-old who has just thrown somebody out does.
+       */
+      keeper.act('ready', { state: 'catch', lock: 0.06, after: (kk) => {
+        if (this.isOut) { kk.act('cheer_jump', { state: 'act', lock: 2.1 }); kk.setFace('grin', 2.2); }
+        else { kk.act('sulk', { state: 'sulk', lock: 1.4 }); kk.setFace('shock', 1.4); }
+      } });
       this.holder = keeper;
+      if (this.isOut) bus.emit('field:show_ball', { kid: keeper.home && keeper.home.id, bag: a.tag });
     }
     this.arrow = null;
     bus.emit('field:catch', { clean: true, pos: at, kid: keeper && keeper.home && keeper.home.id });
@@ -1726,10 +1917,24 @@ class Overlay {
       const lit = best || chosen;
       const al = (chosen ? 1 : best ? 0.98 : 0.40) * dim;
 
-      // the ground path, sampled so the chevrons sit on the crown of the road
+      /**
+       * The ground path — and it BOWS.
+       *
+       * A dead-straight mark between two points forty feet apart is a rule, and
+       * a rule laid on a street that already has a lamppost, an El column and an
+       * awning strut in it reads as one more piece of ironwork; round 1 of wave
+       * G3 drew exactly that and it photographed as a guy-wire strung across the
+       * frame. Two feet of sag, thrown to the side the kid's arm swings, is what
+       * a boy dragging a stub of chalk at a dead run actually leaves, and it is
+       * the difference between chalk and hardware.
+       */
+      const dxb = bag.x - k.pos.x, dzb = bag.z - k.pos.y;
+      const mb = Math.max(1e-3, Math.hypot(dxb, dzb));
+      const bowX = (dzb / mb) * 3.2, bowZ = -(dxb / mb) * 3.2;
       const at = (u) => {
-        const x = k.pos.x + (bag.x - k.pos.x) * u;
-        const z = k.pos.y + (bag.z - k.pos.y) * u;
+        const sag = Math.sin(clamp(u / 0.42, 0, 1) * Math.PI);
+        const x = k.pos.x + dxb * u + bowX * sag;
+        const z = k.pos.y + dzb * u + bowZ * sag;
         return this.project(app, x, LAYOUT.groundAt(x) + 0.05, z);
       };
       /**
@@ -1742,31 +1947,47 @@ class Overlay {
        * to the bag, dashed so it is unmistakably chalk rather than ironwork, and
        * thin enough that it never becomes the scaffold pole round 1 drew.
        */
-      // It TAPERS toward the bag, in three passes, because a constant-width
-      // stroke forty feet long is a rule and a rule is a piece of ironwork; a
-      // chalk line a kid drags with his thumb gets fatter as he leans into it.
-      for (let seg = 0; seg < 3; seg++) {
-        const u0 = 0.32 + seg * 0.19, u1 = u0 + 0.20;
-        const line = [];
-        for (let i = 0; i <= 5; i++) {
-          const sp = at(u0 + (i / 5) * (u1 - u0));
-          if (sp) line.push([sp.x, sp.y]);
-        }
-        if (line.length > 2) {
-          chalkMark(g, line, (lit ? 2.8 + seg * 1.5 : 1.6 + seg * 0.5) * U,
-            37 + seg * 3 + card.bag.length, al * (lit ? 0.7 + seg * 0.1 : 0.7));
-        }
+      /**
+       * A FLICK, NOT A ROAD.
+       *
+       * Three rounds have now tried to draw a line from the boy with the ball to
+       * a bag forty feet away, and all three photographed as hardware: a road
+       * seen at fourteen degrees squashes anything laid flat on it into a bar,
+       * and a white bar with an ink lining under it, forty feet long, in a
+       * street that already contains a lamppost, an El column and an awning
+       * strut, is a broom handle lying in the gutter. Measured on wave G3 round
+       * 1 the "tapered dashes" version came out as one solid stick through the
+       * runner's shins.
+       *
+       * The distance was never the job. The BAG says where — it has a chalk ring
+       * round it, a bit of string up to a torn paper tag, and the kid who is
+       * standing on it named on the tag. All the line has to say is WHICH WAY,
+       * and which way is a gesture: a short bowed swipe of chalk leaving the
+       * thrower's own feet with an arrow-head on the end of it, ten feet long
+       * and gone. Three of them, one per live bag, make a starburst round the
+       * boy who has to choose — which is the read the whole prompt is about, and
+       * it cannot be mistaken for a girder because it is nowhere near straight
+       * and nowhere near long enough.
+       */
+      const flick = [];
+      for (let i = 0; i <= 7; i++) {
+        const sp = at(0.09 + (i / 7) * 0.21);
+        if (sp) flick.push([sp.x, sp.y]);
       }
-      // and the head, on the bag end, where the eye finishes
-      const a1 = at(0.90), a0 = at(0.80);
+      if (flick.length > 2) {
+        chalkMark(g, flick, (lit ? 7.0 : 2.6) * U, 37 + card.bag.length, al * (lit ? 1 : 0.8));
+        if (lit) chalkMark(g, flick, 3.0 * U, 43 + card.bag.length, al * 0.55);
+      }
+      // and the head on the end of the swipe, pointing up the street at the bag
+      const a1 = at(0.335), a0 = at(0.27);
       if (a1 && a0) {
         const ang = Math.atan2(a1.y - a0.y, a1.x - a0.x);
-        const L = (lit ? 36 : 16) * U;
+        const L = (lit ? 30 : 14) * U;
         chalkMark(g, [
-          [a1.x - Math.cos(ang + 0.60) * L, a1.y - Math.sin(ang + 0.60) * L],
+          [a1.x - Math.cos(ang + 0.62) * L, a1.y - Math.sin(ang + 0.62) * L],
           [a1.x, a1.y],
-          [a1.x - Math.cos(ang - 0.60) * L, a1.y - Math.sin(ang - 0.60) * L],
-        ], (lit ? 9.0 : 3.4) * U, 63 + card.bag.length, al);
+          [a1.x - Math.cos(ang - 0.62) * L, a1.y - Math.sin(ang - 0.62) * L],
+        ], (lit ? 8.0 : 3.2) * U, 63 + card.bag.length, al);
       }
 
       // THE RING. On the good one it is drawn twice, fast, the way a kid rings
@@ -1798,6 +2019,9 @@ class Overlay {
 
     // 2. the tags. Solved so no two of them touch and none of them sits on the
     //    ball — a UI element covering the ball is the one unforgivable one.
+    //    `roadTop` is where the street stops and the shopfronts start, measured
+    //    off the locked field framing: nothing chalked or torn goes above it.
+    const roadTop = this.h * 0.27;
     const boxes = [];
     for (const card of pr.cards) {
       const bag = BAG[card.bag];
@@ -1809,19 +2033,38 @@ class Overlay {
       const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 0.1, bag.z);
       if (!s) continue;
       const best = card.bag === pr.best;
-      const sc = (best ? 1.42 : 0.84) * U * (pr.choice === card.bag ? 1 + pr.pop * 0.12 : 1);
+      /**
+       * A FLOOR ON THE SIZE, AND A SIDE OF THE BAG TO SIT ON.
+       *
+       * Second is chalked sixty feet up the street, so the road behind it on
+       * screen is not road at all — it is the far sidewalk, an awning and a
+       * lunchroom sign. Round 1 hung the tag a hundred pixels ABOVE that bag at
+       * 0.84 scale and produced an eighty-pixel scrap of kraft paper lying on a
+       * storefront: a player scanning the frame read it as signage and never saw
+       * it. Two fixes, both structural rather than cosmetic. A non-best tag is
+       * never smaller than 1.02 — the hierarchy is carried by the fresh chalk
+       * round the good one, not by shrinking the others into illegibility. And a
+       * tag goes above its bag only while there is ROAD above its bag; past the
+       * point where the buildings start it drops to the near side instead and
+       * the chalk stem runs up to the bag, which is where a kid would have put
+       * it anyway.
+       */
+      const sc = (best ? 1.46 : 1.02) * U * (pr.choice === card.bag ? 1 + pr.pop * 0.12 : 1);
       const w = 132 * sc, h = 68 * sc;
-      boxes.push({ card, best, sc, w, h, bag, x: s.x - w / 2, y: s.y - h - 104 * U });
+      const lift = 104 * U;
+      let ty = s.y - h - lift;
+      if (ty < roadTop) ty = s.y + lift * 0.42;
+      boxes.push({ card, best, sc, w, h, bag, x: s.x - w / 2, y: ty });
     }
     boxes.sort((A, B) => A.y - B.y);
     for (let i = 0; i < boxes.length; i++) {
       const b = boxes[i];
       b.x = clamp(b.x, 10 * U, this.w - b.w - 10 * U);
-      b.y = clamp(b.y, 74 * U, this.h - b.h - 96 * U);
+      b.y = clamp(b.y, roadTop, this.h - b.h - 96 * U);
       // clear of the ball
       if (bp && bp.x > b.x - 40 * U && bp.x < b.x + b.w + 40 * U
           && bp.y > b.y - 26 * U && bp.y < b.y + b.h + 26 * U) {
-        b.y = clamp(bp.y - b.h - 48 * U, 74 * U, this.h - b.h - 96 * U);
+        b.y = clamp(bp.y - b.h - 48 * U, roadTop, this.h - b.h - 96 * U);
       }
       // clear of each other
       for (let j = 0; j < i; j++) {
@@ -2033,28 +2276,56 @@ class Overlay {
     const avoid = [];
     const ball = app.sim.ball;
     const b = this.project(app, ball.pos.x, ball.pos.y, ball.pos.z);
-    if (b) avoid.push({ x: b.x, y: b.y, r: 78 * U });
+    if (b) avoid.push({ x: b.x, y: b.y, r: 74 * U, w: 8 });
     const pl = players();
     if (pl) {
+      // A KID IS NOT A POINT. Round 1 kept the word's CENTRE clear of a kid's
+      // HEAD and called that avoidance: OUT! is a hundred and eighty pixels wide
+      // and a kid is a hundred and ten tall, so a word whose centre cleared the
+      // runner's cap by ninety pixels still had its first letter across his
+      // chest — which is what `field_grounder` photographed. Two samples per
+      // body, head and belt, and the word is measured as the RECTANGLE it is.
       for (const k of pl.fielders.concat(pl.batter ? [pl.batter] : [])) {
-        const hd = this.project(app, k.pos.x, (k.groundY || 0) + 2.4, k.pos.y);
-        if (hd) avoid.push({ x: hd.x, y: hd.y, r: (k === p.callNear ? 56 : 44) * U });
+        const near = k === p.callNear;
+        const hd = this.project(app, k.pos.x, (k.groundY || 0) + 2.6, k.pos.y);
+        if (hd) avoid.push({ x: hd.x, y: hd.y, r: (near ? 56 : 46) * U, w: near ? 3.5 : 1.4 });
+        const bl = this.project(app, k.pos.x, (k.groundY || 0) + 0.9, k.pos.y);
+        if (bl) avoid.push({ x: bl.x, y: bl.y, r: (near ? 46 : 38) * U, w: near ? 3.0 : 1.2 });
       }
     }
-    const rw = wpx * 0.5 + 24 * U, rh = size * 0.56;
+    const rw = wpx * 0.5 + 20 * U, rh = size * 0.52;
     const seats = [];
-    for (let i = 0; i < 8; i++) {
-      const a = -Math.PI / 2 + (i / 8) * Math.PI * 2;
-      seats.push({ x: s.x + Math.cos(a) * (rw + 54 * U), y: s.y + Math.sin(a) * (rh + 62 * U) });
+    for (let ring = 0; ring < 3; ring++) {
+      const R = 1 + ring * 0.30;
+      for (let i = 0; i < 14; i++) {
+        const a = -Math.PI / 2 + (i / 14) * Math.PI * 2;
+        seats.push({ x: s.x + Math.cos(a) * (rw + 52 * U) * R, y: s.y + Math.sin(a) * (rh + 58 * U) * R });
+      }
     }
+    /**
+     * CLEARANCE IS NOT A PRIZE, IT IS A THRESHOLD.
+     *
+     * The first pass of this solver MAXIMISED distance from every body, and a
+     * frame where all nine kids are bunched round one bag has exactly one such
+     * seat: the empty corner. `field_grounder` duly chalked OUT! onto the awning
+     * of a sugar store two hundred pixels from the play, half off the left edge,
+     * about nothing. A call belongs AT the call. So overlap is a penalty and
+     * clearance earns nothing once it exists: the word takes the seat nearest
+     * the bag that is not lying on the ball (weight 8, non-negotiable), on the
+     * two bodies the call is about (3.5), or on anybody else (1.4).
+     */
+    const want = { x: s.x, y: s.y - rh - 58 * U };
     let seat = seats[0], bestScore = -1e9;
     for (const c of seats) {
-      const X = clamp(c.x, rw + 22 * U, this.w - rw - 22 * U);
+      const X = clamp(c.x, rw + 64 * U, this.w - rw - 64 * U);
       const Y = clamp(c.y, rh + 84 * U, this.h - rh - 44 * U);
-      let sc2 = 0;
-      for (const a of avoid) sc2 += Math.min(Math.hypot(X - a.x, Y - a.y) - a.r, 220 * U);
-      sc2 -= Math.hypot(X - c.x, Y - c.y) * 0.4;      // prefer the seat we asked for
-      sc2 -= Math.abs(Y - (s.y - rh - 62 * U)) * 0.55; // and above the bag, all else equal
+      let sc2 = -Math.hypot(X - want.x, Y - want.y) * 0.62;
+      for (const a of avoid) {
+        const dx = Math.max(0, Math.abs(X - a.x) - rw);
+        const dy = Math.max(0, Math.abs(Y - a.y) - rh);
+        const gap = Math.hypot(dx, dy) - a.r;
+        if (gap < 0) sc2 += gap * (a.w || 1.4);
+      }
       if (sc2 > bestScore) { bestScore = sc2; seat = { x: X, y: Y }; }
     }
 
@@ -2496,10 +2767,19 @@ registerScenario('field_grounder', {
   setup: ({ app }) => {
     stage(app, STAGED.grounder);
   },
-  // the throw has just landed in the kid covering the bag: ball in his bare
-  // hands, the runner a stride short and still on his feet, and the word on the
-  // road beside them — one frame, three bodies, one story
-  settle: 1.90,
+  /**
+   * 1.98, and every tenth of it is load-bearing.
+   *
+   * The throw lands in the first baseman's bare hands at 1.75 and he is off the
+   * ground with it a breath later. src/game/baserunning.js runs its man THROUGH
+   * the bag — which is correct, it is what a kid legging one out does — and he
+   * reaches the chalk at 2.02, so a frame taken at the apex of the leap (2.23)
+   * catches him four feet PAST first, which photographs as a man who was safe.
+   * At 1.98 he is three feet short and at a dead run, the receiver is rising
+   * with the ball a head over the block, and the word is on the road between
+   * them: the out, as a photograph, in the only tenth of a second it exists.
+   */
+  settle: 1.98,
 });
 
 /** A fly into the gap: two kids converge, and one of them was watching a pigeon. */

@@ -5,7 +5,7 @@ import { registerScenario } from '../core/scenarios.js';
 import { T } from '../core/tuning.js';
 import { bus } from '../core/bus.js';
 import { rng, RNG } from '../core/rng.js';
-import { CHALK, BALL as BALLC } from '../render/palette.js';
+import { CHALK, INK, BALL as BALLC } from '../render/palette.js';
 import { MAT, chalkTexture, slabText, slabWidth, LAYER } from '../render/materials.js';
 import { PITCH_TYPES, pitchTiming, blockRoster } from './core.js';
 import { roadHeight } from '../world/props.js';
@@ -130,6 +130,9 @@ export const BT = {
   carryNear: 5, carrySewer: 100, carryPerCarry: 528.6, carryMax: 330,
   loft: { fly: [30, 47], line: [12, 24], ground: [-4, 9] },
   spray: 0.34,              // radians of pull at lane = 1
+
+  /** Where the stick meets the ball, in the stage's own feet. `onSwing` sweeps the arc at x=3. */
+  contact: { x: 2.7, z: 1.45 },
 
   hitstop: { square: 0.105, glance: 0.062, nubber: 0.030, at: [0.85, 0.5] },
   dust: { bounce: 7, contact: 13 },
@@ -510,18 +513,31 @@ function named(key, fn) {
   return fn;
 }
 
-/** A word, hand-lettered in chalk on a torn scrap of air. Period lettering, §6.1. */
+/**
+ * A word, hand-lettered in chalk on a torn scrap of air. Period lettering, §6.1.
+ *
+ * Two things it has to survive, both found in a screenshot rather than in theory:
+ *
+ *  - IT MUST FIT. At a fixed cap height 'OFF THE END' came out 674 px wide on a 512 px
+ *    sheet, so the frame showed 'FF THE EN' and the one piece of timing feedback the
+ *    game has was unreadable. The cap height is now solved for the longest of the two
+ *    lines, so any verdict this file can say lands inside the scrap.
+ *  - IT MUST READ ON A BUSY WALL. Chalk-white letters over a sunlit storefront are
+ *    white on cream. Every glyph is set down twice — ink first, offset — so the word
+ *    carries its own shadow and reads over brick, awning, asphalt or sky.
+ */
 function chalkWordTexture(text, { size = 512, seed = 11, sub = '' } = {}) {
   const key = `bat:word:${text}:${sub}:${seed}`;
   return chalkTexture(named(key, (g, R, s) => {
-    const h = s * (sub ? 0.30 : 0.40);
-    const w = slabWidth(text, h);
-    slabText(g, text, (s - w) / 2, s * (sub ? 0.52 : 0.60), h, { color: CHALK, seed, tracking: 0.20 });
+    const fit = (t, want, track) => Math.min(want, (s * 0.86) / (t.length * 0.6 * (1 + track)));
+    const h = fit(text, s * (sub ? 0.30 : 0.40), 0.20);
+    const w = slabWidth(text, h, 0.20);
+    slabText(g, text, (s - w) / 2, s * (sub ? 0.52 : 0.60), h, { color: CHALK, seed, tracking: 0.20, shadow: INK });
     if (sub) {
-      const h2 = s * 0.15;
-      const w2 = slabWidth(sub, h2);
-      g.globalAlpha = 0.8;
-      slabText(g, sub, (s - w2) / 2, s * 0.76, h2, { color: CHALK, seed: seed + 5, tracking: 0.26 });
+      const h2 = fit(sub, s * 0.15, 0.26);
+      const w2 = slabWidth(sub, h2, 0.26);
+      g.globalAlpha = 0.85;
+      slabText(g, sub, (s - w2) / 2, s * 0.78, h2, { color: CHALK, seed: seed + 5, tracking: 0.26, shadow: INK });
       g.globalAlpha = 1;
     }
   }), { size, seed });
@@ -771,10 +787,15 @@ const impl = {
       speed = solveSpeed(carryToFeet(ev.carry ?? 0.4), Math.max(0.12, angle));
     }
 
+    // WHERE THE STICK MEETS IT. Measured off the frame, not guessed: contact used to be
+    // set 0.4 ft off the plate line, which on the stage camera is directly behind the
+    // catcher's head — the one frame the whole piece exists to show had no ball in it.
+    // The stick sweeps at x = 3 (see `onSwing`), so the ball is met out in front of the
+    // plate on the batter's side, where a hitter would actually get to it.
     const b = sim.ball;
-    const contactZ = T.street.plateZ + 1.1;
+    const contactZ = T.street.plateZ + BT.contact.z;
     const contactY = clamp(sim.hop ? sim.hop.yCross : 2.8, 1.5, 4.4);
-    b.pos.set(clamp(sim.hop ? sim.hop.dir * 0.4 : 0, -1.4, 1.4), contactY, contactZ);
+    b.pos.set(BT.contact.x, contactY, contactZ);
     b.vel.set(
       Math.sin(spray) * speed * Math.cos(angle),
       Math.sin(angle) * speed,
@@ -842,7 +863,8 @@ const system = registerSystem({
     // so a critic can call them from the harness without reading this file.
     app.batting = {
       BT, hopPlan, hopY, hopType, pressErrMs, IDEAL_AFTER,
-      separability, rhythmAudit, pressGaps: pressGapsHere, halfPerfectMs,
+      separability, rhythmAudit, rhythmProof, claimSpans,
+      pressGaps: pressGapsHere, halfPerfectMs,
       window: () => app.sim.swingWindow(),
     };
   },
@@ -936,7 +958,9 @@ const system = registerSystem({
    */
   onVerdict(sim, ev) {
     const err = sim.lastErrMs;
-    const at = new THREE.Vector3(8.4, 7.4, T.street.plateZ - 1.6);
+    // High and to the batter's side, clear of his cap and of the catcher: measured on the
+    // stage framing, where +x runs to screen LEFT.
+    const at = new THREE.Vector3(10.2, 8.4, T.street.plateZ - 2.6);
     const t = sim.hop ? sim.hop.type.toUpperCase() : '';
     if (ev.kind === 'in_play' && ev.quality >= 0.85) {
       this.pop.say('ON IT!', at, { sub: t, seed: 3, scale: 1.12 });
@@ -977,14 +1001,32 @@ const system = registerSystem({
   },
 
   /**
-   * The `contact` scenario in src/boot/scenarios.js was written against a 0.9 s windup;
-   * the pitching piece's delivery is now a full ritual and takes closer to 1.5 s, so the
-   * press that scenario makes would land before the ball had left the hand. Rather than
-   * edit a file this piece does not own, the delivery is run at speed for that shot only.
+   * `contact` lives in src/boot/scenarios.js, which this piece does not own, and it says:
+   * reset, advance 0.9 s, swing, hold 0.35 s. Both of those numbers were written against
+   * a wind-up that no longer exists — the pitching piece's delivery is a full ritual now,
+   * so at 0.9 s the ball had not left the hand, the press fell on nothing, and the shot
+   * called `contact` was a screenshot of ball one.
+   *
+   * Rather than reach into that file, the sim is asked for what the scenario meant:
+   * `releaseAt` puts the ball in the air on a beat this piece chooses (the ritual is rated
+   * to hit it, whatever length it grows to next), and `autoPress` books the swing on the
+   * hop's own ideal press. 0.70 s + a fast one's 0.50 s flight puts the crack at 1.20 s,
+   * so the frame the harness keeps — 1.25 s — is 50 ms into the hitstop: bat through the
+   * ball, dust off the stone, and the chalk still landing.
    */
   onScenario(name, app) {
-    app.sim.windupRate = name === 'contact' ? 4.4 : 1;
-    if (name === 'contact') app.sim.setHumanAtBat();
+    const contact = name === 'contact';
+    // The two evidence sheets ARE the shot, and the block's speech cards — staged by
+    // another piece, on a real-time beat, so they can land during the harness's 120 ms
+    // settle after this scenario has finished — sit straight over the headline. Muted for
+    // those two names only, and switched back on by this same hook for every other
+    // scenario, so no other piece's shot ever loses its writing.
+    const quiet = name === 'hop_read' || name === 'swing_timing';
+    if (app.bubbles) { app.bubbles.enabled = !quiet; if (quiet) app.bubbles.clear?.(); }
+    app.sim.windupRate = 1;
+    app.sim.releaseAt = contact ? 0.70 : null;
+    app.sim.autoPress = contact ? 0 : null;
+    if (contact) app.sim.setHumanAtBat();
     if (this.chart) this.chart.visible = false;
     if (this.timing) this.timing.visible = false;
     this.onReset();
@@ -1233,60 +1275,159 @@ function buildHopChart(app) {
 }
 
 /* ---------------------------------------------------------------------------
-   6b. THE SWING WINDOW — for a critic only. The game never draws this, because a
-   prompt that lights before the ball arrives IS the read (see the header).
+   6b. THE SWING WINDOW, AND THE PROOF THAT NO RHYTHM BEATS THE READ
+   ---------------------------------------------------------------------------
+   For a critic only. The game never draws this, because a prompt that lights before
+   the ball arrives IS the read (see the header). What is on the sheet is the whole
+   guarantee, drawn: the three presses, the 120 and 160 ms between them, the span each
+   press still CLAIMS, and the measured result of tapping a fixed rhythm at all sixteen
+   kids on the block.
    ------------------------------------------------------------------------ */
+
+/** The claim span each pitch owns: half the gap to its neighbour, or forever on a free side. */
+export function claimSpans() {
+  return PITCH_TYPES.map((k) => {
+    const mine = IDEAL_AFTER[k];
+    let lo = -Infinity, hi = Infinity;
+    for (const j of PITCH_TYPES) {
+      if (j === k) continue;
+      const d = IDEAL_AFTER[j] - mine;
+      if (d < 0) lo = Math.max(lo, mine + d / 2);
+      else hi = Math.min(hi, mine + d / 2);
+    }
+    return { type: k, ideal: mine, lo, hi };
+  });
+}
+
+/**
+ * The audit is the expensive part of this file (sixteen kids x 581 delays x two models),
+ * so it is measured once per session and kept. `app.batting.rhythmAudit()` re-runs it on
+ * demand for anybody who wants to poke at the parameters.
+ */
+let _proof = null;
+export function rhythmProof() {
+  if (_proof) return _proof;
+  const after = rhythmAudit();
+  const before = rhythmAudit({ ambiguityFix: false });
+  const twoBefore = before.rows.filter((r) => r.blindPerfectPitches >= 2).length;
+  const twoAfter = after.rows.filter((r) => r.blindPerfectPitches >= 2).length;
+  const sharp = after.rows.reduce((a, b) => (b.halfWindowMs > a.halfWindowMs ? b : a));
+  _proof = {
+    after, before, twoBefore, twoAfter, sharp,
+    kids: after.rows.length,
+    blindBest: Math.max(...after.rows.map((r) => r.blindPerfectPitches)),
+    edge: Math.round(after.minReadAdvantage),
+    delays: [...new Set(after.rows.map((r) => r.bestBlindDelay))].sort((a, b) => a - b),
+    pass: after.pass,
+  };
+  return _proof;
+}
 
 function drawWindowBoard(type) {
   return (g, R, S, H) => {
     const W = S;
     tornPaper(g, R, W, H);
-    const X = (ms) => W * 0.075 + W * 0.86 * clamp((ms + 40) / 660, 0, 1);
-    const axis = H * 0.60;
+    const pr = rhythmProof();
 
-    chalkPath(g, [[X(-40), axis], [X(620), axis]], R, { width: H * 0.011, alpha: 0.8 });
+    /* ---- the timeline ---------------------------------------------------- */
+    const L = W * 0.070, Rt = W * 0.955;
+    const MS0 = -40, MS1 = 700;
+    const X = (ms) => L + (Rt - L) * clamp((ms - MS0) / (MS1 - MS0), 0, 1);
+    const axis = H * 0.415;
+
+    chalkPath(g, [[X(MS0), axis], [X(MS1), axis]], R, { width: H * 0.011, alpha: 0.85 });
+    for (let ms = 0; ms <= 700; ms += 50) {
+      const big = ms % 100 === 0;
+      chalkPath(g, [[X(ms), axis], [X(ms), axis + H * (big ? 0.026 : 0.015)]], R,
+        { width: H * 0.005, alpha: big ? 0.55 : 0.35 });
+    }
+
+    // what each press CLAIMS. Half the gap, no further: the spans tile the line and never
+    // overlap, which is why one fixed delay cannot be right about two pitches.
+    const spans = claimSpans();
+    const cy = axis + H * 0.115;
+    spans.forEach((sp, i) => {
+      const x0 = X(Math.max(MS0 + 8, sp.lo)), x1 = X(Math.min(MS1 - 8, sp.hi));
+      const live = sp.type === type;
+      chalkPath(g, [[x0, cy], [x1, cy]], R, { width: H * 0.009, alpha: live ? 0.9 : 0.4 });
+      for (const x of [x0, x1]) chalkPath(g, [[x, cy - H * 0.026], [x, cy + H * 0.026]], R,
+        { width: H * 0.009, alpha: live ? 0.9 : 0.4 });
+      if (i === 1) word(g, 'WHAT EACH PRESS CLAIMS', (x0 + x1) / 2, cy + H * 0.075, H * 0.038,
+        { align: 'center', alpha: 0.6 });
+    });
 
     // the three ideal presses
     for (const k of PITCH_TYPES) {
       const x = X(IDEAL_AFTER[k]);
       const live = k === type;
-      chalkPath(g, [[x, axis - H * (live ? 0.16 : 0.10)], [x, axis + H * (live ? 0.10 : 0.06)]], R,
-        { width: H * (live ? 0.020 : 0.010), alpha: live ? 1 : 0.45 });
-      word(g, NAMES[k], x, axis - H * 0.19, H * 0.058, { align: 'center', alpha: live ? 1 : 0.5 });
-      word(g, String(Math.round(IDEAL_AFTER[k])), x, axis + H * 0.165, H * 0.050, { align: 'center', alpha: live ? 0.9 : 0.45 });
+      chalkPath(g, [[x, axis - H * (live ? 0.115 : 0.070)], [x, cy + H * 0.026]], R,
+        { width: H * (live ? 0.017 : 0.009), alpha: live ? 1 : 0.45 });
+      word(g, NAMES[k], x, axis - H * 0.135, H * 0.052, { align: 'center', alpha: live ? 1 : 0.55 });
+      word(g, `${Math.round(IDEAL_AFTER[k])} MS`, x, axis + H * 0.072, H * 0.040,
+        { align: 'center', alpha: live ? 0.9 : 0.5 });
     }
 
     // the gaps, which are the whole guarantee
-    for (const [a, b, lab] of [[IDEAL_AFTER.fast, IDEAL_AFTER.spinner, '120 MS'], [IDEAL_AFTER.spinner, IDEAL_AFTER.drop, '160 MS']]) {
-      const x0 = X(a), x1 = X(b), y = axis - H * 0.30;
-      chalkPath(g, [[x0, y], [x1, y]], R, { width: H * 0.008, alpha: 0.75 });
-      chalkPath(g, [[x0, y - H * 0.022], [x0, y + H * 0.022]], R, { width: H * 0.008, alpha: 0.75 });
-      chalkPath(g, [[x1, y - H * 0.022], [x1, y + H * 0.022]], R, { width: H * 0.008, alpha: 0.75 });
-      word(g, lab, (x0 + x1) / 2, y - H * 0.035, H * 0.046, { align: 'center', alpha: 0.85 });
+    for (const [a, b, lab] of [[IDEAL_AFTER.fast, IDEAL_AFTER.spinner, '120 MS'],
+      [IDEAL_AFTER.spinner, IDEAL_AFTER.drop, '160 MS']]) {
+      const x0 = X(a), x1 = X(b), y = axis - H * 0.215;
+      chalkPath(g, [[x0, y], [x1, y]], R, { width: H * 0.007, alpha: 0.7 });
+      for (const x of [x0, x1]) chalkPath(g, [[x, y - H * 0.018], [x, y + H * 0.018]], R, { width: H * 0.007, alpha: 0.7 });
+      word(g, lab, (x0 + x1) / 2, y - H * 0.026, H * 0.042, { align: 'center', alpha: 0.85 });
     }
 
     // the window that is actually live, for the pitch in the air
     const open = X(IDEAL_AFTER[type] - P.swingEarly * 1000);
     const close = X(IDEAL_AFTER[type] + P.swingLate * 1000);
     g.save();
-    g.globalAlpha = 0.20;
+    g.globalAlpha = 0.16;
     g.fillStyle = INK_CSS;
-    g.fillRect(open, axis - H * 0.075, close - open, H * 0.15);
+    g.fillRect(open, axis - H * 0.052, close - open, H * 0.104);
     g.restore();
-    chalkPath(g, [[open, axis + H * 0.075], [close, axis + H * 0.075]], R, { width: H * 0.026, alpha: 0.95 });
-    for (const x of [open, close]) chalkPath(g, [[x, axis + H * 0.02], [x, axis + H * 0.125]], R, { width: H * 0.012, alpha: 0.9 });
-    word(g, 'SWING WINDOW  310 MS', (open + close) / 2, axis + H * 0.245, H * 0.050, { align: 'center', alpha: 0.9 });
+    chalkPath(g, [[open, axis - H * 0.052], [close, axis - H * 0.052]], R, { width: H * 0.008, alpha: 0.8 });
+    chalkPath(g, [[open, axis + H * 0.052], [close, axis + H * 0.052]], R, { width: H * 0.008, alpha: 0.8 });
+    word(g, `${NAMES[type]} SWING WINDOW 310 MS`, (open + close) / 2, axis - H * 0.070, H * 0.038,
+      { align: 'center', alpha: 0.85 });
 
-    word(g, 'MILLISECONDS AFTER THE BOUNCE', W * 0.075, H * 0.14, H * 0.088, { color: 0x2a1d1a, seed: 21 });
-    word(g, 'NO ONE RHYTHM FITS TWO OF THEM', W * 0.075, H * 0.955, H * 0.042, { color: 0x2a1d1a, alpha: 0.65, seed: 23 });
+    // THE BLIND RHYTHM, where the search actually put it, drawn falling through one press
+    const blind = pr.after.rows.find((r) => r.name === pr.sharp.name) || pr.after.rows[0];
+    const bx = X(blind.bestBlindDelay);
+    chalkPath(g, [[bx, H * 0.055], [bx, cy + H * 0.055]], R, { width: H * 0.008, alpha: 0.55, dash: H * 0.020 });
+    chalkDot(g, bx, cy + H * 0.055, H * 0.017, { fill: '#f2828a' });
+    word(g, `BEST BLIND RHYTHM ${blind.bestBlindDelay} MS`, bx + W * 0.010, H * 0.075, H * 0.040, { alpha: 0.8 });
+    word(g, 'FITS ONE. ONLY ONE.', bx + W * 0.010, H * 0.118, H * 0.036, { alpha: 0.6 });
+
+    /* ---- the measurement ------------------------------------------------- */
+    const ty = H * 0.700;
+    chalkPath(g, [[L, ty - H * 0.055], [Rt, ty - H * 0.055]], R, { width: H * 0.006, alpha: 0.45 });
+    word(g, `THE RHYTHM TEST - ALL ${pr.kids} KIDS, EVERY FIXED DELAY FROM 120 TO 700 MS`,
+      L, ty, H * 0.045, { alpha: 0.7 });
+
+    const rows = [
+      ['TAPPING A FIXED RHYTHM', `PERFECT ON ${pr.blindBest} PITCH OF 3`],
+      ['READING THE HOP', `PERFECT ON 3 OF 3, ${pr.edge} POINTS BETTER`],
+    ];
+    rows.forEach(([a, b], i) => {
+      const y = ty + H * (0.085 + i * 0.078);
+      word(g, a, L, y, H * 0.055, { alpha: 0.92 });
+      word(g, b, Rt, y, H * 0.055, { align: 'right', alpha: 0.92 });
+      chalkPath(g, [[L + slabWidth(a, H * 0.055) + W * 0.012, y - H * 0.016],
+        [Rt - slabWidth(b, H * 0.055) - W * 0.012, y - H * 0.016]], R,
+        { width: H * 0.004, alpha: 0.28, dash: H * 0.012 });
+    });
+
+    word(g, `BEFORE THIS SHEET, ${pr.twoBefore} OF ${pr.kids} COULD COVER TWO OFF ONE RHYTHM.`,
+      L, H * 0.965, H * 0.040, { alpha: 0.55, seed: 23 });
+
+    word(g, 'MILLISECONDS AFTER THE BOUNCE', L, H * 0.140, H * 0.078, { seed: 21 });
   };
 }
 
 function buildTimingChart(app) {
   const type = app.sim.hop ? app.sim.hop.type : 'fast';
   if (system.timing) { app.scene.remove(system.timing); system.timing = null; }
-  const m = boardMesh(`bat:board:win:${type}`, drawWindowBoard(type), { w: 26, h: 8.2, px: 1792 });
-  m.position.set(-0.6, 16.4, BOARD.z);
+  const m = boardMesh(`bat:board:win:${type}`, drawWindowBoard(type), { w: 34, h: 12.4, px: 2048 });
+  m.position.set(-0.6, 15.0, 30);
   m.rotation.y = Math.PI;          // face down the street, at the camera
   m.rotation.z = -0.010;
   m.name = 'swing_window_board';
@@ -1347,6 +1488,9 @@ registerScenario('hop_read', {
     sim.state.phase = 'idle';
     sim.ball.live = false; sim.ball.inFlight = false;
     buildHopChart(app);
+    // The sheet is the whole shot; the block's speech cards are staged by another piece
+    // and land over the headline. Cleared here, in this scenario, not in theirs.
+    app.bubbles?.clear?.();
     app.camera.fov = 30;
     app.camera.position.set(-0.6, 10.6, -6.0);
     app.camera.lookAt(-0.6, BOARD.y, BOARD.z);
@@ -1361,6 +1505,7 @@ registerScenario('swing_timing', {
   setup: () => {
     toBounce(1925, 0.26, { want: 'loft' });
     buildTimingChart(app);
+    app.bubbles?.clear?.();
   },
   settle: 0,
 });
