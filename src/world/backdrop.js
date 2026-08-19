@@ -1063,6 +1063,112 @@ function buildFarBlock(card) {
   liftFloor(card, 0.064);
 }
 
+/* ============================================================================
+   THE EL, DRESSED — the object the composition brief asked to close the far end
+
+   `src/world/elevated.js` builds the structure: lattice columns, plate girders, ties, rails and
+   a train. That file belongs to another piece and is not touched here. What IS this piece's job
+   is what STANDS ON the elevated card, and round 1 put nothing there — so at two hundred and
+   fifty feet the El read as a hairline of dark girder that only registered because the train's
+   lit windows sat on top of it, and a critic said exactly that.
+
+   A New York El is not a viaduct. It is a STATION every four blocks: a wooden head house on the
+   deck with a pitched roof and a lit clerestory, a platform canopy on cast columns, a covered
+   stair down to the sidewalk, a kiosk at its foot. That silhouette stands thirteen feet above
+   the deck, it breaks the horizontal, and it is the most recognisable 1925 New York shape that
+   will fit in this frame. Under it the avenue gets awnings and three cart silhouettes, so the
+   far end reads as a street with traffic on it rather than as a wall.
+   ========================================================================= */
+function elevatedDressing(card) {
+  const Tb = card.b('trim'), Sb = card.b('sign'), A = card.atlas;
+  const deck = EL.railY + 1.6;                 // platform level, just over the guard rail
+  // Screen-x runs the OTHER way on a card (the camera looks up +z, so its right is −x).
+  // Projected through both registered framings, El-card x = −8 lands the head house in the
+  // open part of the notch in each — clear of the wings, clear of the MOXIE board on the near
+  // card, and silhouetted against the gasholder on the card behind it.
+  const X = -8;
+  const zc = (EL.nearCol + EL.farCol) / 2;
+  const paint = 0x7a4a34, sash = 0x2e4034, roof = 0x53483f;
+
+  // the platform itself, oversailing both girders
+  Tb.box(X - 30, deck - 0.9, EL.nearCol - 7, X + 30, deck, EL.farCol + 7,
+    (f, n, c) => shadeLin(0x6b5a44, litOf(n, c[0], c[1], c[2]) * 0.8, f === 'ny' ? 0.4 : 0), 'nz pz py ny px nx');
+
+  // the head house: board and batten, pitched roof, clerestory lit against the afternoon
+  const hy = deck, ht = deck + 11.5;
+  Tb.box(X - 11, hy, zc - 7, X + 11, ht, zc + 7,
+    (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]) * 0.92, f === 'ny' ? 0.35 : 0), 'nz pz px nx');
+  for (let k = 0; k < 9; k++) {                              // battens
+    const bx = X - 10 + k * 2.5;
+    Tb.box(bx - 0.18, hy, zc - 7.25, bx + 0.18, ht, zc - 6.95,
+      () => shadeLin(0x5e3828, 0.30), 'nz px nx');
+  }
+  for (let k = 0; k < 4; k++) {                              // windows, and the light inside
+    const wx = X - 8.4 + k * 5.6;
+    Tb.box(wx - 0.35, hy + 4.05, zc - 7.5, wx + 3.55, hy + 8.75, zc - 7.2,
+      (f, n, c) => shadeLin(sash, litOf(n, c[0], c[1], c[2]) * 0.8, 0.1), 'nz py ny px nx');
+    Tb.box(wx, hy + 4.4, zc - 7.62, wx + 3.2, hy + 8.4, zc - 7.5,
+      () => shadeLin(0xe2d4b4, 0.66, 0, 0.2), 'nz');
+  }
+  for (let k = 0; k < 5; k++) {                              // the pitched roof, in five courses
+    const t = k / 5, hw = 12.5 - t * 2.2;
+    Tb.box(X - hw, ht + k * 1.15, zc - 8 + t * 1.4, X + hw, ht + 1.15 + k * 1.15, zc + 8 - t * 1.4,
+      (f, n, c) => shadeLin(roof, litOf(n, c[0], c[1], c[2]) * 0.86, f === 'ny' ? 0.4 : 0), 'nz pz py px nx');
+  }
+  Tb.box(X - 1.1, ht + 5.75, zc - 1.1, X + 1.1, ht + 9.5, zc + 1.1,   // the stovepipe
+    (f, n, c) => shadeLin(0x413b37, litOf(n, c[0], c[1], c[2]) * 0.7, 0.1), 'nz pz px nx py');
+
+  // the platform canopy, on cast columns, either side of the head house
+  for (const s of [-1, 1]) {
+    const a = X + s * 13, b = X + s * 28;
+    const c0 = Math.min(a, b), c1 = Math.max(a, b);
+    Tb.box(c0, deck + 8.6, EL.nearCol - 6, c1, deck + 9.4, EL.farCol + 6,
+      (f, n, c) => shadeLin(roof, litOf(n, c[0], c[1], c[2]) * 0.8, f === 'ny' ? 0.45 : 0), 'nz pz py ny');
+    for (let px = c0 + 1.5; px < c1; px += 6.5) {
+      for (const pz of [EL.nearCol - 4.5, EL.farCol + 4.5]) {
+        Tb.box(px - 0.3, deck, pz - 0.3, px + 0.3, deck + 8.6, pz + 0.3,
+          () => shadeLin(0x413b37, 0.24), 'nz pz px nx');
+      }
+    }
+  }
+  // the station's own sign, hung off the canopy where the street can read it
+  const sign = A.get('roofsign:1');
+  Sb.quad([X + 8, deck + 9.4, EL.nearCol - 6.4], [X - 8, deck + 9.4, EL.nearCol - 6.4],
+    [X - 8, deck + 13.0, EL.nearCol - 6.4], [X + 8, deck + 13.0, EL.nearCol - 6.4],
+    texTint(0.66), rectUV(sign), [0, 0, -1]);
+
+  // the covered stair down to the sidewalk, and the kiosk at its foot
+  for (let k = 0; k < 12; k++) {
+    const t = k / 12;
+    const sy = deck - 1.0 - t * (deck - 1.6);
+    Tb.box(X + 15 + k * 1.5, sy - 1.2, EL.nearCol - 9 - t * 5, X + 16.7 + k * 1.5, sy, EL.nearCol - 4,
+      (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]) * 0.75, f === 'ny' ? 0.4 : 0), 'nz pz py ny px nx');
+    Tb.box(X + 15 + k * 1.5, sy, EL.nearCol - 9.3 - t * 5, X + 16.7 + k * 1.5, sy + 4.4, EL.nearCol - 9 - t * 5,
+      () => shadeLin(0x413b37, 0.22), 'nz');
+  }
+  Tb.box(X + 31, 0.6, EL.nearCol - 16, X + 38, 9.6, EL.nearCol - 9,
+    (f, n, c) => shadeLin(paint, litOf(n, c[0], c[1], c[2]) * 0.9, f === 'ny' ? 0.35 : 0), 'nz pz px nx py');
+  Tb.box(X + 32, 4.2, EL.nearCol - 16.3, X + 37, 7.6, EL.nearCol - 16.05,
+    () => shadeLin(0xe2d4b4, 0.60, 0, 0.2), 'nz');
+
+  // under the deck: awnings and three cart silhouettes, so the avenue reads as traffic
+  for (let k = 0; k < 7; k++) {
+    const ax = -150 + k * 46 + 9;
+    Tb.quad([ax + 15, 12.5, EL.farRow - 1], [ax - 15, 12.5, EL.farRow - 1],
+      [ax - 15, 9.6, EL.farRow - 8], [ax + 15, 9.6, EL.farRow - 8],
+      shadeLin(ACC[k % 4], 0.48, 0, 0.18), [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 0.92, -0.39]);
+    Tb.box(ax - 15, 8.2, EL.farRow - 8.4, ax + 15, 9.6, EL.farRow - 7.8,
+      () => shadeLin(0x3a332c, 0.16), 'nz py ny');
+  }
+  for (const [cx, cz, w] of [[-64, EL.nearCol + 16, 15], [22, EL.farCol + 10, 12], [-116, EL.farCol + 20, 13]]) {
+    Tb.box(cx - w / 2, 1.0, cz - 4, cx + w / 2, 8.2, cz + 4,
+      (f, n, c) => shadeLin(0x4a4038, litOf(n, c[0], c[1], c[2]) * 0.7, 0.06), 'nz pz px nx py');
+    for (const wx of [cx - w / 2 + 2.4, cx + w / 2 - 2.4]) {
+      Tb.cyl(wx, cz - 4.2, 1.9, 0, 0.4, 10, () => shadeLin(0x5a4e46, 0.16), 'py');
+    }
+  }
+}
+
 /**
  * The skyline card. From a tenement cross street in 1925 you do not see a skyline — you see
  * the El. So this is barely there: a few lofts and two stacks, pale enough to read as a change
@@ -1426,6 +1532,7 @@ export function buildBackdrop(atlas) {
       buildFarBlock(card);
     } else if (spec.key === 'elevated') {
       buildElevated(card.ctx);
+      elevatedDressing(card);
       card.base.z = spec.z - (EL.nearCol + EL.farCol) / 2;
       hazeCard(card, 0.46);
       // The El is a lattice of 2 ft irons two hundred and fifty feet away, so §2.2's linear

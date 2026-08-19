@@ -1923,7 +1923,10 @@ registerScenario('announcer_sheet', {
           KID_LINES.ethel.dot, KID_LINES.tommy.gooch, KID_LINES.luz.gooch,
           KID_LINES.dom.gooch, KID_LINES.bessie.gooch, KID_LINES.jesus.dot,
           ...col(CHATTER.taunt, 2), ...col(CHATTER.call, 2), ...col(CHATTER.back, 2),
-          ...NARRATOR.slice(8, 11), ...col(CHATTER.ghost, 1), TINY_GAG[1],
+          // and the two banks §7.5 makes binding: the kids whose roster entry
+          // says so call for the ball in the language they call for it at home
+          ...col(CHATTER.es, 3), ...col(CHATTER.yi, 3),
+          ...NARRATOR.slice(8, 11), TINY_GAG[1],
           ...ARGUMENTS[3],
         ] },
       ],

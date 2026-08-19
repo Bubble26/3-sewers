@@ -603,6 +603,8 @@ export class AudioEngine {
     return c ? { name, bus: c.bus, gain: c.gain, dur: c.dur, note: c.note || '' } : null;
   }
   registerCue(name, def) { return registerCue(name, def); }
+  /** The live cue definition, for tools that need to sweep a cue's own tuning. */
+  cue(name) { return getCue(name); }
 
   /**
    * Rebuild the SAME graph into an OfflineAudioContext and render one cue.

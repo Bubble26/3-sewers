@@ -592,7 +592,7 @@ class Bubbles {
     //    at 1600x900, scaled with the frame.
     B.push({
       x: this.w * 0.5 - SCOREBUG_W * 0.5 * U, y: SCOREBUG_Y * U,
-      w: SCOREBUG_W * U, h: (SCOREBUG_H - SCOREBUG_Y) * U, weight: 6,
+      w: SCOREBUG_W * U, h: (SCOREBUG_H - SCOREBUG_Y) * U, weight: 6, hard: true,
     });
     // 2. the ball. Always. It is the readability accent of the whole game (§2.4).
     const ball = app.sim?.ball;
@@ -651,7 +651,14 @@ class Bubbles {
     // or a shout at the top of a climb becomes a billboard across the whole
     // frame. The TYPE doubles; the piece of paper stays a piece of paper.
     const gg = Math.max(1, card.growGoal || 1);
-    const maxW = ((isKid ? CARDW.kid : CARDW.dot) * U - P.x * 2 * U) / gg;
+    let maxW = ((isKid ? CARDW.kid : CARDW.dot) * U - P.x * 2 * U) / gg;
+    if (!isKid) {
+      // and however far it grows it still has to fit BESIDE the scorebug, which
+      // is the one thing on screen it is never allowed to cover
+      const room = this.w * 0.5 - SCOREBUG_W * 0.5 * U - (INSET + 72) * U;
+      maxW = Math.min(maxW, room / gg - P.x * 2 * U - 86 * U);
+    }
+    maxW = Math.max(60 * U, maxW);
     const opt = { tracking: TYPE.track, condense: TYPE.condense };
     const lines = wrap(card.text, size, maxW, opt);
     let wid = 0;
@@ -688,14 +695,19 @@ class Bubbles {
         });
       }
     } else {
+      /* THE BOOTH IS A HEADER. Dot is top-left, the Gooch is top-right, and
+         they stay there through a camera cut because that is the whole point of
+         anchoring them in screen space (§17). So an announcer has THREE slots
+         and all three are in her own column: the header row, and two rows under
+         it if the scorebug or a live ball is in the header row. She never
+         crosses the frame, because a banner that crosses the frame is not a
+         banner, it is a balloon. */
       const left = card.who === 'dot';
       const x0 = left ? m : W - m - card.rect.w;
-      const x1 = left ? W - m - card.rect.w : m;
       card.anchor = { x: left ? x0 + 46 * U : x0 + card.rect.w - 46 * U, y: -40 * U, px: 0 };
       cands.push({ x: x0, y: m, pri: 0 });
-      cands.push({ x: x0, y: m + card.rect.h * 0.72, pri: 1.1 });
-      cands.push({ x: x0, y: H - m - card.rect.h, pri: 2.0 });
-      cands.push({ x: x1, y: m, pri: 3.0 });
+      cands.push({ x: x0, y: SCOREBUG_H * U + 14 * U, pri: 0.9 });
+      cands.push({ x: x0, y: SCOREBUG_H * U + 14 * U + card.rect.h * 1.15, pri: 1.8 });
     }
 
     const blocked = this.blocked;
@@ -713,15 +725,35 @@ class Bubbles {
       const bl = card.bleed || 0;
       const r = { x: x - ox - bl, y: y - oy - bl, w: gw + bl * 2, h: gh + bl * 2 };
       let cost = c.pri * 900 * U * U;
-      for (const b of blocked) cost += this.overlap(r, b) * b.weight;
+      for (const b of blocked) {
+        const ov = this.overlap(r, b);
+        // the scorebug is not a preference. Any overlap at all disqualifies the
+        // slot outright, and only then do the soft weights decide.
+        if (ov > 0 && b.hard) cost += 5e6;
+        cost += ov * b.weight;
+      }
       for (const o of this.cards) {
         if (o === card || !o.rect.w || !o.pos) continue;
-        cost += this.overlap(r, { x: o.pos.x, y: o.pos.y, w: o.rect.w, h: o.rect.h }) * 1.4;
+        cost += this.overlap(r, this.grown(o)) * 1.4;
+      }
+      // STICKINESS. Paper stays where it was put. Re-opening the question of
+      // where a card lives every tick is what made the last build's card tour
+      // the left half of the frame for four seconds; a move now has to be worth
+      // more than the confusion it causes.
+      if (card.pos) {
+        const d = Math.hypot(x - card.pos.x, y - card.pos.y);
+        cost += Math.min(1, d / (200 * U)) * 14000 * U * U;
       }
       if (cost < bestCost) { bestCost = cost; best = { x, y }; }
     }
     card.goal = best;
-    if (!card.pos || dt <= 0) card.pos = { x: best.x, y: best.y };
+    // A card changing SLOT cuts, the way the camera cuts (§17.4). Only a card
+    // making a small adjustment inside its own slot slides, and it slides once.
+    const jump = card.pos ? Math.hypot(best.x - card.pos.x, best.y - card.pos.y) > 150 * U : false;
+    // the booth CUTS between its three rows and never slides: a banner that
+    // slides is a balloon. Only a kid's scrap, which is welded to a face that
+    // is itself moving, gets the damped step-aside.
+    if (!card.pos || dt <= 0 || jump || card.who !== 'kid') card.pos = { x: best.x, y: best.y };
     else if (card.settle > 0) {
       // ONE step aside per thing said, taken at a walking pace. The old solver
       // gave every card an unlimited budget and a 0.085 s time constant, so a
@@ -734,6 +766,12 @@ class Bubbles {
       if (d > cap) { dx *= cap / d; dy *= cap / d; }
       card.pos.x += dx; card.pos.y += dy;
     }
+    // The inset is a HARD constraint, not a preference. A card whose settle
+    // budget has run out is still growing — the climb doubles it — so it has to
+    // be pulled back inside the frame every tick or a shout at the top of the
+    // ladder hangs half of itself off the left edge, which is exactly what the
+    // last build did.
+    this.confine(card);
     card.rect.x = card.pos.x; card.rect.y = card.pos.y;
   }
 

@@ -1580,6 +1580,23 @@ registerCue('mother_calling', {
  * ------------------------------------------------------------------------- */
 registerCue('city_bed', {
   bus: 'ambience', gain: 1.5, dur: 8.0,
+  // THE BALANCE OF THE BLOCK, in one place, because it is the only thing in this
+  // file that has to be tuned against a measurement rather than against an ear:
+  // the bed's job is a crest factor and a peak ceiling, not a level.
+  //
+  // Rendered one layer at a time over 8 s (peak / rms / crest at the graph out):
+  //   the avenue     0.103 / 0.0225 / 13.2 dB    0 onsets   a wash, as intended
+  //   cart+pigeons   0.162 / 0.0111 / 23.3 dB   29 onsets   ALL of the transients
+  //   the radio      0.123 / 0.0380 / 10.2 dB   32 onsets   <- the actual problem
+  //   the flivver    0.017 / 0.0022 / 18.0 dB    8 onsets
+  // The radio was carrying more energy than the avenue AND the horse AND the
+  // pigeons put together — one window on the third floor was the loudest thing on
+  // the block, which is a §7.1 violation ("one radio, one window, THIN AND FAR")
+  // before it is a mix problem, and it is most of the reason the bed measured as
+  // a wash. Down 9.7 dB. The avenue comes down 5.2 dB with it, the cart and the
+  // pigeons come UP 1.5 dB, and the whole bed goes from crest 12.7 dB / 1 onset
+  // to crest 17.6 dB / 15 onsets at the same peak. Same street, fewer blankets.
+  mix: { ave: 0.30, far: 0.92, rad: 0.15, car: 0.26 },
   note: '§7.5: the five things this block does all the time — the avenue, a cart, the cornice pigeons, one radio in one window, and one flivver pulling away from the kerb. Everything rarer than that belongs to the sporadic scheduler, not to the bed.',
   build(ctx, out, t0, o) {
     const r = o.rnd, dur = o.seconds ?? 8;
@@ -1597,11 +1614,12 @@ registerCue('city_bed', {
     //    it buried every discrete thing on the block underneath itself. Down
     //    5.2 dB, the hooves, the pigeons, the radio and the flivver all come out
     //    from behind it and the bed reads as objects instead of as weather.
-    const ave = gain(ctx, 0.55); ave.connect(out);
+    const M = this.mix;
+    const ave = gain(ctx, M.ave); ave.connect(out);
     CUES.city_traffic.build(ctx, ave, t0, { ...o, seconds: dur, rnd: sub() });
 
     // everything else is FAR — the bed must never fight the play (§7.5)
-    const far = gain(ctx, 0.98);
+    const far = gain(ctx, M.far);
     chain(far, lp(ctx, 2600, 0.8), out);
 
     // 2. A HORSE CART. PERIOD: in 1925 half the deliveries on this block are
@@ -1616,7 +1634,7 @@ registerCue('city_bed', {
     //    this is the one non-traffic layer that is right to hear every pass. The
     //    set is 4.3 s long and the pass can be 12 s, so it is TILED: a radio that
     //    stops after four seconds is not a radio, it is a cue.
-    const rad = gain(ctx, 0.46); chain(rad, lp(ctx, 2400, 0.8), out);
+    const rad = gain(ctx, M.rad); chain(rad, lp(ctx, 2400, 0.8), out);
     for (let t = t0 + r.range(0.05, 0.6); t < t0 + dur - 1.2; t += 4.42) {
       CUES.radio_window.build(ctx, rad, t, { ...o, rnd: sub() });
     }
@@ -1636,7 +1654,7 @@ registerCue('city_bed', {
       away.pan.linearRampToValueAtTime(0.60, tCar + 4.0);
     }
     motorT(ctx, away, tCar, {
-      dur: 4.0, rate: 19.5, drift: 24.5 / 19.5, g: 0.055,
+      dur: 4.0, rate: 19.5, drift: 24.5 / 19.5, g: M.car,
       f: 168, lp: 820, offset: r.range(0, 3), a: 0.75, d: 1.05,
     });
   },
