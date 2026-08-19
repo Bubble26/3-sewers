@@ -1909,10 +1909,12 @@ registerScenario('announcer_sheet', {
       sub: 'Dot, third floor front  ·  The Gooch, on the wagon',
       columns: [
         { head: 'DOT CALLS IT STRAIGHT', lines: [
+          // her heat first: she is the straight man and she is also the loudest
+          // thing on this street, and four words is all a shout ever gets
+          ...col(DOT.sewer, 3), ...col(DOT.run, 2), ...col(DOT.hit, 2), ...col(DOT.great, 2),
           ...col(DOT.strike_looking, 2), ...col(DOT.strike_swinging, 2), ...col(DOT.ball, 1),
-          ...col(DOT.hit, 2), ...col(DOT.sewer, 2), ...col(DOT.out, 2), ...col(DOT.great, 1),
-          ...col(DOT.error, 1), ...col(DOT.foul, 1), ...col(DOT.between, 1),
-          ...col(DOT.close, 1), ...col(DOT.lopsided, 1),
+          ...col(DOT.out, 1), ...col(DOT.error, 1), ...col(DOT.foul, 1),
+          ...col(DOT.between, 1), ...col(DOT.close, 1), ...col(DOT.lopsided, 1),
         ] },
         { head: 'THE GOOCH, ONE BEAT LATER', lines: [
           ...col(GOOCH.after_strike, 2), ...col(GOOCH.after_hit, 1), ...col(GOOCH.after_out, 1),
@@ -1920,13 +1922,14 @@ registerScenario('announcer_sheet', {
           ...col(GOOCH.between, 1), GAGS.ice[1], GAGS.apple[2], GAGS.grounded[1],
         ] },
         { head: 'ONE APIECE, AND THE BLOCK', lines: [
-          KID_LINES.ethel.dot, KID_LINES.tommy.gooch, KID_LINES.luz.gooch,
-          KID_LINES.dom.gooch, KID_LINES.bessie.gooch, KID_LINES.jesus.dot,
-          ...col(CHATTER.taunt, 2), ...col(CHATTER.call, 2), ...col(CHATTER.back, 2),
-          // and the two banks §7.5 makes binding: the kids whose roster entry
-          // says so call for the ball in the language they call for it at home
-          ...col(CHATTER.es, 3), ...col(CHATTER.yi, 3),
-          ...NARRATOR.slice(8, 11), TINY_GAG[1],
+          KID_LINES.ethel.dot, KID_LINES.jesus.dot, KID_LINES.luz.gooch,
+          KID_LINES.dom.gooch, KID_LINES.bessie.gooch,
+          // the two banks §7.5 makes binding: the kids whose roster entry says
+          // so call for the ball in the language they call for it at home, and
+          // nobody in the booth ever remarks on it
+          ...col(CHATTER.es, 4), ...col(CHATTER.yi, 4),
+          ...col(CHATTER.taunt, 2), ...col(CHATTER.call, 1), ...col(CHATTER.back, 2),
+          ...NARRATOR.slice(8, 10), TINY_GAG[1],
           ...ARGUMENTS[3],
         ] },
       ],

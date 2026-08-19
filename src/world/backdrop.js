@@ -909,7 +909,7 @@ function farMass(card, o, r, x, w, i, T) {
     Tb.cyl(tx, tz, 5.3, h + 19.4, h + 20.8, 12, () => shadeLin(0x4a4038, 0.16), '');   // conical hat
     Tb.box(tx - 0.4, h + 20.8, tz - 0.4, tx + 0.4, h + 24, tz + 0.4, () => shadeLin(0x4a4038, 0.22), 'nz px nx py');
   } else if (kind === 1) {
-    const slot = A.get(`roofsign:${i % 3}`);
+    const slot = A.get(`roofsign:${Math.floor(i / 3) % 2}`);
     const sw = Math.min(w - 2, 26), sh = sw * (slot.h / slot.w) * 1.35;
     const sx = x + w * 0.5;
     Sb.quad([sx + sw / 2, h + ch, z - 1.0], [sx - sw / 2, h + ch, z - 1.0],
@@ -1088,7 +1088,10 @@ function elevatedDressing(card) {
   // card, and silhouetted against the gasholder on the card behind it.
   const X = -8;
   const zc = (EL.nearCol + EL.farCol) / 2;
-  const paint = 0x7a4a34, sash = 0x2e4034, roof = 0x53483f;
+  // Two hundred and fifty feet out through 0.46 of coal haze, a station painted at the
+  // value it would really be disappears into the skyline behind it. It is authored dark and
+  // saturated so that AFTER the haze it still separates: that is the card's job, not a cheat.
+  const paint = 0x8a4a3a, sash = 0x24382c, roof = 0x413b37;
 
   // the platform itself, oversailing both girders
   Tb.box(X - 30, deck - 0.9, EL.nearCol - 7, X + 30, deck, EL.farCol + 7,
@@ -1132,7 +1135,7 @@ function elevatedDressing(card) {
     }
   }
   // the station's own sign, hung off the canopy where the street can read it
-  const sign = A.get('roofsign:1');
+  const sign = A.get('bd:station');
   Sb.quad([X + 8, deck + 9.4, EL.nearCol - 6.4], [X - 8, deck + 9.4, EL.nearCol - 6.4],
     [X - 8, deck + 13.0, EL.nearCol - 6.4], [X + 8, deck + 13.0, EL.nearCol - 6.4],
     texTint(0.66), rectUV(sign), [0, 0, -1]);
@@ -1279,6 +1282,20 @@ function registerBackdropSprites(atlas) {
     },
   ];
   FIG.forEach((draw, i) => atlas.add(`bd:fig${i}`, 44, 60, (g, w, h) => { g.clearRect(0, 0, w, h); draw(g, w, h); }));
+  // The El station's name board. `storefronts.js` ships two roof signs and one of them is
+  // already on the near card, so the far end gets its own lettering rather than a second MOXIE.
+  atlas.add('bd:station', 320, 104, (g, w, h) => {
+    g.fillStyle = tcCss(0x1f3a6e); g.fillRect(0, 0, w, h);
+    g.fillStyle = tcCss(0xe6c96a); g.fillRect(w * 0.03, h * 0.06, w * 0.94, h * 0.045);
+    g.fillRect(w * 0.03, h * 0.90, w * 0.94, h * 0.045);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = tcCss(0xe6dbc0);
+    g.font = `700 ${Math.round(h * 0.42)}px "Liberation Serif","DejaVu Serif",serif`;
+    g.fillText('95th STREET', w * 0.5, h * 0.40);
+    g.fillStyle = tcCss(0xe6c96a);
+    g.font = `700 ${Math.round(h * 0.19)}px "Liberation Sans","DejaVu Sans",sans-serif`;
+    g.fillText('THIRD AVENUE LINE', w * 0.5, h * 0.72);
+  });
   // A pigeon in the air, wings up — the only pose that reads at this size.
   atlas.add('bd:bird', 56, 40, (g, w, h) => {
     g.clearRect(0, 0, w, h);
