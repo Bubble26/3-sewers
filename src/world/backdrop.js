@@ -5,8 +5,8 @@ import { RNG } from '../core/rng.js';
 import { registerScenario } from '../core/scenarios.js';
 import { FACADE, PAVEMENT } from '../render/palette.js';
 import {
-  M, Builder, storeyTop, buildingTop, shadeLin, texTint, litOf, occlusion, lit3,
-  rectUV, floorLum, buildTenement,
+  M, Builder, storeyTop, buildingTop, shadeLin, texTint, litOf, lit3,
+  rectUV, tcCss, buildTenement,
 } from './facade.js';
 import { buildStorefront } from './storefronts.js';
 import { EL, buildElevated } from './elevated.js';
@@ -107,17 +107,67 @@ function litRamp(l) {
 }
 const BUILT = litRamp(0.74);                       // what every card is authored at
 const SHADE = [0.95 * 0.905, 0.95 * 0.955, 0.95 * 1.10];   // the cool shade branch
+const LUM = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
-function gradeFor(lit, occ, bite) {
-  const r = litRamp(lit);
-  const w = clamp01(occ * 3.2);                    // ease into the cool branch at the terminator
-  const s = 1 - bite * (1 - w);
+/**
+ * THE STEP IS CAPPED, AND IT IS CAPPED IN LUMINANCE (§3.2 Decision 3).
+ *
+ * "The reason our sun band reads as sunlight is its hue and its edge, not its brightness."
+ * Round 1 shipped a shade branch chosen as paint, which measured 1.97:1 against the sun branch
+ * on the near card and 3.03:1 under the pushcart — a Craft fail against a 1.45:1 ceiling. So
+ * the shade branch is no longer a free choice: it is the sun branch, cooled, and then scaled
+ * so its luminance sits EXACTLY `CAP` below. Hue does all the work; value does almost none.
+ */
+const CAP = 1.42;
+
+function gradeFor(facing, sun) {
+  const r = litRamp(facing);
+  const g = [r[0] / BUILT[0], r[1] / BUILT[1], r[2] / BUILT[2]];
+  const cool = [SHADE[0] / BUILT[0], SHADE[1] / BUILT[1], SHADE[2] / BUILT[2]];
+  const k = LUM(g) / CAP / LUM(cool);
+  const s = clamp01(sun);
   return [
-    (r[0] * w + SHADE[0] * (1 - w)) / BUILT[0] * s,
-    (r[1] * w + SHADE[1] * (1 - w)) / BUILT[1] * s,
-    (r[2] * w + SHADE[2] * (1 - w)) / BUILT[2] * s,
+    cool[0] * k + (g[0] - cool[0] * k) * s,
+    cool[1] * k + (g[1] - cool[1] * k) * s,
+    cool[2] * k + (g[2] - cool[2] * k) * s,
   ];
 }
+
+/**
+ * THE SHADOW LINE — and it is the composition, not a detail (§3.2, §3.3).
+ *
+ * Round 1 graded every card with `occlusion()`, the world-space solver from facade.js. Traced
+ * through, that function returns 1 — full sun — for EVERY vertex on EVERY card: a card at
+ * z ≥ 84 sits so far past the south building line that the raking shadow has already climbed
+ * over it. So all five cards were flat-lit at one value and a critic correctly reported that
+ * "both wings of the street are lit the same; there is no lit-facade / shaded-facade diagonal
+ * anywhere". The diagonal that has been missing from every frame of this build was missing
+ * because the arithmetic said there wasn't one.
+ *
+ * A card is scenery. It gets its own terminator, authored: a straight line, a few degrees off
+ * horizontal, sun above it and shade below. `pen` is its softness IN FEET, set per card so the
+ * penumbra measures 10–14 px at 1600×900 from the locked framings — a hard edge reads as a
+ * pasted decal and a wide one reads as a gradient, and neither reads as afternoon.
+ */
+function sunAt(x, y, o) {
+  const line = (o.shadowY ?? 0) + (x - (o.shadowX ?? 0)) * (o.shadowSlope ?? 0);
+  return clamp01((y - line) / (o.pen ?? 1) + 0.5);
+}
+
+/**
+ * ONE AFTERNOON, FIVE CARDS. The terminator climbs as the block recedes — the near row throws
+ * its shade a fixed number of feet up whatever stands behind it, and each card is further back
+ * — and its softness grows with distance so that every one of them measures 10–14 px at
+ * 1600×900 from the locked framings. `slope` is ~3° off horizontal: enough that the edge reads
+ * as a cast shadow with a direction, not as a horizontal band of paint.
+ */
+const SUN = {
+  nearFacade: { shadowY: 11.5, shadowX: 0, shadowSlope: -0.055, pen: 0.65 },
+  midBlock: { shadowY: 19.5, shadowX: 0, shadowSlope: -0.050, pen: 0.85 },
+  farBlock: { shadowY: 22.0, shadowX: 0, shadowSlope: -0.045, pen: 1.10 },
+  sky: { shadowY: -30, shadowX: 0, shadowSlope: -0.030, pen: 2.20 },
+};
+const FAR_SUN = SUN.farBlock;
 
 /**
  * §2.3 — coal haze is a LIGHT. Distance lifts value and pulls chroma out, never darkens.
@@ -131,10 +181,14 @@ function airK(c, z, base, cardZ) {
   if (t <= 0.001) return c;
   const Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
   const k = 1 + 0.26 * t;
+  // 0.55, not the 0.80 round 1 shipped. Haze is a LIGHT, and a light lifts value; pulling 80%
+  // of the chroma out as well is the thing that made the far masses read as mid-century
+  // concrete rather than as 1925 brick two hundred feet away. Value still climbs with
+  // distance — the layer separation survives — but the hue survives with it.
   return [
-    (c[0] + (Y * 1.06 - c[0]) * t * 0.80) * k,
-    (c[1] + (Y * 1.00 - c[1]) * t * 0.80) * k,
-    (c[2] + (Y * 0.90 - c[2]) * t * 0.80) * k,
+    (c[0] + (Y * 1.06 - c[0]) * t * 0.55) * k,
+    (c[1] + (Y * 1.00 - c[1]) * t * 0.55) * k,
+    (c[2] + (Y * 0.90 - c[2]) * t * 0.55) * k,
   ];
 }
 
@@ -145,18 +199,13 @@ function airK(c, z, base, cardZ) {
  */
 function relightCard(card, o = {}) {
   const facing = o.facing ?? 0.40;
-  const shift = o.sunShift ?? 0;
-  const shadeZ = o.shadeZ ?? card.z;
   const gain = o.air ?? 0.1;
-  const bite = o.bite ?? 0.10;
   for (const b of card.builders.values()) {
     const P = b.p, C = b.c;
     for (let i = 0; i < P.length; i += 3) {
-      const occ = occlusion(P[i] + shift, P[i + 1], shadeZ);
-      const g = gradeFor(facing * occ, occ, bite);
+      const g = gradeFor(facing, sunAt(P[i], P[i + 1], o));
       let c = [C[i] * g[0], C[i + 1] * g[1], C[i + 2] * g[2]];
       c = airK(c, P[i + 2], gain, card.z);
-      if (c[0] + c[1] + c[2] < 2.4) c = floorLum(c);
       C[i] = c[0]; C[i + 1] = c[1]; C[i + 2] = c[2];
     }
   }
@@ -169,6 +218,34 @@ function hazeCard(card, gain) {
     for (let i = 0; i < P.length; i += 3) {
       const c = airK([C[i], C[i + 1], C[i + 2]], P[i + 2], gain, card.z);
       C[i] = c[0]; C[i + 1] = c[1]; C[i + 2] = c[2];
+    }
+  }
+}
+
+/**
+ * LAW 2, ENFORCED ON THE WAY OUT.
+ *
+ * A card is not a shadow: it is albedo standing in daylight, so nothing on it has any business
+ * below L* 28. Round 1 shipped a 64 px region at **L\* 11.0** on the POST NO BILLS loading
+ * doorway and L* 10.8 under the El — measured, not alleged — against a rendered floor of 26.
+ * Every builder in this file now runs through here last, so the floor is a property of the
+ * card rather than a thing each function has to remember. §3.4's instruction is followed
+ * exactly: the dark end is lifted by raising ambient, never by adding a light — this is a
+ * multiply on the vertex albedo, and there is still exactly one sun in the scene.
+ *
+ * `minY` is linear luminance: 0.0565 is L* 28, 0.0640 is L* 29.9. Linear ironwork is exempt
+ * to L* 19 by §2.2, but on a card two hundred feet away no bar is ever 2–6 px wide, so the
+ * exemption buys nothing and is not taken.
+ */
+function liftFloor(card, minY) {
+  for (const b of card.builders.values()) {
+    const C = b.c;
+    for (let i = 0; i < C.length; i += 3) {
+      const y = 0.2126 * C[i] + 0.7152 * C[i + 1] + 0.0722 * C[i + 2];
+      if (y > 0 && y < minY) {
+        const k = minY / y;
+        C[i] *= k; C[i + 1] *= k; C[i + 2] *= k;
+      }
     }
   }
 }
@@ -304,6 +381,7 @@ function lotBack(card, lot, leftTop, rightTop) {
   const lo = Math.min(top - 0.5, Math.max(0, leftTop - 0.6));
   if (top - lo > 1) {
     B.box(x0, lo, lot.z0 - 0.25, x1, top, lot.z0 + 0.25, () => [0.90, 0.885, 0.845], 'nz', 8);
+    partyWallDress(card, lot, lo, top, lot.z0 - 0.25, -1);
     if (top - lo > 16 && lot.flankSign) {
       const slot = card.atlas.get(`ghost:${lot.flankSign}`);
       const h = Math.min(top - lo - 3, 26), w = Math.min(M.depth - 9, h * (slot.w / slot.h));
@@ -316,6 +394,109 @@ function lotBack(card, lot, leftTop, rightTop) {
   const ro = Math.min(top - 0.5, Math.max(0, rightTop - 0.6));
   if (top - ro > 1) {
     B.box(x0, ro, lot.z0 + M.lot - 0.25, x1, top, lot.z0 + M.lot + 0.25, () => [0.50, 0.51, 0.56], 'pz', 8);
+    partyWallDress(card, lot, ro, top, lot.z0 + M.lot + 0.25, 1);
+  }
+}
+
+/**
+ * WHAT GOES ON A PARTY WALL, which is not "nothing".
+ *
+ * Round 1 left these as flat tinted quads and a critic found one 170 px wide and 500 px tall in
+ * `backdrop_layers` carrying no window, no sign, no cornice and no relief — a floor-to-sky
+ * blank in the middle of the shot registered to prove this piece works. In 1925 a wall like
+ * this is the most WORKED surface on a block, because it is the only one a wall dog can rent:
+ *
+ *   * bricked-up blind windows, three rows of them, where the neighbour's floors used to be —
+ *     the tenement was built party-wall to party-wall and these were filled the day the lot
+ *     next door was built up. Soot brick `#8A4A3A` in a `#B49C86` mortar surround, at 0.25 ft
+ *     of relief, which is enough to catch the light and cast its own line;
+ *   * a painted advertisement across 60% of the width;
+ *   * a stone coping along the top, and the soot streak that runs from under it;
+ *   * and a saturated element per six feet, like everything else on this set (Law 4).
+ */
+function partyWallDress(card, lot, lo, top, at, dir) {
+  const h = top - lo;
+  if (h < 6) return;
+  const Tb = card.rotB('trim'), Sb = card.rotB('sign'), A = card.atlas;
+  const x0 = lot.xf + 2.0, x1 = lot.xf + M.depth - 2.0;
+  const wide = x1 - x0;
+  const off = dir < 0 ? -0.28 : 0.28;                  // stand the relief proud of the wall
+  const D = [dir < 0 ? at - 0.55 : at, dir < 0 ? at : at + 0.55];
+  const face = dir < 0 ? 'nz' : 'pz';
+  const N = dir < 0 ? [0, 0, -1] : [0, 0, 1];
+
+  // blind windows: three rows, in the openings the neighbour's floors would have wanted
+  const rows = Math.max(1, Math.min(3, Math.floor((h - 4) / 10.5)));
+  const cols = Math.max(2, Math.round(wide / 12));
+  for (let ry = 0; ry < rows; ry++) {
+    const wy = top - 5.5 - ry * 10.5;
+    if (wy - 5.4 < lo + 1) break;
+    for (let cx = 0; cx < cols; cx++) {
+      const wx = x0 + (cx + 0.5) * (wide / cols) - 1.5;
+      // the mortar surround, proud of the wall…
+      Tb.box(wx - 0.55, wy - 6.0, D[0] - (dir < 0 ? 0.25 : 0), wx + 3.55, wy + 0.55, D[1] + (dir < 0 ? 0 : 0.25),
+        (f, n, c) => shadeLin(0xb49c86, litOf(n, c[0], c[1], c[2]) * 0.9, f === 'ny' ? 0.35 : 0), `${face} py ny px nx`);
+      // …and the soot brick filling the opening, set back inside it
+      Tb.box(wx, wy - 5.5, D[0] - (dir < 0 ? 0.12 : 0), wx + 3, wy, D[1] + (dir < 0 ? 0 : 0.12),
+        (f, n, c) => shadeLin(0x8a4a3a, litOf(n, c[0], c[1], c[2]) * 0.72, 0.14), `${face}`);
+      // the segmental arch head, in five stepped voussoirs of the same mortar
+      for (let k = 0; k < 5; k++) {
+        const t = (k + 0.5) / 5;
+        const ax = wx + t * 3;
+        const ay = wy + 0.55 + Math.sin(t * Math.PI) * 0.95;
+        Tb.box(ax - 0.34, wy + 0.4, D[0] - (dir < 0 ? 0.3 : 0), ax + 0.34, ay, D[1] + (dir < 0 ? 0 : 0.3),
+          (f, n, c) => shadeLin(0xb49c86, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.4 : 0), `${face} py px nx`);
+      }
+    }
+  }
+
+  // the wall ad, 60% of the width, up under the coping
+  if (h > 15) {
+    const slot = A.get(`ghost:${['castoria', 'uneeda', 'goldDust'][(lot.storeys + Math.round(lot.z0)) % 3]}`);
+    const aw = wide * 0.60, ah = Math.min(h - 8, aw * (slot.h / slot.w));
+    const ax = x0 + wide * 0.20, ay = top - 3.5 - ah;
+    if (ah > 5 && ay > lo) {
+      const q = dir < 0 ? at - 0.62 : at + 0.62;
+      if (dir < 0) {
+        Sb.quad([ax + aw, ay, q], [ax, ay, q], [ax, ay + ah, q], [ax + aw, ay + ah, q], texTint(0.60), rectUV(slot), N);
+      } else {
+        Sb.quad([ax, ay, q], [ax + aw, ay, q], [ax + aw, ay + ah, q], [ax, ay + ah, q], texTint(0.60), rectUV(slot), N);
+      }
+    }
+  }
+
+  // stone coping, and the soot that has run out from under it for forty years
+  Tb.box(x0 - 2.0, top - 0.9, D[0] - 0.6, x1 + 2.0, top, D[1] + 0.6,
+    (f, n, c) => shadeLin(0x9a9184, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.4 : 0), `${face} py ny px nx`);
+  for (let k = 0; k < 5; k++) {
+    const sx = x0 + (k + 0.5) * (wide / 5);
+    Tb.box(sx - 0.7, top - Math.min(h - 1, 9 + (k % 3) * 4), D[0] - 0.08, sx + 0.7, top - 1.0, D[1] + 0.08,
+      () => shadeLin(0x6b4235, 0.10, 0.22), face);
+  }
+
+  // Law 4: this wall is sooty, so this wall gets colour on it — one element per six feet,
+  // alternating a washing line strung off the wall with a painted board bolted to it.
+  const want = Math.max(2, Math.round(wide / 6));
+  const q = dir < 0 ? at - 0.72 : at + 0.72;
+  const put = (bx, by, bw, bh, slot, tint) => {
+    if (dir < 0) Sb.quad([bx + bw, by, q], [bx, by, q], [bx, by + bh, q], [bx + bw, by + bh, q], tint, rectUV(slot), N);
+    else Sb.quad([bx, by, q], [bx + bw, by, q], [bx + bw, by + bh, q], [bx, by + bh, q], tint, rectUV(slot), N);
+  };
+  for (let k = 0; k < want; k++) {
+    const seg = wide / want;
+    const ax = x0 + (k + 0.12) * seg;
+    const aw = seg * 0.78;
+    if (k % 2 === 0) {
+      const ay = lo + Math.min(h * 0.40, 11);
+      Tb.box(ax - 0.3, ay, D[0] - (dir < 0 ? 0.5 : 0) - 0.2, ax + aw + 0.3, ay + 0.45,
+        D[1] + (dir < 0 ? 0 : 0.5) + 0.2, () => shadeLin(0x4a4038, 0.14), `${face} py ny`);
+      put(ax, ay - 5.4, aw, 5.4, A.get('laundry'), texTint(0.52));
+    } else {
+      const hue = ACC[(k + lot.storeys) % 4];
+      const ay = lo + Math.min(h * 0.62, 19);
+      Tb.box(ax, ay, D[0] - (dir < 0 ? 0.45 : 0), ax + aw, ay + 2.6, D[1] + (dir < 0 ? 0 : 0.45),
+        (f, n, c) => shadeLin(hue, litOf(n, c[0], c[1], c[2]) * 0.9, f === 'ny' ? 0.3 : 0), `${face} py ny px nx`);
+    }
   }
 }
 
@@ -581,83 +762,255 @@ function buildMidBlock(card) {
  * Distance is not the place for a facade kit. These are masses: a stepped roofline, painted
  * window rows, a cornice to say "not a housing block", tanks and pots against the sky.
  */
-/** The baked sun, shifted the way the cards' re-grade shifts it, so one set has one light. */
-function farLit(n, c, shift) {
+/** The baked sun, on the card's own terminator, so one set reads as one afternoon. */
+function farLit(n, c, T) {
   const ndl = n[0] * -0.740 + n[1] * 0.545 + n[2] * -0.393;
   if (ndl <= 0.02) return 0;
-  return ndl * (0.30 + 0.70 * occlusion(c[0] + shift, c[1], c[2]));
+  const s = sunAt(c[0], c[1], T);
+  return ndl * (0.42 + 0.58 * s);
+}
+
+/**
+ * THE SATURATION BILL, PAID BY THE FOOT (Law 4).
+ *
+ * "No 128×128 px region of a gameplay frame may contain only materials with S < 0.20." Round 1
+ * failed that on 42 of 84 tiles of `backdrop_layers` and 59 of 84 of `wide`, and every failing
+ * tile was on a far card. The near strip already pays the bill and always did; what the far
+ * cards lacked was not a technique but a RULE, so here is the rule: **one saturated element per
+ * six feet of face width, mandatory, on every mass this file builds.** The four colours are
+ * §2.2's own accent set, and 1925 New York over-painted itself exactly this hard.
+ */
+const ACC = [0xc8402f, 0xe3a32b, 0x2f7f63, 0x3b5ea0];
+
+function farAwning(Tb, x0, x1, y, z, hex, T) {
+  const drop = 2.6, out = 3.4;
+  // the sloped canvas itself: the one thing on a far wall that is a colour and not a value
+  Tb.quad([x1, y, z], [x0, y, z], [x0, y - drop, z - out], [x1, y - drop, z - out],
+    shadeLin(hex, 0.62, 0, 0.2), [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 0.72, -0.69]);
+  // its shaded underside and the scalloped valance hanging off the front bar
+  Tb.box(x0, y - drop - 1.5, z - out - 0.2, x1, y - drop, z - out + 0.15,
+    (f, n, c) => shadeLin(hex, farLit(n, c, T) * 0.5, 0.12), 'nz px nx ny');
+  Tb.box(x0 - 0.2, y - drop - 0.2, z - out - 0.35, x1 + 0.2, y - drop + 0.15, z - out + 0.1,
+    () => shadeLin(0x3a332c, 0.14), 'nz py ny px nx');
+}
+
+/** A washing line strung across a light court: four garments, four values, one hue. */
+function farLaundry(Sb, A, x0, x1, y, z) {
+  const slot = A.get('laundry');
+  const h = Math.min(7.5, (x1 - x0) * (slot.h / slot.w));
+  Sb.quad([x1, y - h, z], [x0, y - h, z], [x0, y, z], [x1, y, z],
+    texTint(0.50), rectUV(slot), [0, 0, -1]);
+}
+
+/**
+ * One mass in a far row. Everything below is mandatory, because the round-1 criticism was not
+ * "these could be better" but "these are bare extruded rectangles":
+ *
+ *   * a WATER TABLE at the foot — the horizontal that tells you where the ground is;
+ *   * a CORNICE BAND 1.2 ft deep in §2.2's cornice paint, its height varied 2–8 ft mass to
+ *     mass (period anti-check #19), with a lit top fascia, a dark soffit and end brackets;
+ *   * at least one ROOF EVENT: a tank on four legs, a painted roof sign, or a cluster of 3–5
+ *     chimney pots — the silhouette against the sky is the only thing at this distance that
+ *     says 1925 rather than 1955;
+ *   * and one accent per six feet of width.
+ */
+function farMass(card, o, r, x, w, i, T) {
+  const Tb = card.b('trim'), Sb = card.b('sign'), A = card.atlas;
+  const h = o.hMin + r.range(0, o.hSpan) + o.crest * clamp01((Math.abs(x + w / 2) - o.crestIn) / o.crestW);
+  const hex = r.chance(0.34) ? FACADE.ochre : r.chance(0.5) ? FACADE.brickSoot : FACADE.brick;
+  const z = o.z + r.range(0, o.jitter || 0);
+  const uv = rectUV(A.get('farwall'));
+  const x0 = x + 0.7, x1 = x + w - 0.7;
+  const face = (f, n, c) => shadeLin(hex, farLit(n, c, T) * 0.96, f === 'ny' ? 0.4 : 0);
+  Tb.box(x0, 0, z, x1, h, z + o.depth, face, 'nz px nx py');
+
+  // water table: a brownstone band at the foot, the horizontal that grounds the mass
+  Tb.box(x0 - 0.5, 2.0, z - 0.7, x1 + 0.5, 3.4, z + 1.0,
+    (f, n, c) => shadeLin(0x8a7f70, farLit(n, c, T) * 0.94, f === 'ny' ? 0.45 : 0), 'nz py ny px nx');
+
+  // painted window rows — at this distance a window is a rectangle of value…
+  const rows = Math.max(1, Math.round(h / 21));
+  for (let k = 0; k < rows; k++) {
+    const y0 = 4 + (k / rows) * (h - 7), y1 = 4 + ((k + 1) / rows) * (h - 7);
+    Sb.quad([x1 - 0.8, y0, z - 0.12], [x0 + 0.8, y0, z - 0.12],
+      [x0 + 0.8, y1, z - 0.12], [x1 - 0.8, y1, z - 0.12],
+      texTint(0.40 * clamp01((y0 - o.shadeTo) / 24 + 0.34), 0.05), uv, [0, 0, -1]);
+  }
+  // …but a SILL is 0.3 ft of relief, and relief is what catches the light
+  for (let k = 1; k < rows; k += 1) {
+    const yy = 4 + (k / rows) * (h - 7);
+    Tb.box(x0 - 0.3, yy - 0.6, z - 0.45, x1 + 0.3, yy, z + 0.4,
+      (f, n, c) => shadeLin(k % 2 ? 0x8a7f70 : 0xb49c86, farLit(n, c, T) * 0.92, f === 'ny' ? 0.4 : 0), 'nz py ny');
+  }
+
+  // THE CORNICE. 1.2 ft deep, 2–8 ft tall, and never the same twice in a row.
+  const ch = 2.0 + r.range(0, 6.0);
+  const cor = r.chance(0.5) ? 0x4c4a3c : 0x7a4a34;
+  Tb.box(x - 0.2, h, z - 1.2, x + w + 0.2, h + ch * 0.62, z + 1.4,
+    (f, n, c) => shadeLin(cor, farLit(n, c, T) * 0.9, f === 'ny' ? 0.55 : 0), 'nz py ny px nx');
+  Tb.box(x - 1.0, h + ch * 0.62, z - 2.0, x + w + 1.0, h + ch, z + 1.4,
+    (f, n, c) => shadeLin(cor, farLit(n, c, T), f === 'ny' ? 0.6 : 0), 'nz py ny px nx');
+  for (let bx = x + 1.5; bx < x + w - 1; bx += 5.5) {           // modillion brackets
+    Tb.box(bx, h - 1.1, z - 1.9, bx + 1.1, h + ch * 0.62, z - 0.9,
+      (f, n, c) => shadeLin(cor, farLit(n, c, T) * 0.8, f === 'ny' ? 0.5 : 0), 'nz px nx ny');
+  }
+
+  // THE ROOF EVENT — one of three, always one.
+  const kind = i % 3;
+  if (kind === 0) {
+    const tx = x + w * 0.5, tz = z + 13;
+    for (const dx of [-4, 4]) for (const dz of [-3.6, 3.6]) {
+      Tb.box(tx + dx - 0.34, h, tz + dz - 0.34, tx + dx + 0.34, h + 11, tz + dz + 0.34,
+        () => shadeLin(0x5a4a3c, 0.20), 'nz pz px nx');
+    }
+    Tb.cyl(tx, tz, 5.0, h + 11, h + 20, 12, (n, c) => shadeLin(0x8e8579, farLit(n, c, T) * 0.9), 'py');
+    for (const hy of [h + 12.6, h + 18.2]) {
+      Tb.cyl(tx, tz, 5.2, hy, hy + 0.55, 12, () => shadeLin(0x4a4038, 0.18), '');
+    }
+    Tb.cyl(tx, tz, 5.3, h + 19.4, h + 20.8, 12, () => shadeLin(0x4a4038, 0.16), '');   // conical hat
+    Tb.box(tx - 0.4, h + 20.8, tz - 0.4, tx + 0.4, h + 24, tz + 0.4, () => shadeLin(0x4a4038, 0.22), 'nz px nx py');
+  } else if (kind === 1) {
+    const slot = A.get(`roofsign:${i % 3}`);
+    const sw = Math.min(w - 2, 26), sh = sw * (slot.h / slot.w) * 1.35;
+    const sx = x + w * 0.5;
+    Sb.quad([sx + sw / 2, h + ch, z - 1.0], [sx - sw / 2, h + ch, z - 1.0],
+      [sx - sw / 2, h + ch + sh, z - 1.0], [sx + sw / 2, h + ch + sh, z - 1.0],
+      texTint(0.68), rectUV(slot), [0, 0, -1]);
+    for (const px of [sx - sw * 0.36, sx + sw * 0.36]) {
+      Tb.box(px - 0.22, h + ch - 1.5, z - 1.0, px + 0.22, h + ch + sh * 0.9, z + 2.4,
+        () => shadeLin(0x4a4a44, 0.24), 'nz px nx pz');
+    }
+  } else {
+    const stack = x + w * r.range(0.25, 0.7);
+    const sh = 4.5 + r.range(0, 4);
+    Tb.box(stack - 2.4, h, z + 4, stack + 2.4, h + sh, z + 8,
+      (f, n, c) => shadeLin(FACADE.brickSoot, farLit(n, c, T), f === 'ny' ? 0.4 : 0), 'nz px nx py pz');
+    const pots = 3 + r.int(0, 2);
+    for (let k = 0; k < pots; k++) {
+      const px = stack - 1.8 + k * (3.6 / Math.max(1, pots - 1));
+      Tb.cyl(px, z + 6, 0.62, h + sh, h + sh + 1.8 + (k % 3) * 0.7, 7,
+        (n, c) => shadeLin(0xb8724a, farLit(n, c, T) * 0.9));
+    }
+  }
+
+  // ── the accent quota: one per six feet of face ────────────────────────────
+  const want = Math.max(1, Math.round(w / 6));
+  for (let k = 0; k < want; k++) {
+    const seg = w / want;
+    const ax0 = x + 1.0 + k * seg, ax1 = ax0 + seg - 2.0;
+    if (ax1 - ax0 < 2) continue;
+    const pick = (i * 7 + k * 3 + (r.chance(0.5) ? 1 : 0)) % 4;
+    const hue = ACC[(i + k) % 4];
+    if (pick === 0) {
+      farAwning(Tb, ax0, ax1, 4 + ((k % rows) / rows) * (h - 7) + 5.2, z - 0.15, hue, T);
+    } else if (pick === 1) {
+      // a painted advertisement, straight onto the brick, half the wall high
+      const slot = A.get(`ghost:${['uneeda', 'goldDust', 'castoria'][(i + k) % 3]}`);
+      const gh = Math.min(h * 0.40, 22), gw = Math.min(ax1 - ax0 + 3, gh * (slot.w / slot.h));
+      const gx = (ax0 + ax1) / 2;
+      Sb.quad([gx + gw / 2, h - 8 - gh, z - 0.3], [gx - gw / 2, h - 8 - gh, z - 0.3],
+        [gx - gw / 2, h - 8, z - 0.3], [gx + gw / 2, h - 8, z - 0.3],
+        texTint(0.56, 0.03), rectUV(slot), [0, 0, -1]);
+    } else if (pick === 2) {
+      farLaundry(Sb, A, ax0, ax1, 8 + ((k % rows) / rows) * (h - 12), z - 0.35);
+    } else {
+      // window blinds, half drawn, in the one colour a 1925 blind ever came in
+      for (let m = 0; m < rows; m += 2) {
+        const yy = 4 + ((m + 0.85) / rows) * (h - 7);
+        Tb.box(ax0, yy - 2.6, z - 0.25, ax1, yy, z - 0.1,
+          () => shadeLin(hue, 0.52, 0, 0.15), 'nz py ny');
+      }
+    }
+  }
+  return h;
 }
 
 function massRow(card, o) {
-  const Tb = card.b('trim'), Sb = card.b('sign'), A = card.atlas;
-  const SH = o.sunShift ?? 0;
+  const T = o.terminator;
   const r = new RNG(o.seed);
-  const uv = rectUV(A.get('farwall'));
   const runs = o.gap ? [[o.x0, o.gap[0]], [o.gap[1], o.x1]] : [[o.x0, o.x1]];
   let i = 0;
   for (const [a, b] of runs) {
     let x = a;
     while (x < b - 6) {
       const w = Math.min(o.wMin + r.range(0, o.wSpan), b - x);
-      const h = o.hMin + r.range(0, o.hSpan) + o.crest * clamp01((Math.abs(x + w / 2) - o.crestIn) / o.crestW);
-      const hex = r.chance(0.34) ? FACADE.ochre : r.chance(0.5) ? FACADE.brickSoot : FACADE.brick;
-      const z = o.z + r.range(0, o.jitter || 0);
-      Tb.box(x + 0.7, 0, z, x + w - 0.7, h, z + o.depth,
-        (f, n, c) => shadeLin(hex, farLit(n, c, SH) * 0.96, f === 'ny' ? 0.4 : 0), 'nz px nx py');
-      // painted window rows — at this distance a window is a rectangle of value, nothing more
-      const rows = Math.max(1, Math.round(h / 21));
-      for (let k = 0; k < rows; k++) {
-        const y0 = 2 + (k / rows) * (h - 4), y1 = 2 + ((k + 1) / rows) * (h - 4);
-        Sb.quad([x + w - 1.5, y0, z - 0.12], [x + 1.5, y0, z - 0.12],
-          [x + 1.5, y1, z - 0.12], [x + w - 1.5, y1, z - 0.12],
-          texTint(0.34 * clamp01((y0 - o.shadeTo) / 24 + 0.28), 0.05), uv, [0, 0, -1]);
-      }
-      // a string course or two: the horizontal that stops a far wall reading as a slab
-      for (let k = 1; k < rows; k += 2) {
-        const yy = 2 + (k / rows) * (h - 4);
-        Tb.box(x + 0.5, yy - 0.55, z - 0.5, x + w - 0.5, yy, z + 0.4,
-          (f, n, c) => shadeLin(0x8a7f70, farLit(n, c, SH) * 0.92, f === 'ny' ? 0.4 : 0), 'nz py ny');
-      }
-      Tb.box(x, h, z - 2.0, x + w, h + 2.2, z + 1.4,
-        (f, n, c) => shadeLin(r.chance(0.5) ? 0x4c4a3c : 0x5b3b33, farLit(n, c, SH) * 0.9,
-          f === 'ny' ? 0.5 : 0), 'nz py ny px nx');
-      if (r.chance(0.7)) {
-        const cx = x + w * r.range(0.2, 0.8);
-        Tb.box(cx - 1.5, h + 2.2, z + 5, cx + 1.5, h + 2.2 + r.range(4, 9), z + 8,
-          (f, n, c) => shadeLin(FACADE.brickSoot, farLit(n, c, SH), 0), 'nz px nx py');
-      }
-      if (i % 2 === 1) {
-        const tx = x + w * 0.5, tz = z + 13;
-        for (const dx of [-4, 4]) {
-          Tb.box(tx + dx - 0.34, h, tz - 0.34, tx + dx + 0.34, h + 11, tz + 0.34,
-            () => shadeLin(0x5a4a3c, 0.18), 'nz px nx');
-        }
-        Tb.cyl(tx, tz, 5.0, h + 11, h + 20, 12,
-          (n, c) => shadeLin(0x8e8579, farLit(n, c, SH) * 0.9), 'py');
-        Tb.cyl(tx, tz, 5.2, h + 19.5, h + 20.7, 12, () => shadeLin(0x4a4038, 0.16), '');
-        Tb.box(tx - 0.4, h + 20.7, tz - 0.4, tx + 0.4, h + 24, tz + 0.4, () => shadeLin(0x4a4038, 0.2), 'nz px nx py');
-      }
-      if (o.ghosts && i === o.ghosts.at) {
-        const slot = A.get(`ghost:${o.ghosts.key}`);
-        const gh = Math.min(h * 0.46, 26), gw = Math.min(w - 5, gh * (slot.w / slot.h));
-        const gx = x + w * 0.5;
-        Sb.quad([gx + gw / 2, h - 6 - gh, z - 0.28], [gx - gw / 2, h - 6 - gh, z - 0.28],
-          [gx - gw / 2, h - 6, z - 0.28], [gx + gw / 2, h - 6, z - 0.28],
-          texTint(0.42, 0.05), rectUV(slot), [0, 0, -1]);
-      }
+      farMass(card, o, r, x, w, i, T);
       x += w; i++;
     }
   }
 }
 
+/**
+ * A GASHOLDER. The single most 1925 silhouette a New York skyline had and the one shape in
+ * this build that could not be mistaken for 1955: a riveted telescopic gas tank in its own
+ * lattice guide frame, taller than everything around it and perfectly round.
+ */
+function gasholder(card, cx, z, T) {
+  const Tb = card.b('trim');
+  const rad = 21, top = 62;
+  Tb.cyl(cx, z, rad, 0, top, 22, (n, c) => shadeLin(0x6e675c, farLit(n, c, T) * 0.86), 'py');
+  for (const hy of [12, 24, 36, 48]) {                 // the lifts, each a riveted ring
+    Tb.cyl(cx, z, rad + 0.5, hy - 0.6, hy + 0.6, 22, (n, c) => shadeLin(0x4a4440, farLit(n, c, T) * 0.7), '');
+  }
+  Tb.cyl(cx, z, rad + 0.6, top - 1.4, top + 0.4, 22, (n, c) => shadeLin(0x4a4440, farLit(n, c, T) * 0.8), 'py');
+  // the guide frame: sixteen standards and two girt rings, which is what makes it read
+  for (let k = 0; k < 14; k++) {
+    const a = (k / 14) * Math.PI * 2;
+    const px = cx + Math.cos(a) * (rad + 3.4), pz = z + Math.sin(a) * (rad + 3.4);
+    if (Math.sin(a) > 0.4) continue;                   // only the standards we can see
+    Tb.box(px - 0.5, 0, pz - 0.5, px + 0.5, top + 9, pz + 0.5,
+      () => shadeLin(0x413b37, 0.20), 'nz px nx py');
+  }
+  for (const hy of [top - 4, top + 7]) {
+    Tb.cyl(cx, z, rad + 3.9, hy, hy + 1.0, 22, () => shadeLin(0x413b37, 0.22), '');
+  }
+}
+
+/** A church: a nave, a slate roof and a spire. A skyline of boxes is a skyline nobody drew. */
+function church(card, cx, z, T) {
+  const Tb = card.b('trim');
+  const stone = 0x9a9184;
+  Tb.box(cx - 15, 0, z, cx + 15, 34, z + 26,
+    (f, n, c) => shadeLin(stone, farLit(n, c, T) * 0.92, f === 'ny' ? 0.4 : 0), 'nz px nx py');
+  for (let k = 0; k < 4; k++) {                        // buttresses
+    const bx = cx - 12 + k * 8;
+    Tb.box(bx - 1.1, 0, z - 2.2, bx + 1.1, 27, z + 0.4,
+      (f, n, c) => shadeLin(stone, farLit(n, c, T) * 0.86, f === 'ny' ? 0.4 : 0), 'nz px nx py');
+  }
+  // gable and slate roof
+  for (let k = 0; k < 6; k++) {
+    const t = k / 6, hw = 15 * (1 - t);
+    Tb.box(cx - hw, 34 + k * 2.2, z + 1, cx + hw, 36.2 + k * 2.2, z + 25,
+      (f, n, c) => shadeLin(0x53483f, farLit(n, c, T) * 0.8, f === 'ny' ? 0.4 : 0), 'nz py px nx');
+  }
+  // the tower and the spire
+  Tb.box(cx + 9, 0, z + 2, cx + 21, 52, z + 16,
+    (f, n, c) => shadeLin(stone, farLit(n, c, T) * 0.95, f === 'ny' ? 0.4 : 0), 'nz px nx py');
+  Tb.box(cx + 8.2, 52, z + 1.2, cx + 21.8, 55, z + 16.8,
+    (f, n, c) => shadeLin(stone, farLit(n, c, T), f === 'ny' ? 0.5 : 0), 'nz py ny px nx');
+  for (let k = 0; k < 8; k++) {
+    const t = k / 8, hw = 6.4 * (1 - t) + 0.5;
+    Tb.box(cx + 15 - hw, 55 + k * 3.4, z + 9 - hw, cx + 15 + hw, 58.4 + k * 3.4, z + 9 + hw,
+      (f, n, c) => shadeLin(0x53483f, farLit(n, c, T) * (0.9 - t * 0.15), f === 'ny' ? 0.4 : 0), 'nz px nx py');
+  }
+  Tb.box(cx + 14.7, 82, z + 8.7, cx + 15.3, 87, z + 9.3, () => shadeLin(0xc8924e, 0.62), 'nz px nx py');
+  Tb.box(cx + 13.4, 84.2, z + 8.8, cx + 16.6, 85.0, z + 9.2, () => shadeLin(0xc8924e, 0.62), 'nz px nx py');
+}
+
 function buildFarBlock(card) {
+  const T = FAR_SUN;
   massRow(card, {
     z: card.z, x0: -170, x1: 170, gap: [-39, 5], seed: 4177,
     wMin: 14, wSpan: 13, hMin: 24, hSpan: 17, crest: 15, crestIn: 40, crestW: 100,
-    depth: 32, jitter: 6, shadeTo: 30, sunShift: 44, ghosts: { at: 4, key: 'goldDust' },
+    depth: 32, jitter: 6, shadeTo: 30, terminator: T,
   });
+  // The two period silhouettes, set in the notch's own sightline so they are what the eye
+  // lands on when it travels down the street.
+  gasholder(card, -104, card.z + 34, T);
+  church(card, 62, card.z + 30, T);
   apron(card, 190, CARD_Z.elevated - 4, 170);
-  hazeCard(card, 0.42);
+  hazeCard(card, 0.30);
+  liftFloor(card, 0.064);
 }
 
 /**
@@ -675,27 +1028,28 @@ function buildSky(card) {
   for (const [x, w, h] of towers) {
     const hex = r.chance(0.5) ? FACADE.partyWall : FACADE.ochreShade;
     Tb.box(x, 0, card.z, x + w, h, card.z + 40,
-      (f, n, c) => shadeLin(hex, farLit(n, c, 70) * 0.82, 0), 'nz px nx py');
+      (f, n, c) => shadeLin(hex, farLit(n, c, SUN.sky) * 0.82, 0), 'nz px nx py');
     Tb.box(x - 1.8, h, card.z - 2, x + w + 1.8, h + 3.4, card.z + 2,
-      (f, n, c) => shadeLin(hex, farLit(n, c, 70) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
+      (f, n, c) => shadeLin(hex, farLit(n, c, SUN.sky) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
     if (r.chance(0.4)) {
       const sx = x + w * r.range(0.25, 0.75);
       Tb.cyl(sx, card.z + 12, 2.9, h, h + r.range(14, 26), 10,
-        (n, c) => shadeLin(0x8a6a54, farLit(n, c, 70) * 0.62), '');
+        (n, c) => shadeLin(0x8a6a54, farLit(n, c, SUN.sky) * 0.62), '');
     }
   }
   // a steeple, because a skyline of boxes is a skyline nobody drew
   const sx = -6, sy = 74;
   Tb.box(sx - 7, 0, card.z + 4, sx + 7, sy, card.z + 22,
-    (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, 70) * 0.82, 0), 'nz px nx py');
+    (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, SUN.sky) * 0.82, 0), 'nz px nx py');
   Tb.box(sx - 8.5, sy, card.z + 2, sx + 8.5, sy + 3, card.z + 24,
-    (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, 70) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
+    (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, SUN.sky) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
   for (let i = 0; i < 7; i++) {
     const t = i / 7, ww = 6.5 * (1 - t) + 0.9;
     Tb.box(sx - ww, sy + 3 + i * 4.6, card.z + 6 + t * 3, sx + ww, sy + 7.6 + i * 4.6, card.z + 20 - t * 3,
-      (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, 70) * (0.8 - t * 0.1), 0), 'nz px nx py');
+      (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, SUN.sky) * (0.8 - t * 0.1), 0), 'nz px nx py');
   }
-  hazeCard(card, 0.82);
+  hazeCard(card, 0.78);
+  liftFloor(card, 0.070);
 }
 
 // ─── build ────────────────────────────────────────────────────────────────────
@@ -709,16 +1063,22 @@ export function buildBackdrop(atlas) {
     const card = new Card(atlas, spec);
     if (spec.key === 'nearFacade') {
       buildNearFacade(card);
-      relightCard(card, { facing: 0.63, sunShift: 36, air: 0.07, bite: 0.24 });
+      relightCard(card, { facing: 0.68, air: 0.07, ...SUN.nearFacade });
+      liftFloor(card, 0.0605);
     } else if (spec.key === 'midBlock') {
       buildMidBlock(card);
-      relightCard(card, { facing: 0.54, sunShift: 30, air: 0.30, bite: 0.12 });
+      relightCard(card, { facing: 0.58, air: 0.24, ...SUN.midBlock });
+      liftFloor(card, 0.0625);
     } else if (spec.key === 'farBlock') {
       buildFarBlock(card);
     } else if (spec.key === 'elevated') {
       buildElevated(card.ctx);
       card.base.z = spec.z - (EL.nearCol + EL.farCol) / 2;
-      hazeCard(card, 0.52);
+      hazeCard(card, 0.46);
+      // The El is a lattice of 2 ft irons two hundred and fifty feet away, so §2.2's linear
+      // ironwork exemption does not apply to it: on screen it is a FIELD of dark, and it
+      // measured L* 10.8 in round 1. It gets the highest floor on the set.
+      liftFloor(card, 0.0685);
     } else {
       buildSky(card);
     }

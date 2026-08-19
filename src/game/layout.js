@@ -163,7 +163,7 @@ export const PITCH_SCRATCH = { x: 0.9, z: 24.0 };
  */
 export const POSTS = [
   {
-    id: 'catcher', x: -7.5, z: -4.0, kid: 'sal', clip: 'ready', look: [12, 20], slot: -0.095,
+    id: 'catcher', x: -7.5, z: -2.2, kid: 'sal', clip: 'ready', look: [12, 20], slot: -0.093,
     note: 'The Fireplug: barrel torso, no neck, jammed cap. Back of the casting, shaded to the '
         + 'batter\'s open side and turned a third of the way toward first, because the batting '
         + 'camera sits almost square behind him. He does NOT squat: a catcher\'s crouch is a '
