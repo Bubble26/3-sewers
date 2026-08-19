@@ -836,10 +836,19 @@ function solveFraming(key, cast, plate, leads, sepAxis) {
   const keyPt = key === 'batting' ? (leads.pitcherChest || null) : null;
   // Three things every seat has to be able to see: the plate, the pitcher, and the far end of
   // the stage. If any of them is behind an awning the candidate is thrown away.
+  const hw = S.playWidth / 2 - 1;
   comp.sightlines = [
     new THREE.Vector3(plate.x, 3.2, plate.z),
     keyPt ? keyPt.clone() : new THREE.Vector3(0.9, 3.6, 24),
     new THREE.Vector3(0, 3.2, S.playDepth * 0.9),
+    // …and the four corners of the stage floor, because a seat can see all three leads and
+    // still have a storefront awning or a plank lying across a third of the picture. Measured:
+    // the FIELD solution at (2.6, 26.2, −74.1) put a grey diagonal wedge from the top centre to
+    // the bottom right corner, and every kid ray was clear.
+    new THREE.Vector3(-hw, 2.5, -5),
+    new THREE.Vector3(hw, 2.5, -5),
+    new THREE.Vector3(-hw, 2.5, S.playDepth - 6),
+    new THREE.Vector3(hw, 2.5, S.playDepth - 6),
   ];
 
   const view = new View();

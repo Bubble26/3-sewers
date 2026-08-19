@@ -1,13 +1,13 @@
 {
   "title": "The Stickball Scoreboard",
-  "tagline": "A 1920s New York stickball game being built in Three.js by a swarm of agents. Ten pieces are built and rendering; the critique loop that judges them against Backyard Baseball has not run yet \u2014 an API outage killed every critic mid-round.",
-  "updated": "19 August 2026, 01:30 UTC",
+  "tagline": "A 1920s New York stickball game in Three.js, built by a swarm of agents and judged against Backyard Baseball by fresh critics who look only at rendered frames. Paused after the stage conversion: 45 scenarios render clean, nine critiques are in, and no piece has yet been signed off.",
+  "updated": "19 August 2026, 10:52 UTC",
   "thumbDir": "shots/board",
   "stats": {
-    "pieces": 27,
+    "pieces": 30,
     "signedOff": 3,
-    "rounds": 0,
-    "agents": 63,
+    "rounds": 9,
+    "agents": 96,
     "phase": "Paused"
   },
   "waves": [
@@ -22,7 +22,7 @@
           "what": "The quality bar, written down as checkable specifics critics can score a screenshot against.",
           "status": "done",
           "rounds": 1,
-          "gap": "Colour numbers are derived from the design language, not measured off real frames \u2014 the proxy blocked all image access."
+          "gap": "Proxy blocked image access, so colour numbers are derived from the design language rather than measured off real frames."
         },
         {
           "id": "period-dossier",
@@ -30,21 +30,22 @@
           "what": "Tenement anatomy, street furniture, stickball's real rules and slang, with dimensions.",
           "status": "done",
           "rounds": 1,
-          "gap": "Kid dialogue is reconstructed from 1940s-60s Spaldeen-era sources; 1925 transcripts were unreachable."
+          "gap": "Kid dialogue is reconstructed from 1940s-60s sources; 1925 transcripts were unreachable."
         },
         {
           "id": "design-bible",
           "name": "Design bible",
           "what": "Resolves bright-Backyard against sooty-1925: palette, shading, comedy register, 12 signature moments.",
           "status": "done",
-          "rounds": 1
+          "rounds": 1,
+          "gap": "Amended twice mid-build: section 17 (the 2D stage model) and 17.6 (staged scale)."
         }
       ]
     },
     {
       "id": "1",
       "title": "The block",
-      "state": "built, awaiting critique",
+      "state": "built, never judged",
       "pieces": [
         {
           "id": "street-architecture",
@@ -52,7 +53,7 @@
           "what": "Tenement facades, stoops, fire escapes, cornices, water towers, storefronts, the El.",
           "status": "built",
           "rounds": 1,
-          "gap": "The far end of the street behind the El is a flat run of boxes with painted-on windows."
+          "gap": "Built and re-staged onto backdrop cards. Never judged \u2014 its critics all died in the API outage."
         },
         {
           "id": "street-surface-props",
@@ -60,7 +61,7 @@
           "what": "Belgian block, chalk bases, manhole home plate, hydrant, ash cans, pushcart, Model T, laundry lines.",
           "status": "built",
           "rounds": 1,
-          "gap": "At gameplay distance the roadway still reads as one broad warm tan field, not a paved street."
+          "gap": "Built. Never judged."
         },
         {
           "id": "sky-light-atmosphere",
@@ -68,7 +69,7 @@
           "what": "Late-afternoon canyon light, coal haze, smoke, pigeons, wind, time of day.",
           "status": "partial",
           "rounds": 1,
-          "gap": "Builder wrote sky, atmosphere and the light rig, then died mid-round on a 529. No sun-and-shade diagonal is visible in the frame yet."
+          "gap": "Sky, atmosphere and the light rig landed; the builder died mid-round. Never judged."
         },
         {
           "id": "art-direction-shading",
@@ -76,14 +77,14 @@
           "what": "The toon/painted look, outlines, colour grade \u2014 how sooty becomes cheerful.",
           "status": "partial",
           "rounds": 1,
-          "gap": "Palette, materials and the output transform landed; the builder died mid-response before its own verification pass."
+          "gap": "Palette with real colour arithmetic, materials and postfx landed. Never judged."
         }
       ]
     },
     {
       "id": "2",
       "title": "The kids",
-      "state": "built, awaiting critique",
+      "state": "built, never judged",
       "pieces": [
         {
           "id": "character-art",
@@ -91,7 +92,7 @@
           "what": "Proportions, faces, expressions, period wardrobe, silhouettes you can tell apart at a glance.",
           "status": "built",
           "rounds": 1,
-          "gap": "Toon bands are baked in each limb\u2019s local space, so shading rotates with a swung arm."
+          "gap": "Sixteen parametric kids with faces and period wardrobe. Never judged."
         },
         {
           "id": "animation-vocabulary",
@@ -99,7 +100,7 @@
           "what": "Idles, windups, swings, run cycles, slides, dives, catches, celebrations, taunts.",
           "status": "partial",
           "rounds": 1,
-          "gap": "Twenty self-critique passes of clips and rig work landed, then the builder died on a 529 before reporting."
+          "gap": "Clip system, fidgets and state machine landed after 20 self-critique passes. Never judged."
         },
         {
           "id": "roster-personality",
@@ -107,14 +108,45 @@
           "what": "Sixteen neighbourhood kids with stats, attitudes, catchphrases and a team-select screen.",
           "status": "built",
           "rounds": 1,
-          "gap": "Sixteen kids, cigarette-card portraits and the choosin\u2019-up-sides screen. Never judged."
+          "gap": "Sixteen kids, cigarette-card portraits, choosin-up-sides screen. The strongest piece in the build. Never judged."
+        }
+      ]
+    },
+    {
+      "id": "S",
+      "title": "The stage conversion",
+      "state": "critiqued, not signed off",
+      "pieces": [
+        {
+          "id": "stage-camera",
+          "name": "Stage camera",
+          "what": "Long lens, two locked framings, cuts instead of camera moves.",
+          "status": "rework",
+          "rounds": 3,
+          "gap": "Round 3 critic: 4.0. The two framings still read as one shot; staged scale (17.6) arrived too late for it to use."
+        },
+        {
+          "id": "backdrop-layers",
+          "name": "Backdrop layers",
+          "what": "The canyon rebuilt as five flat scenery cards with parallax.",
+          "status": "rework",
+          "rounds": 2,
+          "gap": "Round 2 critic: 4.2. Five flat cards built; the far half of the set is the least authored thing in frame."
+        },
+        {
+          "id": "field-layout",
+          "name": "Field layout",
+          "what": "Every position on a shallow stage, as one source of truth.",
+          "status": "rework",
+          "rounds": 1,
+          "gap": "Round 1 critic: 4.4. layout.js is now the single source of truth; the catcher sits off the pitch axis in the main framing."
         }
       ]
     },
     {
       "id": "3",
       "title": "The game",
-      "state": "built, awaiting critique",
+      "state": "built, never judged",
       "pieces": [
         {
           "id": "pitching",
@@ -122,7 +154,7 @@
           "what": "Aim, windup, pitch types, the junk a 12-year-old throws, pitcher AI.",
           "status": "built",
           "rounds": 1,
-          "gap": "Pitch set, windup theatre and pitcher AI landed. Never judged."
+          "gap": "Pitch set, windup theatre, pitcher AI. Never judged."
         },
         {
           "id": "batting-contact",
@@ -137,7 +169,7 @@
           "what": "Spaldeen bounce, wall and fire-escape caroms, stoop ricochets, windows, the sewer shot.",
           "status": "built",
           "rounds": 1,
-          "gap": "Spaldeen flight, swept-sphere caroms and surface behaviour landed. Never judged."
+          "gap": "Spaldeen flight, swept-sphere caroms, per-surface behaviour. Never judged."
         },
         {
           "id": "fielding-ai",
@@ -165,7 +197,7 @@
     {
       "id": "4",
       "title": "The show",
-      "state": "not started",
+      "state": "critiqued, not signed off",
       "pieces": [
         {
           "id": "camera-direction",
@@ -199,22 +231,25 @@
           "id": "music",
           "name": "1920s score",
           "what": "Procedural ragtime and hot jazz that ducks under the action.",
-          "status": "queued",
-          "rounds": 0
+          "status": "rework",
+          "rounds": 2,
+          "gap": "Round 2 critic: 7.1. Score is written and provably swings; the title theme still never sounds against a suspended AudioContext."
         },
         {
           "id": "sfx",
           "name": "City & game sound",
           "what": "Crack of the broom handle, footsteps, traffic, the El, a dog, a window.",
-          "status": "queued",
-          "rounds": 0
+          "status": "rework",
+          "rounds": 2,
+          "gap": "Round 2 critic: 8.2, the highest score in the build. Blocked on aliveness and feel \u2014 823 WebAudio nodes rebuilt every 7 seconds."
         },
         {
           "id": "announcer",
           "name": "Announcer & kid chatter",
           "what": "Play-by-play with cadence, taunts, speech bubbles, running gags.",
-          "status": "queued",
-          "rounds": 0
+          "status": "rework",
+          "rounds": 1,
+          "gap": "Round 1 critic: 6.4. Writing is strong; the escalation timing never reaches the screen."
         }
       ]
     },
@@ -257,15 +292,19 @@
   "wire": [
     {
       "when": "Paused",
-      "text": "Anthropic API returned 529 Overloaded across 54 of 63 agents. Waves 1, 2 and 3 exhausted their rounds on retries. The work the builders finished is intact and rendering; no critic survived long enough to rule on any of it."
+      "text": "Stopped at the users request. 45 scenarios render with zero console errors; the single-file build is 1.4MB. Nine critic verdicts in, all NOT_YET. Highest score: the sound engine at 8.2."
     },
     {
-      "when": "Built",
-      "text": "The block renders with lettered storefronts, fire escapes, the El, pushcarts and an ice truck. Sixteen kids exist with names, stats and portraits. Ball physics and pitching are in. Zero console errors across 30 scenarios."
+      "when": "Direction",
+      "text": "Switched from a 3D street canyon to 3D characters on a 2D stage. Stage conformance went from 166 violations across 30 scenarios to 37 across 45, and 25 scenarios are now fully legal."
+    },
+    {
+      "when": "Lesson",
+      "text": "Twice the conformance tool encoded a bad assumption \u2014 a builder bought the height floor by collapsing the lens to 9.8 degrees, and the long lens flattened the size hierarchy that tells you who a shot is about. The critics caught both, because they look at frames."
     },
     {
       "when": "Next",
-      "text": "Re-run the critique loop first \u2014 nothing has been judged even once. Then batting, fielding, baserunning and street rules, then the whole presentation layer."
+      "text": "Nine pieces have never been judged at all \u2014 their critics died in the API outage. Four gameplay pieces, the whole picture layer and all of the polish wave remain unbuilt."
     }
   ]
 }

@@ -469,8 +469,8 @@ export const PITCH_SCRATCH = { x: 0.9, z: 24.0 };
  */
 export const POSTS = [
   {
-    id: 'catcher', x: 0.2, z: -4.6, kid: 'sal', clip: 'argue_jab', look: [0.9, 24], yawDeg: 66,
-    slot: 0.002, tier: 'lead', accent: 'claret', garment: 'sweater', slack: 1.5, wide: 1.50,
+    id: 'catcher', x: 0.2, z: -4.6, kid: 'sal', clip: 'ready', look: [0.9, 24], yawDeg: 82,
+    slot: 0.002, tier: 'lead', accent: 'claret', garment: 'vest', slack: 1.5, wide: 1.50,
     note: 'The Fireplug: barrel torso, no neck, jammed cap. BEHIND THE PLATE, on the pitch '
         + 'axis — pitcher (0.9, 24) → home (0, 0) → here is collinear to 1.42 units, which is '
         + 'the whole point of him. Round 1 parked him at x −7.5, ten units off the axis and '
@@ -481,10 +481,15 @@ export const POSTS = [
         + 'squatting kid seen from behind renders as a rectangle with a cap on it. `ready` is '
         + 'the half-crouch a bare-handed kid actually takes — weight down, knees at 44°, both '
         + 'hands out in front of him — and the root is yawed 40° toward first so the lens gets '
-        + 'a shoulder, a cheek and a raised bare hand instead of a back — 40° was the brief\'s '
-        + 'number and 40° still rendered a flat slab from a lens this high, so it is 66°, which '
-        + 'is most of the way to profile and is where an arm and a knee finally appear. THE '
-        + 'REAL FIX IS '
+        + 'a shoulder, a cheek and a raised bare hand instead of a back. The brief said 40°; '
+        + '40° and 66° both still rendered a flat coloured trapezoid from a lens sitting this '
+        + 'high, and 82° is where the cap goes into profile, an eye and a cheek appear and the '
+        + 'shoulder line breaks the outline. It is also the truer pose: a kid with no mitt '
+        + 'watches the BAT, not the ball, because the bat is the thing that is about to come '
+        + 'round at his head. He wears a VEST rather than a sweater for the same reason — a '
+        + 'sweater on the nearest, lowest body in the shot is one solid slab of the loudest '
+        + 'hue in the frame, and a vest leaves the sleeves and the shoulders ecru so the mass '
+        + 'breaks into three shapes instead of one. THE REAL FIX IS '
         + 'ANIMATION, NOT PLACEMENT: this file can turn him and lower him, but it cannot give '
         + 'him a step forward on the pitch. See the report.',
   },

@@ -135,6 +135,13 @@ const MUSIC_DEFAULTS = {
   leadLagMs: 7,            // the lead sits behind the rhythm section
   reverbSend: 0.16,
   reverbSeconds: 0.85,
+  /**
+   * THE BUS EQ, as tuning rather than as four literals buried in a constructor.
+   * §7.1's boundary is a mix decision and mix decisions have to be sweepable, so
+   * every corner and every dB is here and every one of them was measured on the
+   * octave-band table before it was written down. See the Render constructor.
+   */
+  busEq: { hp: 75, lowShelfHz: 150, lowShelfDb: -7, presenceHz: 2600, presenceQ: 0.9, presenceDb: 3, airHz: 5200, airDb: 7 },
   seed: 1925,
 };
 const MT = { ...MUSIC_DEFAULTS, ...(T && T.music ? T.music : {}) };
@@ -764,20 +771,54 @@ class Render {
     this.musicBus.gain.value = MT.mixTrim;
 
     /**
-     * Bus EQ. Two decisions, both from looking at the rendered spectrum:
-     * a 12 dB/oct high-pass at 55 Hz, because nothing in a 1925 band lives below
-     * the tuba's low F and everything down there was mud; and a small air shelf,
-     * because Backyard is BRIGHT and an unshelved acoustic band reads dull.
+     * BUS EQ — and this is where §7.1's boundary is either real or a claim.
+     *
+     * "The world's music is 1925. The game's music is now." On the meter that was
+     * INVERTED: measured through this graph, `world_radio` came out brighter by
+     * spectral centroid (1470 Hz) than every full-band game cue (title 1398,
+     * between_innings 1445), because a 1925 receiver's 200 Hz-4 kHz window is a
+     * band-PASS and a full acoustic band with an untouched tuba fundamental is
+     * bottom-heavy. The boundary you could hear was the bass, and only the bass.
+     *
+     * Four moves, all measured, none of them taste:
+     *   - the high-pass pair goes 55 -> 75 Hz. Nothing in this band lives under
+     *     the tuba's low F (43.65 Hz) and its second harmonic is where the note
+     *     actually reads; 24 dB/oct from 75 puts the fundamental where a 1925
+     *     recording horn put it, which is barely.
+     *   - the low shelf goes 165/-3 to 150/-7. -3 dB was far too gentle to move
+     *     a tuba that was taking 7.8% of the whole mix's energy in the 63 Hz
+     *     octave, i.e. sitting on top of it.
+     *   - a PRESENCE bell at 2600 Hz, Q 0.9, +3 dB. This is the band that carries
+     *     the cornet's bite and the banjo's pick, and it is the exact band the
+     *     radio's horn-speaker honk owns — lifting it here separates the two
+     *     mixes at the one frequency where they are otherwise the same band.
+     *   - the air shelf goes 3600/+4 to 5200/+7. Above 4 kHz the radio has
+     *     nothing at all (two cascaded lowpasses, 24 dB/oct), so every dB spent
+     *     up there is a dB the boundary can be heard through, and the cymbal
+     *     rings at 5210/7430 Hz and the hi-hat's 6.2 kHz highpass are already
+     *     written to live there.
      */
-    const hp1 = ctx.createBiquadFilter(); hp1.type = 'highpass'; hp1.frequency.value = 55; hp1.Q.value = 0.7;
-    const hp2 = ctx.createBiquadFilter(); hp2.type = 'highpass'; hp2.frequency.value = 55; hp2.Q.value = 0.7;
-    const air = ctx.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = 3600; air.gain.value = 4;
-    // and a low shelf, which is both Backyard-true (bright, melody forward) and
-    // period-true (a 1925 acoustic horn could not capture much under 150 Hz,
-    // which is exactly why the tuba replaced the string bass in the studio)
-    const lowsh = ctx.createBiquadFilter(); lowsh.type = 'lowshelf'; lowsh.frequency.value = 165; lowsh.gain.value = -3;
+    const EQ = MT.busEq;
+    const hp1 = ctx.createBiquadFilter(); hp1.type = 'highpass'; hp1.frequency.value = EQ.hp; hp1.Q.value = 0.7;
+    const hp2 = ctx.createBiquadFilter(); hp2.type = 'highpass'; hp2.frequency.value = EQ.hp; hp2.Q.value = 0.7;
+    const lowsh = ctx.createBiquadFilter(); lowsh.type = 'lowshelf'; lowsh.frequency.value = EQ.lowShelfHz; lowsh.gain.value = EQ.lowShelfDb;
+    const pres = ctx.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = EQ.presenceHz; pres.Q.value = EQ.presenceQ; pres.gain.value = EQ.presenceDb;
+    const air = ctx.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = EQ.airHz; air.gain.value = EQ.airDb;
     this.musicIn = ctx.createGain();
-    this.musicIn.connect(hp1); hp1.connect(hp2); hp2.connect(lowsh); lowsh.connect(air); air.connect(this.musicBus);
+    /**
+     * AND THE MODERN HALF OF THAT EQ IS GAME-ONLY. The high-pass pair and the low
+     * shelf are the BAND: one 1925 acoustic recording horn, and both mixes are
+     * the same band in front of it, so both get them. The presence bell and the
+     * air shelf are the MASTER — "the game's music is now" — so the world's radio
+     * does not get them. Wired the other way (everything through one chain, as it
+     * was) the lift leaked into the radio's own input and its centroid climbed
+     * with the game's: measured, a 4.2 kHz shelf moved title to 1799 Hz and
+     * dragged world_radio from 1225 to 1482 with it, i.e. the boundary widened by
+     * a third of what was spent on it. Bypassed, the radio stays where 1925 put it.
+     */
+    this.musicIn.connect(hp1); hp1.connect(hp2); hp2.connect(lowsh);
+    if (world) lowsh.connect(this.musicBus);
+    else { lowsh.connect(pres); pres.connect(air); air.connect(this.musicBus); }
 
     if (world) {
       // 1925 battery receiver + horn speaker + shellac. BIBLE §7.1's filter boundary.
@@ -2586,6 +2627,7 @@ export default registerSystem({
         analysisPlan: (n) => music.analysisPlan(n),
         duckWindows: (n) => music.duckWindows(n),
         render: (o) => music.renderOffline(o),
+        tuning: MT,                      // live handle, so the mix can be swept and measured
       };
     };
     installHarness();
@@ -2739,9 +2781,21 @@ export default registerSystem({
       bus.on(ev, (p) => {
         const id = kidId(p);
         if (!id) return;
+        /**
+         * A WALK-UP IS ONCE PER TRIP TO THE PLATE, NOT ONCE PER PITCH. sim.js
+         * calls beginAtBat() again after every ball and every strike — the same
+         * kid, the same at-bat, a fresh count — and re-emits `atbat:begin` each
+         * time. Wired straight through, that fired Sal's theme on every pitch:
+         * traced live, sal / sal_b / kathleen / kathleen_b inside seven seconds,
+         * which turns sixteen composed entrances into a stutter. A kid has
+         * arrived at the plate when the count is 0-0 or when the kid changed.
+         */
+        const fresh = (p && p.count) ? (!p.count.balls && !p.count.strikes) : (id !== atBat);
         atBat = id;
-        const c0 = music.ctx();
-        if (c0 && c0.currentTime < music.holdUntil) { heldSting = id; return; }
+        if (!fresh) return;
+        // and a sting never plays over the front end: it belongs to the bed, and
+        // it waits for it.
+        if (music.current && FRONT.has(music.current)) { heldSting = id; return; }
         fireSting(id);
       });
     }
