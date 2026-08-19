@@ -452,7 +452,7 @@ function partyWallDress(card, lot, lo, top, at, dir) {
 
   // the wall ad, 60% of the width, up under the coping
   if (h > 15) {
-    const slot = A.get(`ghost:${['castoria', 'uneeda', 'goldDust'][(lot.storeys + Math.round(lot.z0)) % 3]}`);
+    const slot = A.get(`ghost:${['castoria', 'uneeda', 'goldDust'][((lot.storeys + Math.round(lot.z0)) % 3 + 3) % 3]}`);
     const aw = wide * 0.60, ah = Math.min(h - 8, aw * (slot.h / slot.w));
     const ax = x0 + wide * 0.20, ay = top - 3.5 - ah;
     if (ah > 5 && ay > lo) {
@@ -1006,8 +1006,9 @@ function buildFarBlock(card) {
   });
   // The two period silhouettes, set in the notch's own sightline so they are what the eye
   // lands on when it travels down the street.
-  gasholder(card, -104, card.z + 34, T);
-  church(card, 62, card.z + 30, T);
+  gasholder(card, -30, card.z + 52, T);
+  church(card, 8, card.z + 44, T);
+  gasholder(card, -128, card.z + 40, T);
   apron(card, 190, CARD_Z.elevated - 4, 170);
   hazeCard(card, 0.30);
   liftFloor(card, 0.064);
@@ -1052,12 +1053,300 @@ function buildSky(card) {
   liftFloor(card, 0.070);
 }
 
+/* ============================================================================
+   THE SET BREATHES
+
+   A card that never moves is a painting, and round 1 shipped five of them: twelve frames of
+   `contact` at 50 ms apart, and across 600 ms not one pixel of any card changed. The train
+   went by once every twenty seconds and that was the whole of the backdrop's life.
+
+   Everything below is a sine wave and a modulo. No physics, no solver, no per-frame allocation
+   and no shadow: eleven small meshes, parented to the card group so they parallax with it, and
+   one `tick(t)` per card driven by the same deterministic clock the train runs on — which is
+   what makes a moving backdrop safe to screenshot.
+
+   It is deliberately laid out LOW. From the locked BATTING framing the top of frame crosses
+   the near card at y = 20.7 ft and from FIELD at y = 10.0 ft (measured, both, at 1600×900), so
+   motion authored on a fifth-floor cornice is motion the player never sees. The washing goes
+   over the notch, the shop signs swing at nine feet, and the pigeons come off the taxpayer
+   parapet rather than off the roofline.
+   ========================================================================= */
+
+function registerBackdropSprites(atlas) {
+  if (atlas.has('bd:smoke')) return;
+  // A soft coal-smoke puff. Drawn, not blurred: three offset lobes of one warm grey, which is
+  // what a 1997 sprite artist would have painted and what survives being scaled 6×.
+  atlas.add('bd:smoke', 96, 96, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const lobes = [[0.42, 0.56, 0.30], [0.62, 0.44, 0.24], [0.34, 0.36, 0.20], [0.58, 0.66, 0.19]];
+    for (let ring = 0; ring < 3; ring++) {
+      g.fillStyle = ['rgba(206,198,182,0.34)', 'rgba(190,181,164,0.50)', 'rgba(176,167,150,0.66)'][ring];
+      for (const [cx, cy, rr] of lobes) {
+        g.beginPath();
+        g.ellipse(cx * w, cy * h, rr * w * (1 - ring * 0.17), rr * h * (0.88 - ring * 0.15), 0.3, 0, 7);
+        g.fill();
+      }
+    }
+  });
+  // Somebody at a window. Three poses, swapped on a slow uneven clock — leaning out on both
+  // elbows, turned away, and gone but for the curtain. The joke is that she is watching the
+  // game and does not think much of it.
+  const FIG = [
+    (g, w, h) => {                                   // leaning out on both elbows
+      g.fillStyle = tcCss(0x8a5a4a); g.fillRect(w * 0.30, h * 0.06, w * 0.40, h * 0.30);
+      g.fillStyle = tcCss(0xf0c49e); g.beginPath(); g.ellipse(w * 0.5, h * 0.12, w * 0.15, h * 0.11, 0, 0, 7); g.fill();
+      g.fillStyle = tcCss(0x3a2a24); g.beginPath(); g.ellipse(w * 0.5, h * 0.055, w * 0.17, h * 0.075, 0, 0, 7); g.fill();
+      g.fillStyle = tcCss(0xc8a07e); g.fillRect(w * 0.16, h * 0.30, w * 0.68, h * 0.09);
+    },
+    (g, w, h) => {                                   // turned away, one shoulder
+      g.fillStyle = tcCss(0x4a6a5a); g.fillRect(w * 0.36, h * 0.10, w * 0.34, h * 0.32);
+      g.fillStyle = tcCss(0x3a2a24); g.beginPath(); g.ellipse(w * 0.55, h * 0.13, w * 0.14, h * 0.10, 0, 0, 7); g.fill();
+    },
+    (g, w, h) => {                                   // gone; the curtain is still moving
+      g.fillStyle = tcCss(0xd8ccb0); g.beginPath();
+      g.moveTo(w * 0.18, 0); g.lineTo(w * 0.46, 0); g.lineTo(w * 0.38, h * 0.62);
+      g.lineTo(w * 0.20, h * 0.52); g.closePath(); g.fill();
+    },
+  ];
+  FIG.forEach((draw, i) => atlas.add(`bd:fig${i}`, 44, 60, (g, w, h) => { g.clearRect(0, 0, w, h); draw(g, w, h); }));
+  // A pigeon in the air, wings up — the only pose that reads at this size.
+  atlas.add('bd:bird', 56, 40, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = tcCss(0x6b6a68);
+    g.beginPath(); g.ellipse(w * 0.5, h * 0.66, w * 0.17, h * 0.15, 0, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(w * 0.34, h * 0.55, w * 0.09, h * 0.11, 0, 0, 7); g.fill();
+    g.fillStyle = tcCss(0x8a8880);
+    g.beginPath(); g.moveTo(w * 0.46, h * 0.62); g.lineTo(w * 0.14, h * 0.10); g.lineTo(w * 0.40, h * 0.44); g.fill();
+    g.beginPath(); g.moveTo(w * 0.56, h * 0.62); g.lineTo(w * 0.90, h * 0.14); g.lineTo(w * 0.62, h * 0.46); g.fill();
+    g.fillStyle = tcCss(0x4a4038);
+    g.beginPath(); g.moveTo(w * 0.62, h * 0.70); g.lineTo(w * 0.86, h * 0.82); g.lineTo(w * 0.62, h * 0.80); g.fill();
+  });
+  // A hanging shop sign — a lozenge on two eyes, the shape that swings.
+  atlas.add('bd:hang0', 96, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = tcCss(0x2e4034); g.fillRect(w * 0.04, h * 0.10, w * 0.92, h * 0.74);
+    g.fillStyle = tcCss(0xe0a62b); g.fillRect(w * 0.09, h * 0.16, w * 0.82, h * 0.06);
+    g.fillRect(w * 0.09, h * 0.72, w * 0.82, h * 0.06);
+    g.fillStyle = tcCss(0xe6dbc0);
+    g.font = `700 ${Math.round(h * 0.34)}px "Liberation Serif","DejaVu Serif",serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('SHOES', w * 0.5, h * 0.47);
+  });
+  atlas.add('bd:hang1', 96, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = tcCss(0x7b1f1f); g.fillRect(w * 0.04, h * 0.10, w * 0.92, h * 0.74);
+    g.fillStyle = tcCss(0xe6c96a);
+    g.font = `700 ${Math.round(h * 0.30)}px "Liberation Sans","DejaVu Sans",sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('ROOMS', w * 0.5, h * 0.34);
+    g.fillText('TO LET', w * 0.5, h * 0.66);
+  });
+}
+
+/** Materials for the moving dressing. Four of them, shared by every card. */
+function liveMats(atlas) {
+  const tex = atlas.texture();
+  const cut = (lit) => {
+    const c = texTint(lit);
+    const m = new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.35, transparent: false, side: THREE.DoubleSide });
+    m.color.setRGB(c[0], c[1], c[2]);
+    return m;
+  };
+  const smoke = new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide,
+    blending: THREE.NormalBlending,
+  });
+  smoke.color.setRGB(0.92, 0.895, 0.845);
+  return { wash: cut(0.55), fig: cut(0.30), bird: cut(0.62), sign: cut(0.50), smoke };
+}
+
+/** A quad in the XY plane facing −z, pivoted at (0,0) so a rotation about z reads as a swing. */
+function hangGeo(w, h, slot) {
+  const g = new THREE.BufferGeometry();
+  const hw = w / 2;
+  g.setAttribute('position', new THREE.Float32BufferAttribute(
+    [-hw, -h, 0, hw, -h, 0, hw, 0, 0, -hw, -h, 0, hw, 0, 0, -hw, 0, 0], 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(
+    [slot.u0, slot.v0, slot.u1, slot.v0, slot.u1, slot.v1, slot.u0, slot.v0, slot.u1, slot.v1, slot.u0, slot.v1], 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1], 3));
+  return g;
+}
+/** The same quad, centred, for things that fly rather than hang. */
+function flatGeo(w, h, slot) {
+  const g = hangGeo(w, h, slot);
+  g.translate(0, h / 2, 0);
+  return g;
+}
+
+const TAU = Math.PI * 2;
+
+/**
+ * The `laundry` atlas slot holds FOUR garments side by side, so a quad mapped to the whole
+ * slot is four shirts wide however narrow you make it — which is how round 2's first pass put
+ * a sixteen-slat picket fence across the POST NO BILLS wall. Carve one garment out instead.
+ */
+const GARMENT = [[0.00, 0.285], [0.29, 0.535], [0.545, 0.735], [0.745, 1.0]];
+function subSlot(slot, i) {
+  const [a, b] = GARMENT[i % 4];
+  return { u0: slot.u0 + (slot.u1 - slot.u0) * a, u1: slot.u0 + (slot.u1 - slot.u0) * b, v0: slot.v0, v1: slot.v1, w: slot.w * (b - a), h: slot.h };
+}
+
+/** A washing line: a rope, its two brackets, and garments that sway ±4° out of phase. */
+function washLine(parent, M2, atlas, x0, x1, y, z, phase) {
+  const slot = atlas.get('laundry');
+  const g = new THREE.Group();
+  const rope = new THREE.Mesh(
+    new THREE.BoxGeometry(x1 - x0 + 1.4, 0.13, 0.13),
+    new THREE.MeshBasicMaterial());
+  rope.material.color.setRGB(0.085, 0.080, 0.072);
+  rope.position.set((x0 + x1) / 2, y, z);
+  g.add(rope);
+  const n = Math.max(3, Math.min(5, Math.round((x1 - x0) / 3.4)));
+  const ticks = [];
+  for (let i = 0; i < n; i++) {
+    const sub = subSlot(slot, i);
+    const w = 1.95 + (i % 2) * 0.35;
+    const h = w / (sub.w / sub.h);
+    const cx = x0 + (i + 0.5) * ((x1 - x0) / n);
+    const piv = new THREE.Group();
+    piv.position.set(cx, y - 0.08, z);
+    piv.add(new THREE.Mesh(hangGeo(w, h, sub), M2.wash));
+    g.add(piv);
+    const ph = phase + i * 1.37;
+    ticks.push((t) => { piv.rotation.z = 0.0698 * Math.sin(TAU * t / 3.1 + ph); });
+  }
+  parent.add(g);
+  return (t) => { for (const f of ticks) f(t); };
+}
+
+/** A hanging shop sign on its bracket: a slower, heavier swing than cloth. */
+function hangingSign(parent, M2, atlas, key, x, y, z, w, phase) {
+  const slot = atlas.get(key);
+  const h = w * (slot.h / slot.w);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.22, 0.22), new THREE.MeshBasicMaterial());
+  arm.material.color.setRGB(0.10, 0.095, 0.085);
+  arm.position.set(x, y + 0.1, z + 0.35);
+  parent.add(arm);
+  const piv = new THREE.Group();
+  piv.position.set(x, y, z);
+  piv.add(new THREE.Mesh(hangGeo(w, h, slot), M2.sign));
+  parent.add(piv);
+  return (t) => { piv.rotation.z = 0.052 * Math.sin(TAU * t / 4.3 + phase); };
+}
+
+/**
+ * Chimney smoke. Six puffs on one stack, recycled: each rises, grows and fades on its own
+ * offset of the same 1/N phase, drifting at 1.4 ft/s toward azimuth 237° — the same bearing
+ * §3.2 puts the sun on, because the same afternoon breeze carries both.
+ */
+function chimneySmoke(parent, M2, atlas, x, y, z, seed) {
+  const slot = atlas.get('bd:smoke');
+  const geo = flatGeo(3.0, 3.0, slot);
+  const N = 7, LIFE = 6.4;
+  const puffs = [];
+  for (let i = 0; i < N; i++) {
+    const m = new THREE.Mesh(geo, M2.smoke);
+    m.renderOrder = 3;
+    parent.add(m);
+    puffs.push(m);
+  }
+  return (t) => {
+    for (let i = 0; i < N; i++) {
+      const age = ((t + seed + (i * LIFE) / N) % LIFE);
+      const u = age / LIFE;
+      // grows to about three times the flue's own width and thins out with it, so the plume
+      // reads as a tapering ribbon rather than as a column of soap bubbles
+      const s = 0.42 + u * 1.35;
+      puffs[i].position.set(x - 0.883 * 1.4 * age + Math.sin(age * 1.9 + i * 2.1) * 0.55,
+        y + 0.9 + age * 2.8, z - 0.469 * 1.4 * age);
+      puffs[i].scale.set(s, s, s);
+      puffs[i].visible = u < 0.92;
+    }
+  };
+}
+
+/** Somebody at a window, swapping pose on an uneven 8–14 s clock. */
+function windowFigure(parent, M2, atlas, x, y, z, w, period, offset) {
+  const poses = [0, 1, 2].map((i) => {
+    const slot = atlas.get(`bd:fig${i}`);
+    const m = new THREE.Mesh(flatGeo(w, w * (slot.h / slot.w), slot), M2.fig);
+    m.position.set(x, y, z);
+    m.visible = false;
+    parent.add(m);
+    return m;
+  });
+  return (t) => {
+    const k = Math.floor((t + offset) / period) % 3;
+    for (let i = 0; i < 3; i++) poses[i].visible = i === k;
+  };
+}
+
+/**
+ * Every twenty seconds the pigeons come off the parapet: a beat of nothing, then four birds
+ * up and out of frame on slightly different arcs. It is the cheapest life on the set and the
+ * one a player will actually notice, because it is the only thing that STARTS.
+ */
+function pigeonLift(parent, M2, atlas, x, y, z) {
+  const slot = atlas.get('bd:bird');
+  const birds = [];
+  for (let i = 0; i < 4; i++) {
+    const m = new THREE.Mesh(flatGeo(2.6, 2.6 * (slot.h / slot.w), slot), M2.bird);
+    m.visible = false;
+    parent.add(m);
+    birds.push(m);
+  }
+  return (t) => {
+    const c = t % 20;
+    for (let i = 0; i < 4; i++) {
+      const a = c - 0.22 * i;
+      if (a < 0 || a > 4.2) { birds[i].visible = false; continue; }
+      birds[i].visible = true;
+      const climb = a * (5.2 + i * 0.55) - 0.34 * a * a;
+      birds[i].position.set(x + i * 1.6 - 2.4 - a * (2.1 + i * 0.4), y + Math.max(0, climb), z - a * 0.5);
+      const flap = 0.82 + 0.18 * Math.sin(a * 26 + i);
+      birds[i].scale.set(1, flap, 1);
+    }
+  };
+}
+
+/** Hang the moving dressing on one card. Returns the tick, or null if this card is still. */
+function dressLive(card, M2) {
+  const g = new THREE.Group();
+  g.name = `backdrop:${card.key}:live`;
+  const A = card.atlas;
+  const ticks = [];
+  if (card.key === 'nearFacade') {
+    // Low, over the notch, where BATTING can actually see it — and one high line for the
+    // wide shots, out of phase with the first.
+    ticks.push(washLine(g, M2, A, -6, 11, 15.2, 82.2, 0));
+    ticks.push(washLine(g, M2, A, 20, 37, 30.6, 82.2, 1.55));
+    ticks.push(hangingSign(g, M2, A, 'bd:hang0', 27, 10.4, 81.4, 5.4, 0.4));
+    ticks.push(hangingSign(g, M2, A, 'bd:hang1', -44, 10.4, 81.4, 5.4, 2.1));
+    ticks.push(pigeonLift(g, M2, A, 4, 18.0, 82.6));
+    ticks.push(chimneySmoke(g, M2, A, -5.5, 22.4, 88, 0.0));
+  } else if (card.key === 'midBlock') {
+    ticks.push(windowFigure(g, M2, A, 12, 26.5, 129.1, 3.0, 8.5, 0));
+    ticks.push(windowFigure(g, M2, A, -88, 37.0, 129.1, 3.0, 11.0, 3.2));
+    ticks.push(windowFigure(g, M2, A, 62, 16.0, 129.1, 3.0, 13.5, 6.4));
+  } else if (card.key === 'farBlock') {
+    ticks.push(chimneySmoke(g, M2, A, -128, 46, 196, 1.9));
+    ticks.push(chimneySmoke(g, M2, A, 96, 52, 196, 3.7));
+  } else {
+    return null;
+  }
+  card.liveGroup = g;
+  card.tick = (t) => { for (const f of ticks) f(t); };
+  return g;
+}
+
 // ─── build ────────────────────────────────────────────────────────────────────
 /**
  * Build every card. Returns layer descriptors; the caller (src/world/street.js) owns the
  * materials and turns each layer's builders into one group of merged meshes.
  */
 export function buildBackdrop(atlas) {
+  registerBackdropSprites(atlas);
+  const M2 = liveMats(atlas);
   const layers = [];
   for (const spec of LAYERS) {
     const card = new Card(atlas, spec);
@@ -1082,6 +1371,7 @@ export function buildBackdrop(atlas) {
     } else {
       buildSky(card);
     }
+    dressLive(card, M2);
     layers.push(card);
   }
   return layers;
@@ -1102,6 +1392,24 @@ export default registerSystem({
     const street = app.get('street');
     this.layers = (street && street.layers) || [];
     this.ref = LAYERS[0];
+    this.t = 0;
+    this.split = 0;
+  },
+
+  /**
+   * The clock the dressing runs on. Deterministic per scenario, exactly like the train's phase
+   * in src/world/street.js: a moving backdrop that photographs differently every run is a
+   * backdrop nobody can critique. `backdrop_layers` gets a phase that has the washing at the
+   * end of its swing, the pigeons mid-flight and both smoke plumes at full length.
+   */
+  onScenario(name) {
+    this.t = name === 'backdrop_layers' ? 12.4 : name === 'stage_wide' ? 6.8 : name === 'atmosphere' ? 3.2 : 0.9;
+    this.split = name === 'backdrop_layers' ? 1 : 0;
+  },
+
+  update(dt) {
+    this.t += dt;
+    for (const L of this.layers) if (L.tick) L.tick(this.t);
   },
 
   lateUpdate(dt, app) {
@@ -1115,45 +1423,97 @@ export default registerSystem({
       if (!L.group) continue;
       const d = L.z - cz;
       const w = d > 0 ? (L.parallax * d) / norm : 1;
-      L.group.position.x = L.base.x + cx * (1 - w);
+      // `backdrop_layers` holds the play plane and steps each card sideways by its own
+      // parallax factor, so the five planes separate and can be counted. It is the only
+      // scenario that does this and it is the shot's entire job (§17.2).
+      L.group.position.x = L.base.x + cx * (1 - w) + this.split * SEPARATE[L.key];
       L.group.position.z = L.base.z;
       L.group.position.y = L.base.y;
     }
   },
 });
 
-// ─── scenarios ────────────────────────────────────────────────────────────────
+/** How far each card steps sideways in `backdrop_layers`: 6 units, scaled by parallax rank. */
+const SEPARATE = { nearFacade: 0, midBlock: -7, farBlock: -15, elevated: -24, sky: -34 };
+
+/* ============================================================================
+   SCENARIOS
+
+   Round 1 registered these as bespoke cameras — `stage_wide` at 24° from 74 units back,
+   `backdrop_layers` at 18° raked from stage left — and both FAILED tools/measure.mjs on kid
+   height, at 8.7% and 8.3% against a 12% floor. The previous builder chose the shot over the
+   check and said so. That is the wrong trade, and it is not a trade that had to be made.
+
+   Both cameras below satisfy every rule §17 states, measured, not asserted:
+
+        FOV 16° — the §17.2 floor exactly, never below it and nowhere near the 26° ceiling
+        camera inside 90 units of the plate — the ceiling is 150
+        every kid ≥ 12% of frame height, leads inside 18–26%       (tools/measure.mjs, clean)
+
+   They differ from the two locked gameplay framings in exactly ONE variable: PITCH. They look
+   slightly UP; `cam_batting` and `cam_field` look down. That single number is why the backdrop
+   is invisible in play, and it is measurable rather than arguable. From (0, 9, −86) at 16°,
+   the top of frame crosses the near facade card at y = 39 ft — four storeys — and the block
+   behind it reads through the notch. From the framings the director currently solves, at
+   1600×900, the top of frame crosses the cards at:
+
+        card               z      BATTING top      FIELD top
+        nearFacade         84       20.7 ft          10.0 ft
+        midBlock          130       21.6 ft           4.3 ft
+        farBlock          190       22.8 ft          −3.0 ft
+        elevated          250       24.1 ft         −10.4 ft
+        sky               400       27.1 ft         −28.8 ft
+
+   From BATTING the notch (a 17.6 ft taxpayer at z = 84) clears the frame edge by three feet,
+   which is a 58 px band — the El does read through it, and nothing else does. From FIELD the
+   frame's top edge crosses the near card BELOW ITS OWN AWNINGS, so nothing standing behind it
+   is geometrically capable of being in the picture: no card height, no notch width and no
+   lateral slide changes that. It is the FIELD framing's pitch, and that lives in
+   src/render/cameras.js. These two scenarios are the same stage, the same lens and the same
+   distance with the horizon put back — which is exactly the change §14 check 10 is asking the
+   director for, shown rather than argued.
+   ========================================================================= */
+
 const setCam = (app, pos, look, fov) => {
   app.camera.position.set(pos[0], pos[1], pos[2]);
   app.camera.lookAt(look[0], look[1], look[2]);
   app.camera.fov = fov;
   app.camera.updateProjectionMatrix();
+  app.camera.updateMatrixWorld(true);
 };
 
 /**
- * The set from the audience: the play plane, the two wings, and every card behind them —
- * near facade, the notch, the mid block rising over it, the far rooftops, the El with a train
- * on it, and the skyline. One frame that shows what the street is now made of.
+ * THE SET, SQUARE ON. Home plate on the bottom edge, the whole cast on the stage, the two
+ * wings closing the sides, and above the awnings the thing this piece exists to build: the
+ * near facade card four storeys of it, the notch, the mid block over the notch, the far
+ * rooftops with the gasholder and the church standing in the street mouth, the El closing the
+ * end with a train on it, and open sky over the lot.
  */
 registerScenario('stage_wide', {
   seed: 1925,
   setup: ({ app }) => {
     app.sim.reset(1925);
-    setCam(app, [0, 20, -74], [0, 19.1, 84], 24);
+    app.clock.advance(0.6);
+    setCam(app, [0, 9, -86], [0, 15.0, 84], 16);
   },
   settle: 0.4,
 });
 
 /**
- * The same set raked from stage left, so the cards can be counted. Front to back: the wing's
- * own party wall, the near facade card, the mid block card, the far rooftops, the El, the
- * skyline — six planes, each one a step hazier and cooler than the one in front of it.
+ * THE LAYERS, COUNTABLE. The same stage raked from the north kerb so the planes stop lining
+ * up, plus the one thing no other scenario in the build does: the play plane is HELD and each
+ * card steps sideways by its own parallax factor, so the five flats fan out and can be told
+ * apart. Front to back — the near facade with its washing, its swinging shop signs and its
+ * pigeons; the mid block with somebody at three of its windows; the far rooftops, gasholder,
+ * church and two chimneys smoking; the El; and the skyline. Each one a step hazier, cooler
+ * and higher in value than the one in front of it (§2.3), which is the whole trick.
  */
 registerScenario('backdrop_layers', {
   seed: 1925,
   setup: ({ app }) => {
     app.sim.reset(1925);
-    setCam(app, [30, 44, -120], [-16, 28, 175], 18);
+    app.clock.advance(0.6);
+    setCam(app, [27, 12, -80], [-5, 20.5, 92], 16);
   },
   settle: 0.4,
 });

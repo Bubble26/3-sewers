@@ -309,6 +309,9 @@ export default registerSystem({
         tris += m.geometry.attributes.position.count / 3;
         g.add(m);
       }
+      // the card's moving dressing — washing, smoke, window figures, pigeons — parented to
+      // the card so it parallaxes with it (src/world/backdrop.js `dressLive`)
+      if (L.liveGroup) g.add(L.liveGroup);
       g.position.copy(L.base);
       L.group = g;
       app.scene.add(g);
