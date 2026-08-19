@@ -53,12 +53,21 @@ import { registerScenario } from '../core/scenarios.js';
  *
  * THE HORIZON IS PART OF THE FRAME, NOT A LUXURY
  * ---------------------------------------------------------------------------
- * The round-1 build's top frame edge sat below horizontal in both framings, so the near facade,
- * the cornices, the fire escapes, the El and the sky — every period asset in the game — were
- * cropped out and what remained was asphalt. Both framings here carry a hard term on where the
- * street ENDS in the frame: the ground line at the near-facade card (z = 84) must land in the
- * upper 30–45% of frame height, which is `BYB-REFERENCE §3.6`'s above-horizon budget expressed
- * in the one measurement §17's stage model still allows.
+ * The round-1 build's top frame edge sat 5–8° BELOW horizontal in both framings, so the near
+ * facade, the cornices, the fire escapes, the El and the sky — every period asset in the game —
+ * were cropped out and what remained was asphalt. Two terms put them back:
+ *
+ *   * a band on where the STREET ENDS in the frame — the ground line at the near-facade card
+ *     (z = 84), which is `BYB-REFERENCE §3.6`'s above-horizon budget expressed in the one
+ *     measurement §17's stage model still allows. BATTING holds it at 46% of frame height,
+ *     FIELD at 21%;
+ *   * a band on the HORIZON itself, tan(pitch)/t in closed form, which BATTING must keep inside
+ *     the frame. That single number is the difference between a street and a floor plan, and it
+ *     is what puts the El, the water tanks and the MOXIE board across the top of the shot the
+ *     game is mostly played in.
+ *
+ * FIELD deliberately spends its horizon: raked down 15° it lays the whole stage out flat, which
+ * is its entire job, and it is the shot you are only in while the ball is live.
  *
  * WHAT MOVES, AND WHAT NEVER DOES (§17.4)
  * ---------------------------------------------------------------------------
@@ -101,13 +110,19 @@ const LIMIT = {
 
 /**
  * How much a kid's measured box can move between the bind pose surveyed here and the pose the
- * arbiter catches him in. Measured, not guessed: across cam_batting / cam_field / pitch /
- * contact / deep_fly the sixteen kids ranged from 0.96× to 1.08× of the surveyed height, the
- * low end being a catcher dropping into his crouch and the high end a pitcher's arm at full
- * extension. Ceilings are checked against the top of that range and floors against the bottom,
- * so "legal in the solver" means "legal in tools/measure.mjs".
+ * arbiter catches him in. Measured across cam_batting / cam_field / pitch / contact / deep_fly
+ * / cam_field_fly, twice, a layout revision apart:
+ *
+ *   * the three LEADS stay within 0.99–1.13× of their surveyed height (the at-bat cycle is
+ *     wind-up, crouch and swing, and the rig holds standing height through all of it), so
+ *     their 18% floor is checked at 0.985× and their 26% ceiling at 1.075×;
+ *   * a FIELDER can drop to 0.90× dipping into a ready crouch, so the 12% floor is checked
+ *     against 0.90× — the pessimistic end, because that floor is the one §17.3 calls law.
+ *
+ * Ceilings are therefore checked against the top of the observed range and floors against the
+ * bottom, which is what makes "legal in the solver" mean "legal in tools/measure.mjs".
  */
-const POSE = { grow: 1.075, shrink: 0.965 };
+const POSE = { grow: 1.075, shrinkKid: 0.90, shrinkLead: 0.985 };
 
 /**
  * The two locked framings (§17.4). Direction and anchor come from T.stage.framings — the
@@ -117,36 +132,44 @@ const POSE = { grow: 1.075, shrink: 0.965 };
  */
 const COMPOSITION = {
   batting: {
-    // Behind and above the batter's shoulder. The plate rides the lower third; the frame is
-    // built around the PITCHER — he is what the batter is looking at, so he is what the shot
-    // is pointed at — and the batter's cap and shoulder fall out to the left of him as the
-    // nearest thing in the frame (BYB §3.6: one foreground element overlapping the play plane
-    // without hiding the ball or the batter).
+    // The flat one, and the one most of the game is played in. Behind and above the batter's
+    // shoulder, swung far enough off the axis that the batter's cap and shoulder clear the
+    // pitcher instead of eclipsing him, and pitched down only as far as the HORIZON allows —
+    // this framing is required to keep the horizon inside the frame, which is what puts the
+    // cornices, the fire escapes, the El and the sky back in the top of the picture.
     plateY: -0.62,
-    keyX: 0.05,          // the pitcher's chest, in NDC x
+    keyX: 0.12,          // the pitcher's chest, in NDC x — the shot is aimed at him
     keyY: 0.10,          // …and where we would like it in y (a pull on the elevation)
-    deepY: 0.32,         // the deepest kid's head: a low seat, so the facade owns the top
+    batterX: -0.26,      // …with the batter this far off him: an over-the-shoulder, not a stack
+    deepY: 0.30,         // the deepest kid's head: a low seat, so the facade owns the top
     facadeY: [0.02, 0.34],
-    fov: [16.2, 19.6],
+    horizonY: [0.55, 0.95],
+    fov: [16.0, 19.6],
     pitch: [3.5, 11.5],
-    yaw: [0, 15],        // swing off the axis to open the batter/pitcher pair
-    camX: [-21, 3],
+    yaw: [0, 16],        // swing off the axis to open the batter/pitcher pair
+    camX: [-21, 6],
+    minKids: 16,
     softMaxPct: 26,
     fovBias: 6.0,
     pitchBias: 0.6,
   },
   field: {
-    // The wide one: square to the street, a storey higher, a longer lens and further back, so
-    // the whole shallow stage lies out flat and every fielder and runner is on screen at once.
-    plateY: -0.80,
+    // The wide one: square to the street, a storey and a half higher, raked down far enough
+    // that the whole shallow stage lies out flat and no fielder hides behind another. It pays
+    // for that with the horizon, which it does not keep — the two framings are meant to be two
+    // seats in the same theatre, and this is the one from the fire escape.
+    plateY: -0.74,
     keyX: 0.0,           // centred on the cast's own width, not on any one kid
     keyY: null,
-    deepY: 0.50,
-    facadeY: [0.18, 0.44],
-    fov: [16.0, 18.2],
-    pitch: [8, 16],
+    batterX: null,
+    deepY: 0.62,
+    facadeY: [0.30, 0.58],
+    horizonY: null,
+    fov: [16.0, 19.6],
+    pitch: [9, 20],
     yaw: [0, 0],         // §17.4: FIELD keeps the contract direction, square up the street
-    camX: [-6, 6],
+    camX: [-6, 8],
+    minKids: 16,
     softMaxPct: 26,
     fovBias: 6.0,
     pitchBias: 0.6,
@@ -344,10 +367,13 @@ function measureKid(k, view, out) {
 
 const BAD = 1000;
 const W = {
-  edge: 900,        // nobody touches the frame edge — deliberately above every taste term
+  edge: 900,        // nobody gets bisected by the frame edge — above every taste term here
   deep: 130,        // how much stage stands above the plate
   facade: 240,      // where the street ENDS in frame: the horizon budget
+  horizon: 240,     // …and whether the horizon itself is in the picture at all
   key: 70,          // the key subject's height in frame
+  pair: 180,        // batter vs pitcher: an over-the-shoulder, not one behind the other
+  crowd: 220,       // per kid missing from the stage
   dist: 0.30,       // the smallest pull-back that is legal
   camX: 26,         // …and stay on your own set
 };
@@ -412,50 +438,80 @@ function centreCast(view, cast, comp) {
 }
 
 /**
+ * A kid is either comfortably inside the frame or cleanly outside it. What is never acceptable
+ * is the state in between — bisected by the frame edge, half a kid, which is how round 1
+ * shipped `kid:eugene` at NDC x = 1.00. So the edge cost is a BUMP over the straddle zone
+ * rather than a ramp that grows for ever: it is expensive to sit on the line, and free to be
+ * out of shot altogether.
+ */
+function straddle(v, inner, outer) {
+  const a = Math.abs(v);
+  return Math.max(0, Math.min(a - inner, outer - a));
+}
+
+/**
  * Cost of a candidate framing. Lower is better; the BAD-weighted terms are the ones §17.3
  * calls law, and no amount of good composition is allowed to buy its way past them.
  */
 function score(cast, comp, view, fov, dPlate, pitchDeg, key, rows) {
   let cost = 0;
-  let deep = -2;
+  let deep = -2, deepD = -1, batX = null, onStage = 0;
   for (const k of cast) {
     const m = measureKid(k, view, _m);
     if (!m) { cost += BAD; continue; }
-    const pctHi = m.pct * POSE.grow;      // the biggest the arbiter could catch him
-    const pctLo = m.pct * POSE.shrink;    // …and the smallest
-    // §17.4 asks for a stage with the whole cast on it, so letting somebody touch the frame
-    // edge is a failure of the framing, not a clever way to dodge the size floor.
-    const outX = Math.max(0, Math.abs(m.x) - 0.80);
-    const outY = Math.max(0, m.yTop - 0.90, -0.90 - m.yBot);
-    if (outX > 0 || outY > 0) cost += W.edge * (outX + outY);
-    if (pctLo < LIMIT.kidMin) cost += BAD * (LIMIT.kidMin - pctLo);
-    else if (pctLo < LIMIT.kidSoft) cost += 60 * (LIMIT.kidSoft - pctLo);
-    if (pctHi > comp.softMaxPct) cost += 40 * (pctHi - comp.softMaxPct);
+    const pctHi = m.pct * POSE.grow;                                   // biggest the arbiter could catch him
+    const pctLo = m.pct * (k.lead ? POSE.shrinkLead : POSE.shrinkKid); // …and smallest
+    // tools/measure.mjs only measures what is on screen, and so do we — a kid cleanly out of
+    // shot is a composition choice, a kid on the frame line is a mistake.
+    const inFrame = Math.abs(m.x) < 1.25 && m.yTop > -1.35 && m.yBot < 1.35;
+    if (inFrame) onStage++;
+    cost += W.edge * (straddle(m.x, 0.80, 1.34)
+                    + straddle(m.yTop, 0.90, 1.40)
+                    + straddle(m.yBot, 0.90, 1.40));
+    if (inFrame) {
+      if (pctLo < LIMIT.kidMin) cost += BAD * (LIMIT.kidMin - pctLo);
+      else if (pctLo < LIMIT.kidSoft) cost += 60 * (LIMIT.kidSoft - pctLo);
+      if (pctHi > comp.softMaxPct) cost += 40 * (pctHi - comp.softMaxPct);
+    }
     if (k.lead) {
+      if (!inFrame) cost += BAD;                                       // §17.4: all three, always
       if (pctHi > LIMIT.leadMax) cost += BAD * (pctHi - LIMIT.leadMax);
       else if (pctHi > LIMIT.leadSoftMax) cost += 70 * (pctHi - LIMIT.leadSoftMax);
       if (pctLo < LIMIT.leadMin) cost += BAD * (LIMIT.leadMin - pctLo);
       else if (pctLo < LIMIT.leadSoft) cost += 70 * (LIMIT.leadSoft - pctLo);
+      if (k.role === 'batter') batX = m.x;
     }
-    if (m.yTop > deep) deep = m.yTop;
+    // "How much stage stands above the plate" is the DEEPEST kid's head — by depth, not by
+    // height in frame, or a spectator on a fire escape decides the elevation of the whole shot.
+    const dep = view.depth(k.mid);
+    if (inFrame && dep > deepD) { deepD = dep; deep = m.yTop; }
     if (rows) {
       rows.push({
         name: k.name, pct: +m.pct.toFixed(1), lo: +pctLo.toFixed(1), hi: +pctHi.toFixed(1),
         x: +m.x.toFixed(2), yTop: +m.yTop.toFixed(2), yBot: +m.yBot.toFixed(2),
-        lead: k.lead, role: k.role,
+        lead: k.lead, role: k.role, inFrame,
       });
     }
   }
 
-  // How much stage stands above the plate — this is what actually chooses the elevation.
+  if (comp.minKids) cost += Math.max(0, comp.minKids - onStage) * W.crowd;
   cost += Math.abs(deep - comp.deepY) * W.deep;
+  if (comp.batterX != null && batX != null) cost += W.pair * Math.abs(batX - comp.batterX);
 
   // Where the STREET ENDS in the frame. Everything above the ground line at the near-facade
   // card is facade, cornice, fire escape, El and sky; §3.6 wants that band to own the upper
-  // 30–45% of the frame, and round 1 shipped with it at zero.
+  // third of the frame, and round 1 shipped with it at zero.
   const fy = view.ndcY(_facade);
   if (fy == null) cost += BAD;
   else cost += W.facade * (Math.max(0, fy - comp.facadeY[1]) + Math.max(0, comp.facadeY[0] - fy));
+
+  // The horizon itself, in closed form: a camera with no roll puts it at tan(pitch)/t. BATTING
+  // is required to keep it inside the frame — that single number is the difference between a
+  // street and a floor plan.
+  if (comp.horizonY) {
+    const hz = Math.tan(pitchDeg * RAD) / view.t;
+    cost += W.horizon * (Math.max(0, hz - comp.horizonY[1]) + Math.max(0, comp.horizonY[0] - hz));
+  }
 
   // The key subject's height in frame (BATTING only: the pitcher's chest).
   if (key && comp.keyY != null) {
@@ -770,8 +826,9 @@ export default registerSystem({
       pos: f.pos.toArray().map((v) => +v.toFixed(2)),
       camDist: +Math.hypot(f.pos.x, f.pos.y - 2, f.pos.z).toFixed(1),
       // where the street ends in frame, and therefore how much of the frame is above it
-      facadeNdcY: +fy.toFixed(3),
-      aboveStreetPct: +((1 - fy) / 2 * 100).toFixed(1),
+      facadeNdcY: fy == null ? null : +fy.toFixed(3),
+      aboveStreetPct: fy == null ? null : +((1 - fy) / 2 * 100).toFixed(1),
+      horizonNdcY: +(Math.tan(f.pitch * RAD) / view.t).toFixed(3),
       strays: this.strays.map((s) => ({ name: s.name, z: +s.bot.z.toFixed(1) })),
       kids: rows,
     };

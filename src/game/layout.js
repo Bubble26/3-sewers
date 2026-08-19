@@ -133,7 +133,12 @@ export const BASES = [FIRST, SECOND, THIRD];
  */
 
 /** The batter's box: he stands off the casting, on the open side, half a step back. */
-export const PLATE_BOX = { x: 2.9, z: -0.6, kid: 'otto', look: [0.9, 27], slot: 0.035 };
+export const PLATE_BOX = { x: 2.9, z: 2.0, kid: 'otto', look: [0.9, 27], slot: 0.034 };
+// He stands a foot UP-STREET of the casting rather than level with it, and that foot is not
+// decoration. He is the biggest body in the frame and the solver parks him against the 26%
+// lead ceiling, so a pose that raises the broom handle an inch tips him over it — measured,
+// 26.7% on the portrait sheet. A foot of depth is 2% of frame height and buys the margin
+// without moving him out of his own chalk box, which runs z −2.6…2.4.
 
 /** The pitcher's scratch, kept next to the pitcher so the two can never drift. */
 export const PITCH_SCRATCH = { x: 0.9, z: 27.0 };
@@ -357,7 +362,7 @@ function buildChalk(scene) {
   // the batter's box: two brackets round the casting, redrawn every game and
   // therefore the freshest chalk on the block
   for (const s of [1, -1]) {
-    line([[s * 1.5, -2.6], [s * 4.6, -2.6], [s * 4.6, 2.4], [s * 1.5, 2.4]], 201 + s, 0.9, W * 1.15);
+    line([[s * 1.5, -3.0], [s * 4.8, -3.0], [s * 4.8, 3.8], [s * 1.5, 3.8]], 201 + s, 0.9, W * 1.15);
   }
   // the pitcher's scratch, halfway to second, with the ball of his foot worn into it
   line([[PITCH_SCRATCH.x - 2.4, PITCH_SCRATCH.z], [PITCH_SCRATCH.x + 2.4, PITCH_SCRATCH.z]], 211, 0.92, W * 1.35);

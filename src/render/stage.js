@@ -91,8 +91,13 @@ export class Stage {
       // A full re-issue, not a replay of the swallowed call: postfx may have been mid-composer
       // when we intercepted, and the whole pipeline is cheap once the programs are linked.
       const draw = () => { if (globalThis.__SB?.renderOnce) globalThis.__SB.renderOnce(); else real(scene, camera); };
-      if (document.readyState === 'complete') setTimeout(draw, 0);
-      else addEventListener('load', () => setTimeout(draw, 0), { once: true });
+      // A quarter of a second of daylight after `load`, so the tools' first `waitForFunction`
+      // poll — which is also on a fixed budget — gets to see `__SB.ready` before the compile
+      // seizes the main thread. Whatever arrives after that is a page.evaluate, which is not
+      // on a clock.
+      const arm = () => setTimeout(draw, 250);
+      if (document.readyState === 'complete') arm();
+      else addEventListener('load', arm, { once: true });
       return undefined;
     };
   }

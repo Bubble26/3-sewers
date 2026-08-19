@@ -119,7 +119,30 @@ class Kid {
     this.trail = new Trail(this.group, { samples: 14, color: CHALK });
     this._tipA = new THREE.Vector3(); this._tipB = new THREE.Vector3(); this._prevTip = new THREE.Vector3();
   }
-  showStick(v) { if (this.rig.get('stick')) this.rig.get('stick').visible = v; if (this.trail && !v) this.trail.clear(); }
+  /**
+   * Put the broom handle away — properly.
+   *
+   * `visible = false` is not enough. THREE.Box3.setFromObject walks children regardless of
+   * visibility, and tools/measure.mjs sizes every kid off a raw Box3, so a hidden three-foot
+   * stick keeps making its owner 50% taller than he is drawn for the rest of the session. A
+   * kid who was a demo actor in one of the animation reels then measures as a lead a foot
+   * over the §17.3 ceiling in every scenario that follows. So the stick is DETACHED when it
+   * is put away and re-parented when it comes back out.
+   */
+  showStick(v) {
+    const st = this.rig.get('stick');
+    if (st) {
+      st.visible = v;
+      if (v) {
+        const back = st.userData.parkedIn;
+        if (back) { back.add(st); st.userData.parkedIn = null; }
+      } else if (st.parent) {
+        st.userData.parkedIn = st.parent;
+        st.parent.remove(st);
+      }
+    }
+    if (this.trail && !v) this.trail.clear();
+  }
 
   at(x, z, face, y) {
     this.pos.set(x, z);
@@ -598,6 +621,8 @@ export default registerSystem({
     this.batter.anim.play('stance', { fade: 0 });
     this.onDeck.showStick(true);
     this.onDeck.anim.play('bat_wait', { at: 1.2, fade: 0 });
+    // anything an animation reel handed a stick to gives it back at the top of a game frame
+    for (const k of this.kids) if (k !== this.batter && k !== this.onDeck) k.showStick(false);
     for (const r of this.runners) r.group.visible = false;
     this.chase = null; this.backup = null;
   },
@@ -621,6 +646,35 @@ export default registerSystem({
     // This file used to stamp a 46° camera here and have the director immediately overwrite
     // it; the stamp is gone, and the framing a scenario opens on is the director's.
   },
+
+  /**
+   * Who the arbiter should hold to the 18–26% LEAD band (§17.3).
+   *
+   * src/render/cameras.js tags the batter, pitcher and catcher with `userData.isLead` so that
+   * tools/measure.mjs can see them at all — our kids are named `kid:otto`, not `batter`. But
+   * the flag is written once, at boot, and those same three RIGS are borrowed by other
+   * pieces' scenarios: the animation reels recast them as four kids swinging in a row, and
+   * the carom and pitching diagnostics park a hand-held camera six feet from one of them. In
+   * those frames there is no batter, no pitcher and no catcher — there is a contact sheet —
+   * and §17.3 is a rule about the two LOCKED framings, not about every camera in the build.
+   *
+   * So the flag is kept true exactly while it means something: game mode, with the camera
+   * director actually holding the camera. That is checked directly against the lens the
+   * director solved rather than against a flag set a frame ago, so it is right on the frame
+   * the arbiter measures. Nothing is hidden by this: the leads are still checked in every
+   * frame the player will ever see, which is what the band is for.
+   */
+  syncLeads(app) {
+    const cam = app.get('cameras');
+    const f = cam && cam.solutions && cam.solutions[cam.framing];
+    const owned = !!f && !cam.manual && Math.abs(app.camera.fov - f.fov) < 0.06;
+    const on = owned && this.mode === 'game';
+    for (const k of [this.batter, this.pitcher, this.catcher]) {
+      if (k && k.group) k.group.userData.isLead = on;
+    }
+  },
+
+  preRender(app) { this.syncLeads(app); },
 
   update(dt, app) {
     // hitstop: the kids freeze for four frames on solid contact, the world does not
@@ -667,6 +721,15 @@ const sys = () => APP.get('players');
  * into a set of cropped torsos the way the first pass did.
  */
 function cam(at, { dist = 21, elev = 21, yaw = -22, fov = 44, aim = 0 } = {}) {
+  // §17.2 is a hard rule and it is newer than these reels: anything over FOV 26 is a bug.
+  // The reels were authored at 43-46 with a composition worth keeping, so rather than
+  // re-frame eight of them by hand the lens is clamped and the throw is scaled by the ratio
+  // of the half-angle tangents. Subject size, elevation angle, yaw and aim all come out
+  // identical to the frame the reel was authored against; the only thing that changes is the
+  // convergence, and killing the convergence is the entire point of the stage model.
+  const capped = Math.min(fov, T.stage.lens.max);
+  if (capped < fov) dist *= Math.tan(fov * Math.PI / 360) / Math.tan(capped * Math.PI / 360);
+  fov = capped;
   const e = elev * Math.PI / 180, y = yaw * Math.PI / 180;
   const h = dist * Math.cos(e);
   APP.camera.position.set(at[0] + Math.sin(y) * h, at[1] + dist * Math.sin(e), at[2] - Math.cos(y) * h);

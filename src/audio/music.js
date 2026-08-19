@@ -1906,20 +1906,25 @@ const CUES = {
   /** Full count. Diminished, rising, a press roll, and the bass stops walking. */
   bed_tension: {
     seconds: 12.8, span: 6.4, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimTensionDb),
-    build(R, t0) {
-      const P = planOf({ bpm: 150, swing: MT.swingHot, chartStr: TENSION_CHART, seed: MT.seed + 5 });
+    build(R, t0, o = {}) {
+      // A full count can last a while. Each pass draws different micro-timing and
+      // the clarinet trill starts a semitone higher than it did last time, so the
+      // cue ratchets instead of circling — which is what tension is.
+      const pass = (o.pass | 0);
+      const P = planOf({ bpm: 150, swing: MT.swingHot, chartStr: TENSION_CHART, seed: MT.seed + 5 + pass * 13 });
+      const lift = Math.min(4, pass);
       for (let bar = 0; bar < 4; bar++) {
         const c = chordAt(P.bars, bar, 0);
         R.note('string_bass', nearest(c.bass, 30, 42, 34), t0 + tAt(P, bar, 0), P.beat * 1.6, 0.95, { bus: 'bass', damp: P.beat * 1.6 });
         // A CLOCK. Without a pulse this cue was a wash, and a wash is atmosphere,
         // not tension — the player has to feel the count running out, and a bare
         // wood block on 2 and 4 is the cheapest, oldest way to make them.
-        R.note('wood_block', 64, t0 + tAt(P, bar, 2), 0.09, 0.55 + bar * 0.06, { pan: -0.3 });
-        R.note('wood_block', 64, t0 + tAt(P, bar, 6), 0.09, 0.50 + bar * 0.06, { pan: -0.3 });
+        R.note('wood_block', 64 + lift, t0 + tAt(P, bar, 2), 0.09, 0.55 + bar * 0.06, { pan: -0.3 });
+        R.note('wood_block', 64 + lift, t0 + tAt(P, bar, 6), 0.09, 0.50 + bar * 0.06, { pan: -0.3 });
         partBanjoTremolo(R, P, t0, bar, 4, { rate: 15, gain: 0.42 });
         R.note('snare_roll', 0, t0 + tAt(P, bar, 0), P.beat * 3.6, 0.34 + bar * 0.10, {});
         // the clarinet trill climbs a semitone a bar and never resolves
-        const trill = 81 + bar;
+        const trill = 81 + bar + lift;
         const step = 0.075;
         for (let i = 0; i < Math.round(P.beat * 3 / step); i++) {
           R.note('clarinet', trill + (i % 2), t0 + tAt(P, bar, 4) + i * step, step * 1.1, 0.30 + bar * 0.05, { bus: 'lead' });
@@ -1932,15 +1937,20 @@ const CUES = {
   /** A rally. Everybody stands up: four to the bar, sticks instead of brushes. */
   bed_rally: {
     seconds: 12.2, span: 6.076, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimRallyDb),
-    build(R, t0) {
-      const P = planOf({ bpm: 158, swing: MT.swingHot, chartStr: RALLY_CHART, seed: MT.seed + 6 });
+    build(R, t0, o = {}) {
+      // A rally that circles the same four bars stops sounding like a rally, so
+      // the banjo tightens onto every eighth on the second pass and the cymbal
+      // moves to the front of the phrase instead of the back.
+      const pass = (o.pass | 0);
+      const hard = (pass % 2) === 1;
+      const P = planOf({ bpm: 158, swing: MT.swingHot, chartStr: RALLY_CHART, seed: MT.seed + 6 + pass * 17 });
       partBass(R, P, t0, { inst: 'tuba', four: true });
-      partBanjo(R, P, t0, { beats: [1, 2, 3, 5, 6, 7], ring: 0.18, gain: 0.7 });
-      partBrushes(R, P, t0, { gain: 1.0 });
+      partBanjo(R, P, t0, { beats: hard ? [1, 3, 5, 7] : [1, 2, 3, 5, 6, 7], ring: hard ? 0.14 : 0.18, gain: 0.7 });
+      partBrushes(R, P, t0, { gain: 1.0, ticks: hard ? 'all' : true });
       partStride(R, P, t0, { gain: 0.6 });
       partLead(R, P, t0, RALLY_CALL, 'cornet', { gain: 1.0 });
       partHarmony(R, P, t0, RALLY_CALL, 'trombone', { below: 7, gain: 0.55 });
-      R.note('cymbal', 0, t0 + tAt(P, 3, 6), 1.2, 0.7, {});
+      R.note('cymbal', 0, t0 + (hard ? tAt(P, 0, 0) : tAt(P, 3, 6)), 1.2, 0.7, {});
     },
   },
 
