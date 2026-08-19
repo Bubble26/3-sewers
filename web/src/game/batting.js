@@ -136,7 +136,7 @@ export const BT = {
 
   trail: { dots: 44, every: 1 / 110, life: 0.85, size: 0.088, grow: 2.9 },
   verdictLife: 1.05,
-  arcLife: 0.20,
+  arcLife: 0.16,
   markLife: 1.30,
 };
 
@@ -147,27 +147,24 @@ export const IDEAL_AFTER = Object.fromEntries(
 
 /** Which family a thrown pitch belongs to before the flight is allowed to argue. */
 const WANT = { heat: 'fast', skip: 'fast', slow: 'spinner', wobble: 'spinner', loft: 'drop', easy: 'drop' };
-const DEMOTE = { drop: 'spinner', spinner: 'fast', fast: 'fast' };
 
 /* ============================================================================
    1. THE HOP — pure maths, no THREE, no rendering. Everything measurable is here.
    ========================================================================= */
 
 /**
- * You cannot lob a long read out of a short throw. A drop needs 580 ms of read AND
- * enough air before the stone to look like a throw; if the delivery is too quick for
- * that, the block gets the next family down. This keeps `PITCH_TB` exact — and the
- * press gaps with it — on every flight the pitching piece can produce.
+ * Which family a thrown pitch hops in. This is a straight map off what the pitcher
+ * threw, and it is deliberately NOT conditional on how fast he threw it.
+ *
+ * An earlier version demoted a pitch whose flight was too short to contain its read
+ * window — and measured on the real arsenal that demoted EVERY pitch to `fast`,
+ * because the pitching piece solves flights of 0.32-0.44 s and the drop's read window
+ * alone is 0.58 s. The three-way read did not exist in the running game at all. The
+ * flight is what gives, not the read: `hopPlan` stretches it (and 42 feet in 0.78 s is
+ * a lofter that hangs, which is what a lofter is).
  */
-export function hopType(pitchId, flight) {
-  let k = WANT[pitchId] || 'spinner';
-  for (let i = 0; i < 3; i++) {
-    if (flight - P.pitchTB[k] >= BT.minPreBounce) return k;
-    const next = DEMOTE[k];
-    if (next === k) return k;
-    k = next;
-  }
-  return k;
+export function hopType(pitchId) {
+  return WANT[pitchId] || 'spinner';
 }
 
 /**
@@ -178,7 +175,7 @@ export function hopType(pitchId, flight) {
  *   yCross    where it is when it gets to you: 1.93 / 2.84 / 4.08 ft at the tuned arc
  */
 export function hopPlan({ pitchId = 'heat', flight: thrown = 0.7, releaseY = 4.35, aimY = 2.6 } = {}) {
-  const type = hopType(pitchId, thrown);
+  const type = hopType(pitchId);
   const tb = P.pitchTB[type];
   // THE READ WINDOW IS NOT NEGOTIABLE. `PITCH_TB` is the measurement; a delivery too
   // quick to contain it gets stretched until it does, which is also the only honest
@@ -232,7 +229,7 @@ export function hopVY(plan, t) {
  * ball diameters, at the two instants the source names.
  */
 export function separability(aimY = 2.6) {
-  const plans = PITCH_TYPES.map((k) => hopPlan({ pitchId: { fast: 'heat', spinner: 'slow', drop: 'loft' }[k], flight: P.pitchTB[k] + 0.34, aimY }));
+  const plans = PITCH_TYPES.map((k) => hopPlan({ pitchId: { fast: 'heat', spinner: 'slow', drop: 'loft' }[k], flight: 0, aimY }));
   const at = (s) => {
     let worst = Infinity, pair = '';
     for (let i = 0; i < plans.length; i++) {
@@ -536,7 +533,7 @@ class ChalkPop {
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), MAT.chalkMark(chalkWordTexture('OK'), { opacity: 1 }));
     this.mesh.material = this.mesh.material.clone();
     this.mesh.material.depthTest = false;
-    this.mesh.renderOrder = 40;
+    this.mesh.renderOrder = 900;
     this.mesh.visible = false;
     this.mesh.frustumCulled = false;
     this.base = new THREE.Vector3();
@@ -919,7 +916,7 @@ const system = registerSystem({
   onSwing(sim, kind, jumped) {
     const h = sim.hop;
     const y = jumped ? 3.1 : clamp(h ? h.yCross : 2.8, 1.7, 4.2);
-    this.arc.position.set(2.6, y, T.street.plateZ + 1.4);
+    this.arc.position.set(3.0, y, T.street.plateZ + 1.2);
     this.arc.rotation.set(0.22, -0.42, jumped ? 0.72 : 0.24);
     this.arc.scale.setScalar(jumped ? 0.78 : 1.0);
     this.arc.visible = true;
@@ -939,7 +936,7 @@ const system = registerSystem({
    */
   onVerdict(sim, ev) {
     const err = sim.lastErrMs;
-    const at = new THREE.Vector3(6.2, 7.6, T.street.plateZ + 1.2);
+    const at = new THREE.Vector3(8.4, 7.4, T.street.plateZ - 1.6);
     const t = sim.hop ? sim.hop.type.toUpperCase() : '';
     if (ev.kind === 'in_play' && ev.quality >= 0.85) {
       this.pop.say('ON IT!', at, { sub: t, seed: 3, scale: 1.12 });
@@ -1019,7 +1016,7 @@ const INK_CSS = '#2a1d1a';
 /** Three canonical pitches, one per family, all arriving at the same plate. */
 function chartPlans() {
   return PITCH_TYPES.map((k) => {
-    const plan = hopPlan({ pitchId: CHART_ID[k], flight: P.pitchTB[k] + 0.30, releaseY: 4.35, aimY: 2.6 });
+    const plan = hopPlan({ pitchId: CHART_ID[k], flight: 0, releaseY: 4.35, aimY: 2.6 });
     plan.dir = -1;
     return plan;
   });
@@ -1288,8 +1285,8 @@ function drawWindowBoard(type) {
 function buildTimingChart(app) {
   const type = app.sim.hop ? app.sim.hop.type : 'fast';
   if (system.timing) { app.scene.remove(system.timing); system.timing = null; }
-  const m = boardMesh(`bat:board:win:${type}`, drawWindowBoard(type), { w: 24, h: 8.6, px: 1792 });
-  m.position.set(-0.6, 14.6, BOARD.z);
+  const m = boardMesh(`bat:board:win:${type}`, drawWindowBoard(type), { w: 26, h: 8.2, px: 1792 });
+  m.position.set(-0.6, 16.4, BOARD.z);
   m.rotation.y = Math.PI;          // face down the street, at the camera
   m.rotation.z = -0.010;
   m.name = 'swing_window_board';
@@ -1303,10 +1300,12 @@ function buildTimingChart(app) {
    ------------------------------------------------------------------------ */
 
 /** Set an at-bat up with the human at the plate and a press already booked. */
-function stagePress(seed, offsetSec, { rate = 6 } = {}) {
+function stagePress(seed, offsetSec, { rate = 6, want = 'slow' } = {}) {
   const sim = app.sim;
   sim.humanBatsFirst();
+  if (want && app.pitching) app.pitching.force(want);      // one pitch, three timings
   sim.reset(seed);
+  if (app.pitching) app.pitching.force(null);
   sim.windupRate = rate;
   sim.autoPress = offsetSec;
   let guard = 0;
@@ -1317,19 +1316,25 @@ function stagePress(seed, offsetSec, { rate = 6 } = {}) {
   sim.autoPress = null;
 }
 
-/** Hold the ball a chosen moment after the hop, so a still shows the read. */
-function toBounce(seed, after = 0.10, { rate = 6 } = {}) {
+/**
+ * Hold the ball a chosen moment after the hop, so a still shows the read. `want` keeps
+ * taking pitches until the pitcher throws that family — a still of the drop's big hop
+ * says more than a still of whatever came first.
+ */
+function toBounce(seed, after = 0.10, { rate = 8, want = 'loft' } = {}) {
   const sim = app.sim;
   sim.humanBatsFirst();
+  if (want && app.pitching) app.pitching.force(want);      // their own scenarios' seam
   sim.reset(seed);
+  if (app.pitching) app.pitching.force(null);
   sim.windupRate = rate;
   let guard = 0;
   while (sim.state.phase !== 'pitch' && guard++ < 900) app.clock.advance(1 / 60);
   sim.windupRate = 1;
   if (!sim.hop) return;
-  const want = sim.hop.tBounce + after;
+  const at = sim.hop.tBounce + after;
   guard = 0;
-  while (sim.state.phase === 'pitch' && sim.pitchT < want && guard++ < 400) app.clock.advance(1 / 60);
+  while (sim.state.phase === 'pitch' && sim.pitchT < at && guard++ < 400) app.clock.advance(1 / 60);
 }
 
 /** THE READ. Three pitch types after the bounce, chalked on a sheet of butcher paper. */
@@ -1354,14 +1359,16 @@ registerScenario('hop_read', {
 registerScenario('swing_timing', {
   seed: 1925,
   setup: () => {
-    toBounce(1925, 0.14);
+    toBounce(1925, 0.26, { want: 'loft' });
     buildTimingChart(app);
   },
   settle: 0,
 });
 
-registerScenario('swing_early', { seed: 4242, setup: () => { stagePress(4242, -0.150); }, settle: 0.24 });
-registerScenario('swing_square', { seed: 4242, setup: () => { stagePress(4242, 0.0); }, settle: 0.24 });
-registerScenario('swing_late', { seed: 4242, setup: () => { stagePress(4242, 0.110); }, settle: 0.24 });
+// Early, on-time and late off the SAME pitch, held four frames after the stick comes
+// through, which is where hitstop, the smear and the squash all still read.
+registerScenario('swing_early', { seed: 4242, setup: () => { stagePress(4242, -0.150); }, settle: 0.085 });
+registerScenario('swing_square', { seed: 4242, setup: () => { stagePress(4242, 0.0); }, settle: 0.085 });
+registerScenario('swing_late', { seed: 4242, setup: () => { stagePress(4242, 0.110); }, settle: 0.085 });
 
 export default system;
