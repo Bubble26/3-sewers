@@ -537,22 +537,24 @@ export default registerSystem({
 
   /** A scoring play pulls at least three kids into a SHARED celebration (BYB 5.6). */
   mobAtPlate() {
-    const star = this.runners.find((r) => r.group.visible) || this.batter;
+    const M = LAYOUT.MOB;
+    const star = this.runners.find((r) => r.onBase) || this.batter;
     star.target = null;
     star.showStick(false);
-    star.at(HOME.x, HOME.z + 2.0, YAW(0, -1));
+    star.at(M.x, M.z, YAW(0, -1));
     star.act('mobbed', { state: 'mob', lock: 3.4 });
     const crew = this.fielders.slice(2, 6);
     const cheers = ['mob_pile', 'mob_pile', 'cheer_jump', 'cheer_wave'];
     let i = 0;
     for (const f of crew) {
       const a = (-0.55 + (i / (crew.length - 1)) * 1.1) * Math.PI;
-      const r = 3.9 + (i % 2) * 1.1;
+      const r = M.radius - 0.5 + (i % 2) * 1.1;
       const clip = cheers[i % cheers.length];
-      f.goTo(HOME.x + Math.cos(a) * r, HOME.z + 2.0 + Math.sin(a) * r, {
+      const to = LAYOUT.chase(M.x + Math.cos(a) * r, M.z + Math.sin(a) * r);
+      f.goTo(to.x, to.z, {
         speed: 15,
         onArrive: (k) => {
-          k.lookAt(HOME.x, HOME.z + 2.0);
+          k.lookAt(M.x, M.z);
           k.act(clip, { state: 'cheer', lock: 2.8 });
           k.anim.t = arng.range(0, 0.9);
         },
@@ -561,7 +563,9 @@ export default registerSystem({
     }
     // the kid who did not score takes it hard, out of the scrum where it reads as a reaction
     const odd = this.fielders[6];
-    if (odd) { odd.target = null; odd.lookAt(HOME.x, HOME.z); odd.act('sulk', { state: 'sulk', lock: 3.0 }); }
+    if (odd) { odd.target = null; odd.lookAt(M.x, M.z); odd.act('sulk', { state: 'sulk', lock: 3.0 }); }
+    // the block reacts too — a run is the only thing that gets the umpire off the truck
+    for (const sp of this.spectators) if (sp.lock <= 0) sp.flavour('cheer_wave', { life: 1.6, amp: 0.8 });
   },
 
   /**
@@ -604,13 +608,11 @@ export default registerSystem({
       k.group.visible = true; k.rig.resetSprings();
       if (k.trail) k.trail.clear();
     }
+    for (const r of this.runners) r.onBase = false;
     this.homePose();
-    if (this.mode === 'game') {
-      app.camera.position.set(0, 12, -34);
-      app.camera.lookAt(0, 4, 30);
-      app.camera.fov = 46;
-      app.camera.updateProjectionMatrix();
-    }
+    // The camera belongs to src/render/cameras.js (§17.4: two locked framings, hard cuts).
+    // This file used to stamp a 46° camera here and have the director immediately overwrite
+    // it; the stamp is gone, and the framing a scenario opens on is the director's.
   },
 
   update(dt, app) {
@@ -670,7 +672,7 @@ function cam(at, { dist = 21, elev = 21, yaw = -22, fov = 44, aim = 0 } = {}) {
 /** Take a set of kids off duty and make them available as demo actors, in a known state. */
 function cast(n) {
   const p = sys();
-  const pool = [p.batter, p.onDeck, ...p.fielders, ...p.runners, p.stoopKid];
+  const pool = [p.batter, p.onDeck, ...p.fielders, ...p.runners, ...p.spectators];
   const out = [];
   for (const k of pool) {
     if (out.length >= n) break;

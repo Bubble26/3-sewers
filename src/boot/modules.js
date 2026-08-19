@@ -10,6 +10,7 @@ import '../render/lighting.js';
 import '../render/postfx.js';   // art direction: palette + materials + output transform
 import '../render/cameras.js'; // the stage camera director: two locked framings, hard cuts (§17)
 // --- characters ------------------------------------------------------------
+import '../game/layout.js'; // the stage plan: every position on the street, and the chalk
 import '../chars/players.js';
 import '../chars/rig.js';
 // --- gameplay --------------------------------------------------------------
