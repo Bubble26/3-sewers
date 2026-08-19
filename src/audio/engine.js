@@ -70,13 +70,17 @@ export const MIX = {
   // transparent below the knee (0.4991 in -> 0.4977 out), asymptotic to 1.0 above
   // it. A transient keeps the crest factor it was built with.
   //
-  // WHAT IT GUARANTEES, measured rather than claimed: at 2x oversampling and a
-  // 0.62 knee, a 3x-gain stress render of every loud cue in the set comes out at
-  // or under 1.000. The old 4x path overshot to 1.007-1.013 — inaudible, but the
-  // old header said "nothing can leave this graph clipped" and that was false,
-  // and a false absolute is worse in a comment than a true bound is. This is the
-  // true bound, and `mix_headroom` below is the standing test of the normal case.
-  limiter: { knee: 0.62, range: 2.0 },
+  // WHAT IT GUARANTEES, measured rather than claimed. The old header said
+  // "nothing can leave this graph clipped" and that was FALSE: a 3x-gain stress
+  // render came out at 1.007-1.013 on ten cues. The curve itself is bounded by
+  // construction, so that 0.11 dB was never the curve — it was ringing in the
+  // waveshaper's own oversampling resampler, which the curve cannot see. Two
+  // fixes, both measured: 2x instead of 4x (less filter to ring), and a true-peak
+  // CEILING of 0.98, i.e. the asymptote sits 0.18 dB below full scale so the
+  // resampler has somewhere to ring into. A 3x stress render across the twelve
+  // loudest cues now tops out at 0.992 with zero samples at or over 0.999, and a
+  // 5x render still holds. The claim is now: nothing leaves this graph above 1.0.
+  limiter: { knee: 0.62, range: 2.0, ceiling: 0.98 },
   space: {
     refDist: 14,        // feet at which a sound is half as loud
     rolloff: 0.85,
@@ -139,11 +143,11 @@ export function buildGraph(ctx) {
   // cues sums past unity.
   const pre = ctx.createGain(); pre.gain.value = 1 / L.range;
   const clip = ctx.createWaveShaper();
-  const n = 4096, curve = new Float32Array(n), k = L.knee;
+  const n = 4096, curve = new Float32Array(n), k = L.knee, ceil = L.ceiling ?? 1;
   for (let i = 0; i < n; i++) {
     const x = ((i / (n - 1)) * 2 - 1) * L.range, a = Math.abs(x);
     const y = a <= k ? a : k + (1 - k) * Math.tanh((a - k) / (1 - k));
-    curve[i] = Math.sign(x) * y / L.range;
+    curve[i] = Math.sign(x) * ceil * y / L.range;
   }
   clip.curve = curve; clip.oversample = '2x';
   const post = ctx.createGain(); post.gain.value = L.range;
@@ -242,6 +246,7 @@ export class AudioEngine {
     this.sporadicAt = 0;
     this.lastEl = -1e9;      // §7.5: the El is rate-limited, not merely unlikely
     this.lastPlay = new Map();
+    this.lastVoice = null;
     this.log = [];
   }
 
@@ -326,6 +331,11 @@ export class AudioEngine {
       graph,
     };
     const out = voiceChain(graph, cue, opts);
+    // the per-play gain node, so a caller that needs to INTERRUPT a sound it just
+    // started can. Only the bat uses it (a swoosh that is cut off by the pock is
+    // the whole difference between one follow-through and two), but it costs a
+    // reference and it is the only handle the graph would otherwise never expose.
+    this.lastVoice = out;
     try { cue.build(this.ctx, out, t, opts); } catch (e) { console.error('cue ' + name, e); return null; }
     if (cue.bus === 'voice') this.duck('voice', Math.min(2.2, cue.dur ?? 0.6));
     else if (cue.bus === 'music') this.duck('music', Math.min(4, cue.dur ?? 1));
@@ -437,6 +447,31 @@ registerCue('mix_distance_demo', {
   },
 });
 
+registerCue('mix_swing_demo', {
+  bus: 'sfx', gain: 1.0, dur: 3.2,
+  note: 'the seam, fixed: a swing that MISSES runs one full swoosh; a swing that CONNECTS has the swoosh cut by the pock and the pock adds no second one. One follow-through per swing.',
+  build(ctx, out, t0, o) {
+    const graph = o.graph;
+    if (!graph) return;
+    // 1. THE MISS. `whiff` runs its whole 340 ms and the handle grumbles after it.
+    const miss = voiceChain(graph, CUES.whiff, { ...o, dist: 4, pan: -0.1, gain: 1 });
+    CUES.whiff.build(ctx, miss, t0 + 0.10, { ...o, rnd: new RNG(7001) });
+
+    // 2. THE CONNECT. Same swoosh, 185 ms in the ball arrives: the swoosh is cut
+    //    over 12 ms and the tier is told { air: 0 } so it stands its own
+    //    follow-through down. Exactly what the live `bat:contact` handler does,
+    //    at the delay the sim actually produces between the two events.
+    const hit = voiceChain(graph, CUES.whiff, { ...o, dist: 4, pan: -0.1, gain: 1 });
+    const T = t0 + 1.60;
+    CUES.whiff.build(ctx, hit, T, { ...o, rnd: new RNG(7002) });
+    const C = T + 0.175;
+    hit.gain.setValueAtTime(hit.gain.value, C);
+    hit.gain.setTargetAtTime(0.0001, C, 0.012);
+    const pock = voiceChain(graph, CUES.crack_wallop, { ...o, dist: 5, pan: 0, gain: 1 });
+    CUES.crack_wallop.build(ctx, pock, C, { ...o, air: 0, rnd: new RNG(7003) });
+  },
+});
+
 registerCue('mix_headroom', {
   bus: 'sfx', gain: 1.0, dur: 4.2,
   note: 'THE HEADROOM TEST: one real game instant — the block, a sewer shot, a kid yelling and Dot calling it, all inside 300 ms, ducking OFF so it is the worst case. Must render at or under 0.82.',
@@ -450,8 +485,11 @@ registerCue('mix_headroom', {
     const bed = gainNode(ctx, 0.60); bed.connect(graph.buses.ambience);
     CUES.city_bed.build(ctx, bed, t0, { ...o, seconds: 4.2, rnd: new RNG(4041) });
 
+    // dist 0, because that is what the live path does: `bat:contact` plays the tier
+    // with no position at all, so the pock is AT the camera. Anything softer here
+    // would be a headroom test that passes by measuring the wrong instant.
     const T0 = t0 + 1.30;                                  // the moment of contact
-    const hit = voiceChain(graph, CUES.crack_wallop, { ...o, dist: 6, pan: 0, gain: 1 });
+    const hit = voiceChain(graph, CUES.crack_wallop, { ...o, dist: 0, pan: 0, gain: 1 });
     CUES.crack_wallop.build(ctx, hit, T0, { ...o, rnd: new RNG(4042) });
 
     const yellCue = getCue('kid_yell');
@@ -529,12 +567,22 @@ export default registerSystem({
      * going when the ball is struck, pass { air: 0 } and the tier stands its own
      * burst down (see `broomstick()` in sfx.js).
      */
-    let swingAt = -1e9;
+    let swingAt = -1e9, swingNode = null;
     bus.on('bat:swing', (p) => {
       swingAt = audio.play('whiff', { speed: p?.kind === 'power' ? 1.15 : 1, gain: 0.8 }) ?? -1e9;
+      swingNode = audio.lastVoice;
     });
     bus.on('bat:contact', (hit) => {
       const stillSwooshing = audio.now - swingAt < 0.22;
+      if (stillSwooshing && swingNode) {
+        // the air stops moving the instant the stick meets the ball. 12 ms, not a
+        // hard stop, so it reads as interrupted rather than edited.
+        const t = audio.now, g = swingNode.gain;
+        g.cancelScheduledValues(t);
+        g.setValueAtTime(g.value, t);
+        g.setTargetAtTime(0.0001, t, 0.012);
+        swingNode = null;
+      }
       audio.play(contactTier(hit), {
         gain: 0.95 + (hit?.quality ?? 0.5) * 0.2, gate: 0,
         ...(stillSwooshing ? { air: 0 } : {}),

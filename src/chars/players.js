@@ -388,7 +388,7 @@ export default registerSystem({
     // The rest of the batting side. These three rigs are the ones baserunning wears, so they
     // wait off the picture until somebody is actually on the bases: thirteen bodies is the most
     // a 16:9 frame holds at 12% a head, and the fourteenth costs everybody size.
-    this.runners = LAYOUT.BENCH.map((b) => post(b));
+    this.runners = LAYOUT.BENCH.map((b) => { const k = post(b); k.group.visible = false; return k; });
 
     // the block, watching: two in the gutter by the stoops, one up on the ice truck
     this.spectators = LAYOUT.SPECTATORS.map((sp) => post(sp));
@@ -501,6 +501,7 @@ export default registerSystem({
   sendRunner(bases) {
     const r = this.runners.find((k) => !k.onBase) || this.runners[0];
     r.onBase = true;
+    r.group.visible = true;
     r.setLook((APP.sim.state.batterIdx + 4) % 9);
     // The cut to the FIELD framing is already in flight when this fires (cameras.js holds it
     // for the hitstop), so the kid leaving the curb for the plate changes seats on a cut.
@@ -529,11 +530,8 @@ export default registerSystem({
       r.target = null; r.speed = 0;
       if (!r.onBase) continue;
       r.onBase = false;
-      const h = r.home;
-      r.goTo(h.x, h.z, {
-        gait: 'trot', speed: 11,
-        onArrive: (k) => { k.goHome(); k.anim.play(k.restClip, { fade: 0.25 }); },
-      });
+      r.group.visible = false;
+      r.goHome();
     }
   },
 
@@ -600,6 +598,7 @@ export default registerSystem({
     this.batter.anim.play('stance', { fade: 0 });
     this.onDeck.showStick(true);
     this.onDeck.anim.play('bat_wait', { at: 1.2, fade: 0 });
+    for (const r of this.runners) r.group.visible = false;
     this.chase = null; this.backup = null;
   },
 

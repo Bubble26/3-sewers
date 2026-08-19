@@ -22,6 +22,24 @@
  * big-hit stinger is deliberately delayed 120 ms so the wooden TOCK owns the
  * transient it was written to answer. `renderOffline('duck_proof')` renders that
  * behaviour through the same code path the live game uses, so it is measurable.
+ * Arrangement dynamics — the breaks — live on a SECOND gain (`R.arrangeGain`,
+ * written by `arrangeAt`) so a composer's hairpin and the mix's ducker multiply
+ * instead of fighting over one AudioParam.
+ *
+ * ---------------------------------------------------------------------------
+ * WHERE THE SCORE COMES FROM, IN A RUNNING GAME
+ * ---------------------------------------------------------------------------
+ * A score nobody starts is not a score. Every cue below has a caller:
+ *   boot / `title` scenario ....... `title`
+ *   `team_select` scenario ........ `team_select`
+ *   `atbat:begin`, `pitch:called` . `bed_play`, and `world_radio` layered under it
+ *   full count / a hit / a run .... `bed_tension` / `bed_rally`, via `state()`
+ *   `roster:picked`, `atbat:begin`,
+ *   `ball:sewer` .................. the kid's own walk-up — BIBLE §7.3's three
+ *                                   firing places: the card, the plate, the trot
+ *   `bat:contact` (hard) .......... `stinger_hit`   `ball:sewer` -> `stinger_sewer`
+ *   `half:end` .................... `between_innings`
+ *   `game:over` ................... `win` / `loss`
  *
  * ---------------------------------------------------------------------------
  * WHY IT SWINGS
@@ -57,8 +75,11 @@
  *   __SB.music.validate()                       -> notation self-check, [] when clean
  *
  * The audio ENGINE (src/audio/engine.js) is owned by another builder. This file
- * never edits it: it attaches additively, keeping whatever renderOffline/listCues
- * the engine already installed and delegating any cue it does not own.
+ * never edits it: it attaches additively, registering every cue through the
+ * engine's own `registerCue` and then letting the engine's `renderOffline` render
+ * them. That matters for measurement: every number quoted in this file was taken
+ * THROUGH `MIX.buses.music` (0.62) and the engine's master soft clip, which is the
+ * graph the player hears — not around it.
  */
 import { registerSystem } from '../app.js';
 import { bus } from '../core/bus.js';
@@ -93,9 +114,9 @@ const MUSIC_DEFAULTS = {
    * instead of brushes, cornet + trombone) at the same level, never as volume.
    * Every number below is measured through the engine's own graph, not guessed.
    */
-  bedTrimDb: 17.8,         // bed_play  — measured -44.1 dBFS through MIX.buses.music
-  bedTrimTensionDb: 9.6,   // bed_tension
-  bedTrimRallyDb: 5.4,     // bed_rally
+  bedTrimDb: 24.3,         // bed_play   -> -44.0 dBFS measured through MIX.buses.music
+  bedTrimTensionDb: 12.8,  // bed_tension -> -44.0
+  bedTrimRallyDb: 8.6,     // bed_rally   -> -44.0
   duckAnnouncerDb: -12,    // the announcer always wins — and -12 is the SHIPPED number:
                            // it is MIX.duck.voice.music in src/audio/engine.js, which is the
                            // duck that actually runs. `duck_proof` therefore demonstrates the
@@ -767,6 +788,7 @@ class Render {
       const wowLfo = ctx.createOscillator(); wowLfo.type = 'sine'; wowLfo.frequency.value = 0.7;
       const wowAmt = ctx.createGain(); wowAmt.gain.value = 0.0016;
       wowLfo.connect(wowAmt).connect(wow.delayTime); wowLfo.start(0);
+      this.tailSources = [wowLfo];
       /**
        * ORDER MATTERS AND IT WAS WRONG. The waveshaper used to sit AFTER the
        * 4 kHz lowpass with oversampling off, so its odd harmonics and its
@@ -788,6 +810,7 @@ class Render {
       const snf = ctx.createBiquadFilter(); snf.type = 'bandpass'; snf.frequency.value = 2600; snf.Q.value = 2.0;
       const sng = ctx.createGain(); sng.gain.value = 0.016;
       sn.connect(snf).connect(sng).connect(lp); sn.start(0);
+      this.tailSources.push(sn);
       this.world = true;
     } else {
       this.musicBus.connect(this.arrangeGain);
@@ -813,6 +836,17 @@ class Render {
     }
     this.channels = new Map();
     this.lastNoteEnd = 0;
+  }
+
+  /**
+   * The two nodes in this graph that would otherwise run forever — the shellac
+   * surface noise and the wow LFO — get an end time. That used to be harmless
+   * because `world_radio` was never actually played; now it is layered under the
+   * bed and retiled every pass, and without this each pass would stack another
+   * permanent hiss on top of the last one.
+   */
+  endSources(t) {
+    for (const src of (this.tailSources || [])) { try { src.stop(t); } catch (e) { /* already stopped */ } }
   }
 
   /** One mixer strip per instrument per render — not per note. Keeps node count sane. */
@@ -1313,9 +1347,17 @@ function partLead(R, P, t0, m, name, o = {}) {
   const lag = (o.lagMs ?? MT.leadLagMs) / 1000;
   const barOff = o.bar ?? 0;
   let prev = null;
+  const last = m.length ? m[m.length - 1] : null;
   for (const n of m) {
     const t = t0 + barT(P, barOff) + eighthToTime(n.e, P.beat, P.swing) + lag + human(P, MT.humanMs);
-    const dur = eighthToTime(n.e + n.dur, P.beat, P.swing) - eighthToTime(n.e, P.beat, P.swing);
+    let dur = eighthToTime(n.e + n.dur, P.beat, P.swing) - eighthToTime(n.e, P.beat, P.swing);
+    // a player holds the last note of a phrase; `ringLast` is the button on the
+    // end of a walk-up, and it is also what keeps every sting over BIBLE §7.3's
+    // three-second floor now that the band articulates instead of slurring
+    // a player holds the last note; a plucked string is simply left alone to
+    // decay the way the physical model already decays, instead of being damped
+    const ring = !!(o.ringLast && n === last);
+    if (ring) dur = Math.max(dur, o.ringLast);
     const vel = n.vel * accentAt(n.e) * g * (o.vel ?? 1);
     if (n.grace) {
       R.note(name, n.midi - 1, t - 0.055, 0.05, vel * 0.55, { bus: o.bus || 'lead', gain: o.chanGain });
@@ -1324,7 +1366,9 @@ function partLead(R, P, t0, m, name, o = {}) {
       bus: o.bus || 'lead',
       glideFrom: (o.portamento && prev != null) ? prev + (o.transpose || 0) : undefined,
       gliss: n.gliss ? (o.glissTo ?? -5) : undefined,
-      pan: o.pan, chanGain: o.chanGain, damp: Math.max(0.06, dur * (o.legato ?? 0.78)), tag: o.tag,
+      pan: o.pan, chanGain: o.chanGain, tag: o.tag,
+      damp: ring ? Math.max(2.4, dur) : Math.max(0.06, dur * (o.legato ?? 0.78)),
+      release: ring ? 0.30 : undefined,
     });
     prev = n.midi;
   }
@@ -1464,107 +1508,138 @@ const WALKUPS = {
   sal: {
     inst: 'trombone', bpm: 146, chartStr: 'F6 | C7 F6', swing: MT.swingHot,
     mel: 'A4:2 A4:1 G4:1 F4:2 A4:2 | C5:3 A4:1 F4:4/',
-    trim: 0.7, preroll: 0.78, rhythm: 'strut', taps: 4, glissTo: -7,
+    mel2: 'F4:2 A4:1 C5:1 A4:2 F4:2 | G4:2 A4:2 C5:3 A4:1/',
+    trim: 0.823, trimB: 0.806, preroll: 0.78, rhythm: 'strut', taps: 4, glissTo: -7,
   },
   // Will not step on a crack: the tune skips the beat where the crack would be.
   kathleen: {
     inst: 'penny_whistle', bpm: 172, chartStr: 'G6 | D7 G6', swing: MT.swingHot,
     mel: 'D5:1 G5:1 B5:1 r:1 B5:1 A5:1 G5:2 | A5:1 B5:1 D6:2 r:2 B5:2',
-    trim: 1.27, rhythm: 'light',
+    mel2: 'G5:1 B5:1 D6:1 r:1 D6:1 B5:1 G5:2 | F#5:1 A5:1 B5:2 r:2 G5:2',
+    trim: 1.033, trimB: 1.022, rhythm: 'light',
   },
   // Nine years old, four foot nothing, nobody has ever picked second. Fierce.
   filomena: {
     inst: 'mandolin', bpm: 158, chartStr: 'Dm | A7 D6', swing: MT.swingRag,
     mel: 'D5:2 F5:2 A5:3 G5:1 | F5:2 E5:2 F#5:4',
-    trim: 3.78, rhythm: 'napoli', tremolo: true,
+    mel2: 'A4:2 D5:2 F5:3 E5:1 | E5:2 C#5:2 D5:4',
+    trim: 3.732, trimB: 3.635, rhythm: 'napoli', tremolo: true,
   },
   // Sal's brother. Plays Sal's lick, an octave up, a beat late, on a kazoo.
   dom: {
     inst: 'kazoo', bpm: 146, chartStr: 'F6 | C7 F6', swing: MT.swingHot,
     mel: 'r:2 A5:2 A5:1 G5:1 F5:2 | A5:2 C6:3 A5:1 F5:2',
-    trim: 1.13, rhythm: 'strut', wobble: 22,
+    mel2: 'r:2 F5:2 A5:1 C6:1 A5:2 | G5:2 A5:2 C6:3 A5:1',
+    trim: 0.998, trimB: 0.933, rhythm: 'strut', wobble: 22,
   },
   // Six feet of elbows. Klezmer freygish, and it laughs on the way out.
   irving: {
     inst: 'clarinet', bpm: 152, chartStr: 'Dm | A7 Dm', swing: MT.swingHot,
     mel: 'D5:2 ^Eb5:1 F#5:1 G5:2 A5:2 | Bb5:2 A5:1 G5:1 F#5:2 D5:2/',
-    trim: 0.58, rhythm: 'klez', glissTo: 7,
+    mel2: 'A5:2 ^Bb5:1 A5:1 G5:2 F#5:2 | E5:2 F#5:1 G5:1 A5:2 D5:2/',
+    trim: 0.635, trimB: 0.631, rhythm: 'klez', glissTo: 7,
   },
   // Runs the argument. The wood block interrupts the band and wins.
   bessie: {
     inst: 'wood_block', bpm: 150, chartStr: 'C6 | G7 C6', swing: MT.swingHot,
     mel: 'C6:1 r:1 C6:1 r:1 A5:2 r:2 | C6:1 C6:1 r:2 A5:1 r:1 C6:2!',
-    trim: 2.16, rhythm: 'argue',
+    mel2: 'C6:1 C6:1 r:2 C6:1 r:1 A5:2 | r:2 C6:1 r:1 C6:1 C6:1 C6:2!',
+    trim: 3.408, trimB: 3.228, rhythm: 'argue', lastWord: true,
   },
   // Two years of lessons and every hour went into her wrists. Real stride.
   rose: {
     inst: 'piano', bpm: 168, chartStr: 'Eb6 | Bb7 Eb6', swing: MT.swingRag,
     mel: 'Bb4:1 C5:1 Eb5:2 G5:1 F5:1 Eb5:2 | D5:1 Eb5:1 F5:2 Bb5:3 G5:1',
-    trim: 1.58, rhythm: 'stride',
+    mel2: 'Eb5:1 F5:1 G5:2 Bb5:1 Ab5:1 G5:2 | F5:1 G5:1 Ab5:2 F5:2 Eb5:2',
+    trim: 1.426, trimB: 1.466, rhythm: 'stride',
   },
   // Four bars of harmonica between innings. Only four. Nobody has heard the fifth.
   // So he gets a harmonica, alone, and it quits before the phrase is done.
   otto: {
     inst: 'harmonica', bpm: 132, chartStr: 'F6 | Bb6 | F6', swing: MT.swing,
     mel: 'C5:2 F5:2 A5:2 F5:2 | G5:2 Bb5:2 D6:4 | C5:2 F5:2 A5:2 r:2',
-    trim: 1.0, rhythm: 'none', stopGag: true,
+    mel2: 'A5:2 G5:2 F5:2 C5:2 | D5:2 F5:2 Bb5:4 | A5:2 C6:2 F5:2 r:2',
+    trim: 1.416, trimB: 1.45, rhythm: 'none', stopGag: true,
   },
   // The best kid on the block for two innings. It wanders off at the end.
   stash: {
     inst: 'accordion', bpm: 140, chartStr: 'Gm | D7 Gm', swing: MT.swing,
     mel: 'G4:2 Bb4:2 D5:3 C5:1 | Bb4:2 A4:2 G4:4',
-    trim: 1.07, rhythm: 'oompah', drift: 55,
+    mel2: 'D5:2 G4:2 Bb4:3 A4:1 | F#4:2 A4:2 G4:4',
+    trim: 0.967, trimB: 0.969, rhythm: 'oompah', drift: 55,
   },
   // Has a pigeon. The pigeon has opinions.
   eugene: {
     inst: 'cornet_plunger', bpm: 132, chartStr: 'Bb6 | F7 Bb6', swing: MT.swingHot,
     mel: 'F4:3 Bb4:1 D5:2 C5:2 | Bb4:6 r:2',
-    trim: 1.68, rhythm: 'sparse', pigeon: true,
+    mel2: 'D5:3 C5:1 Bb4:2 F4:2 | A4:2 C5:4 r:2',
+    trim: 1.927, trimB: 1.786, rhythm: 'sparse', pigeon: true,
   },
   // Named at six for being the slowest. The name stayed. She is not slow.
   ethel: {
     inst: 'banjo', bpm: 188, chartStr: 'C6 | G7 | C6', swing: MT.swingHot,
     mel: 'C5:1 E5:1 G5:1 C6:1 G5:1 E5:1 G5:1 C6:1 | ' +
       'B5:1 G5:1 D5:1 B4:1 D5:1 F5:1 G5:1 B5:1 | C6:1 G5:1 E5:1 C5:1 E5:2 G5:2',
-    trim: 2.01, rhythm: 'drive',
+    mel2: 'E5:1 G5:1 C6:1 E6:1 C6:1 G5:1 E5:1 C5:1 | ' +
+      'D5:1 F5:1 G5:1 B5:1 D6:1 B5:1 G5:1 F5:1 | E5:1 G5:1 C6:2 G5:2 E5:2',
+    trim: 2.616, trimB: 2.81, rhythm: 'drive',
   },
   // No shoes since June. Claims it is faster. It is faster.
   jesus: {
     inst: 'guiro', bpm: 164, chartStr: 'A7 | D7 A7', swing: MT.swingHot,
     mel: 'A4:1 r:1 A4:1 A4:1 r:2 A4:2 | A4:1 r:1 A4:2 A4:1 r:1 A4:2',
-    trim: 4.77, rhythm: 'street', whistle: true,
+    mel2: 'A4:1 A4:1 r:2 A4:1 r:1 A4:2 | r:1 A4:1 A4:1 r:1 A4:2 A4:2',
+    trim: 3.963, trimB: 3.94, rhythm: 'street', whistle: true,
   },
   // Plants the crutch, and then the ball is already past you.
   luz: {
     inst: 'cuatro', bpm: 150, chartStr: 'D6 | A7 D6', swing: MT.swingRag,
-    mel: 'A4:4 r:4 | A4:0.5 B4:0.5 C#5:0.5 D5:0.5 E5:0.5 F#5:0.5 G5:0.5 A5:0.5 A5:4',
-    trim: 3.37, rhythm: 'plant',
+    mel: 'A4:4 r:4 | A4:0.5 B4:0.5 C#5:0.5 D5:0.5 E5:0.5 F#5:0.5 G5:0.5 A5:0.5 A5:2 D3:2',
+    mel2: 'D5:4 r:4 | D5:0.5 E5:0.5 F#5:0.5 G5:0.5 A5:0.5 B4:0.5 C#5:0.5 D5:0.5 F#5:2 D3:2',
+    trim: 5.856, trimB: 5.561, rhythm: 'plant',
   },
   // Best pair of hands on the block. Calm, exact, and it glides.
   ling: {
     inst: 'erhu', bpm: 108, chartStr: 'Am | Am', swing: MT.swing,
     mel: 'A4:3 C5:1 D5:4 | E5:3 D5:1 C5:2 A4:2',
-    trim: 0.88, rhythm: 'none', portamento: true,
+    mel2: 'E5:3 D5:1 C5:4 | D5:3 C5:1 A4:2 G4:2',
+    trim: 0.909, trimB: 0.872, rhythm: 'none', portamento: true,
   },
   // Real Keds. Her father is on the beat, and the music stops when he turns the corner.
   maureen: {
     inst: 'celesta', bpm: 128, chartStr: 'C6 | G7 C6', swing: MT.swingRag,
     mel: 'C6:1 E6:1 G6:2 E6:1 C6:1 G5:2 | A5:1 C6:1 E6:2 D6:1 r:3',
-    trim: 2.0, rhythm: 'boxy', copGag: true,
+    mel2: 'G5:1 C6:1 E6:2 G6:1 E6:1 C6:2 | B5:1 D6:1 G6:2 F6:1 r:3',
+    trim: 1.837, trimB: 1.805, rhythm: 'boxy', copGag: true,
   },
   // Named Tiny at four and has been growing out of it ever since.
   tommy: {
     inst: 'bass_drum', bpm: 104, chartStr: 'F6 | C7 F6', swing: MT.swing,
     mel: 'F2:2 F2:2 F2:2 F2:2 | F2:2 F2:2 F2:4',
-    trim: 2.63, rhythm: 'onemanband', tinyGag: true,
+    mel2: 'F2:2 F2:2 F2:1 F2:1 F2:2 | F2:2 F2:1 F2:1 F2:4',
+    trim: 2.621, trimB: 2.228, rhythm: 'onemanband', tinyGag: true,
   },
 };
 
-function buildWalkup(R, id, t0) {
+/**
+ * TWO TUNES PER KID, and this is not decoration.
+ * BYB-REFERENCE §5.4 names "the same walk-up plays every single time" as the
+ * criticism that sinks the original: by the twentieth at-bat a memorised sting
+ * stops being characterisation and becomes a tax on the player. So every kid
+ * carries a second written melody over the same chart, for the same instrument,
+ * in the same character — Sal still struts, Bessie still interrupts, Otto still
+ * quits early — and the game alternates them by at-bat index, deterministically.
+ * The variation is composed, not randomised; nothing here picks a note.
+ */
+function buildWalkup(R, id, t0, o = {}) {
   const spec = WALKUPS[id];
   if (!spec) return buildGenericWalkup(R, id, t0);
-  const P = planOf({ bpm: spec.bpm, swing: spec.swing, chartStr: spec.chartStr, seed: MT.seed + hash(id) });
-  const m = mel(spec.mel);
+  const alt = !!o.variant && !!spec.mel2;
+  const P = planOf({
+    bpm: spec.bpm, swing: spec.swing, chartStr: spec.chartStr,
+    seed: MT.seed + hash(id) + (alt ? 4801 : 0),
+  });
+  const m = mel(alt ? spec.mel2 : spec.mel);
   const name = instName(spec.inst);
 
   // The rhythm section is a whisper — the point is that you can name the instrument.
@@ -1591,7 +1666,8 @@ function buildWalkup(R, id, t0) {
   // The featured instrument, out front and unmistakable.
   const leadOpts = {
     gain: 1.25, chanGain: 1.35, portamento: !!spec.portamento,
-    glissTo: spec.glissTo, legato: spec.portamento ? 1.0 : 0.92, tag: 'feature',
+    glissTo: spec.glissTo, legato: spec.portamento ? 1.0 : 0.86, tag: 'feature',
+    ringLast: spec.ringLast ?? 1.25,
   };
   if (spec.tremolo) {
     // mandolin tremolo: re-pick at 11 Hz for the length of every long note
@@ -1599,7 +1675,7 @@ function buildWalkup(R, id, t0) {
       const t = t0 + eighthToTime(n.e, P.beat, P.swing);
       const dur = eighthToTime(n.e + n.dur, P.beat, P.swing) - eighthToTime(n.e, P.beat, P.swing);
       const step = 1 / 11;
-      const reps = Math.max(1, Math.round(dur / step));
+      const reps = Math.max(1, Math.round((n === m[m.length - 1] ? Math.max(dur, 1.25) : dur) / step));
       for (let i = 0; i < reps; i++) {
         R.note(name, n.midi, t + i * step + human(P, 4), step, (i === 0 ? 1.0 : 0.72) * n.vel * 1.2, { bus: 'lead', damp: step, chanGain: 1.35 });
       }
@@ -1629,7 +1705,13 @@ function buildWalkup(R, id, t0) {
   }
   if (spec.whistle) {
     R.note('penny_whistle', 76, t0 + tAt(P, 0, 6), 0.18, 0.5, { bus: 'lead' });
-    R.note('penny_whistle', 81, t0 + tAt(P, 1, 6), 0.30, 0.55, { bus: 'lead' });
+    // and he is already gone: the last whistle bends up and keeps going
+    R.note('penny_whistle', 81, t0 + tAt(P, 1, 6), 0.95, 0.58, { bus: 'lead', gliss: 6 });
+  }
+  if (spec.lastWord) {
+    // Bessie runs the argument. The band finishes; she does not. One more block,
+    // alone, a beat and a bit after everybody else has stopped.
+    R.note('wood_block', 74, t0 + tAt(P, m.bars - 1, 8) + 0.36, 0.09, 0.8, {});
   }
   if (spec.copGag) {
     // The cop turns the corner: two flat-footed clops, and the music stops dead.
@@ -1722,8 +1804,8 @@ const CUES = {
        * of it; the other half is the level, and the level now happens on its own
        * gain stage 40 ms before the barline and comes back on the downbeat of 15.
        */
-      const bar = 4 * P.beat;                    // 1.3043 s at 184
-      R.arrangeAt(t1 + BRK[0] * bar, -9, (BRK[1] - BRK[0]) * bar, 0.12, 0.04);
+      const barSec = 4 * P.beat;                 // 1.3043 s at 184
+      R.arrangeAt(t1 + BRK[0] * barSec, -9, (BRK[1] - BRK[0]) * barSec, 0.12, 0.04);
 
       partLead(R, P, t1, TITLE_HOOK, 'cornet', { gain: 1.15 });
       // The clarinet only harmonises the second half. The hook has to be heard
@@ -1749,7 +1831,7 @@ const CUES = {
       partBanjo(R, P, t0, { push: true });
       partBass(R, P, t0, { inst: 'string_bass' });
       partBrushes(R, P, t0, { gain: 0.9, ticks: 'all' });
-      partLead(R, P, t0, VAMP_RIFF, 'clarinet', { gain: 0.95 });
+      partLead(R, P, t0, VAMP_RIFF, 'clarinet', { gain: 0.95, legato: 0.70 });
       R.note('cornet_plunger', 65, t0 + tAt(P, 3, 6), 0.5, 0.6, { bus: 'lead' });
       R.note('cornet_plunger', 63, t0 + tAt(P, 7, 6), 0.6, 0.6, { bus: 'lead', gliss: -3 });
     },
@@ -1760,9 +1842,10 @@ const CUES = {
    * with one muted-cornet comment every fourth bar. It exists to be ducked.
    */
   bed_play: {
-    // BIBLE §7.5 / BYB §6.6: the bed sits 20 dB under the title. The +trim is the
-    // MEASURED difference in arrangement density between this and `title`, not a
-    // guess — bed RMS lands at title RMS − 20 dB with it.
+    // BIBLE §7.5: during a pitch the loudest thing on the mix is the kids, and
+    // music is "silent or a -20 dB bed". The trim is MEASURED against the thing
+    // that has to win — the announcer — through the engine's own graph, not
+    // guessed from the arrangement. See MUSIC_DEFAULTS for the three numbers.
     seconds: 25.6, span: 25.6, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimDb),
     build(R, t0, o = {}) {
       const pass = (o.pass | 0);
@@ -1802,13 +1885,19 @@ const CUES = {
            * empty air.
            */
           const nc = chordAt(P.bars, 0, 0);
-          let v = voiceLead(null, chordAt(P.bars, 3, 2), 55, 74, 4);
+          const v = voiceLead(null, chordAt(P.bars, 3, 2), 55, 74, 4);
           const up = [v[0], v[1], v[2], nearest(nc.bass, 62, 76, v[3])];
           for (let i = 0; i < 4; i++) {
             R.note('banjo', up[i], t + tAt(P, 3, 4 + i) + human(P, 6), 0.18,
-              (0.34 + i * 0.09) * accentAt(4 + i), { damp: 0.22 * P.beat, release: 0.05 });
+              (0.61 + i * 0.20) * accentAt(4 + i),
+              // the last one is an UP-stroke on the and-of-4 and it is allowed to
+              // ring straight across the barline, which is what actually joins
+              // one pass to the next
+              { damp: (i === 3 ? 0.46 : 0.24) * P.beat, release: i === 3 ? 0.14 : 0.05 });
           }
-          R.note('brush_swirl', 0, t + tAt(P, 3, 6) + human(P, 6), P.beat * 0.7, 0.6, {});
+          R.note('brush_swirl', 0, t + tAt(P, 3, 6) + human(P, 6), P.beat * 0.85, 0.95, {});
+          R.note('brush_tap', 0, t + tAt(P, 3, 6) + human(P, 5), 0.06, 0.7, {});
+          R.note('hi_hat', 0, t + tAt(P, 3, 7) + human(P, 5), 0.05, 0.6, {});
         }
       }
     },
@@ -1924,9 +2013,9 @@ const CUES = {
        * fifth.
        */
       partLead(R, P, t0, mel(`
-        F5:2 D5:2 Bb4:2 D5:2 | F5:3 G5:1 F5:2 D5:2 |
-        Eb5:2 G5:2 Bb5:3 A5:1 | Bb5:4 r:2 F5:2
-      `), 'harmonica', { bar: 8, gain: 0.62, legato: 0.7, lagMs: 12 });
+        F4:2 D4:2 F4:2 Bb4:2 | D4:2 F4:2 G4:2 D4:2 |
+        E4:2 G4:2 A4:2 C5:2 | Bb4:2 F4:2 D4:4
+      `), 'harmonica', { bar: 8, gain: 0.58, legato: 0.62, lagMs: 14, ringLast: 0.9 });
       R.note('cymbal', 0, t0 + tAt(P, 11, 6), 1.4, 0.7, {});
     },
   },
@@ -1957,7 +2046,8 @@ const CUES = {
       //     note climbing, and a press roll underneath getting louder ---------
       const c = chordAt(P.bars, 4, 0);
       R.note('tuba', nearest(c.bass, 28, 43, 36), t0 + tAt(P, 4, 0), 0.5, 0.95, { bus: 'bass' });
-      partLead(R, P, t0, mel('F5:3 A5:1 C6:4'), 'cornet', { bar: 4, gain: 1.15 });
+      // the soloist in a break sustains — he is the only one left playing
+      partLead(R, P, t0, mel('F5:3 A5:1 C6:4'), 'cornet', { bar: 4, gain: 1.15, legato: 0.96, ringLast: 1.1 });
       R.note('snare_roll', 0, t0 + tAt(P, 4, 1), P.beat * 3.0, 0.42, {});
       // and it is a HOLE: -10 dB across bar 5 (5.4545-6.8182 s at 176), back on
       // the downbeat of 6. A win theme has the shape of a joke — setup, a beat of
@@ -1966,10 +2056,10 @@ const CUES = {
       R.arrangeAt(t0 + barT(P, 4), -10, barT(P, 5) - barT(P, 4), 0.12, 0.04);
 
       // --- the payoff: everybody, on the one, and then it rings out ----------
-      partShout(R, P, t0, 5, 0, { hold: 1.15, gain: 1.6 });
-      partBanjoTremolo(R, P, t0, 5, 2.6, { rate: 17, gain: 0.45 });
-      R.note('cymbal', 0, t0 + barT(P, 5), 2.4, 1.2, {});
-      R.note('bass_drum', 0, t0 + barT(P, 5), 0.5, 0.7, {});
+      partShout(R, P, t0, 5, 0, { hold: 1.15, gain: 1.85 });
+      partBanjoTremolo(R, P, t0, 5, 2.6, { rate: 17, gain: 0.6 });
+      R.note('cymbal', 0, t0 + barT(P, 5), 2.4, 1.4, {});
+      R.note('bass_drum', 0, t0 + barT(P, 5), 0.5, 0.95, {});
     },
   },
 
@@ -2042,9 +2132,12 @@ const CUES = {
   /**
    * THE PROOF. The bed, plus the two things that outrank it, fired through the
    * same duck the live game uses:
-   *   t=1.60  an announcer line starts (−14 dB, held 1.10 s)
-   *   t=4.30  the bat connects       (−10 dB, 22 ms attack, held 0.18 s)
-   * Measure the RMS inside those windows against the bars either side.
+   *   t=1.60  an announcer line starts (−12 dB, held 1.10 s)
+   *   t=4.30  the bat connects        (−10 dB, 22 ms attack, held 0.18 s)
+   * Measure the RMS inside those windows against `duck_proof_flat`, which is the
+   * bit-identical arrangement with the ducking off. −12 is the SHIPPED announcer
+   * depth: it is `MIX.duck.voice.music` in src/audio/engine.js, the duck the game
+   * actually applies. This cue demonstrates that number and no other.
    */
   duck_proof: {
     seconds: 7, loop: false, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimDb + 7),
@@ -2084,25 +2177,38 @@ const CUES = {
 
 // every kid gets a cue, whether or not somebody wrote them a tune
 /**
- * One cue per kid. `trim` is per-sting mix gain, MEASURED not guessed: rendered
- * flat, the sixteen stings spanned 21 dB because a plucked mandolin is nothing
- * like a blown clarinet, and a family of stings that jumps 21 dB between kids
- * reads as sixteen accidents rather than one composer's bank. Each trim lands
- * its sting near -21 dBFS RMS without pushing its transient into the clip.
+ * One cue per kid per variant. `trim` / `trimB` are per-sting mix gains, MEASURED
+ * and not guessed: rendered flat, the stings spanned 21 dB, because a plucked
+ * mandolin is nothing like a blown clarinet and a bank that jumps 21 dB between
+ * kids reads as sixteen accidents rather than one composer's work. Every number
+ * below was set by rendering the sting THROUGH the engine's own graph, taking RMS
+ * across its sounding span, and solving for -32.0 dBFS; the last pass measured a
+ * 0.7 dB spread across all thirty-two. The two variants of one kid get separate
+ * trims because two different tunes on one instrument are two different levels.
  */
 function addWalkupCue(id) {
-  CUES[`walkup_${id}`] = {
-    seconds: 6, loop: false, bus: 'game',
-    gain: (WALKUPS[id] && WALKUPS[id].trim) || 1.4,
-    // 0.15 s of air before the sting, not 0.7: a walk-up fires the moment a kid
-    // is picked and half a second of nothing reads as a bug. Only Sal needs the
-    // long pre-roll, because his four manhole taps happen before his tune.
-    build(R, t0) { buildWalkup(R, id, t0 + ((WALKUPS[id] && WALKUPS[id].preroll) || 0.15)); },
+  const spec = WALKUPS[id] || null;
+  const mk = (suffix, variant, trim) => {
+    CUES[`walkup_${id}${suffix}`] = {
+      seconds: 6.6, loop: false, bus: 'game', variantOf: id,
+      gain: trim || 1.4,
+      // 0.15 s of air before the sting, not 0.7: a walk-up fires the moment a kid
+      // is picked and half a second of nothing reads as a bug. Only Sal needs the
+      // long pre-roll, because his four manhole taps happen before his tune.
+      build(R, t0) { buildWalkup(R, id, t0 + ((spec && spec.preroll) || 0.15), { variant }); },
+    };
   };
+  mk('', 0, spec && spec.trim);
+  if (spec && spec.mel2) mk('_b', 1, spec.trimB ?? spec.trim);
 }
 for (const kid of (ROSTER || [])) addWalkupCue(kid.id);
 // and if the roster ever fails to load, the hand-written ones still exist
 for (const id of Object.keys(WALKUPS)) if (!CUES[`walkup_${id}`]) addWalkupCue(id);
+/** Which sting a kid gets on their Nth trip to the plate. Deterministic, never random. */
+function walkupCue(id, n = 0) {
+  const b = `walkup_${id}_b`;
+  return (CUES[b] && (n % 2) === 1) ? b : `walkup_${id}`;
+}
 
 /* ==========================================================================
  * 12. THE MUSIC DIRECTOR — the score answers the game
@@ -2151,6 +2257,8 @@ class Music {
     let t = t0; let guard = 0;
     do { cue.build(R, t, { ...opts, pass }); t += span; pass++; }
     while (cue.loop && t < t0 + total - 0.05 && ++guard < 24);
+    // note tails ring past `total` on their own; only the endless ones are cut
+    R.endSources(t0 + total + 0.05);
     return R;
   }
 
@@ -2202,7 +2310,9 @@ class Music {
   ensureWorldRadio() {
     if (!this.enabled || !CUES.world_radio) return false;
     if ((this.layers || []).some((l) => l.cue === 'world_radio')) return false;
-    return this.play('world_radio', { layer: true });
+    // 0.40 under the bed's own level: one radio, one window, thin and far
+    // (PERIOD §1.9). The cue's own gain is set for auditioning it on its own.
+    return this.play('world_radio', { layer: true, gain: 0.40 });
   }
   /** Start (or switch to) the bed the game is currently asking for. */
   startBed() {
@@ -2306,7 +2416,10 @@ class Music {
     check('win', WIN_MEL, WIN_CHART);
     check('loss', LOSS_MEL, LOSS_CHART);
     check('radio', RADIO_MEL, RADIO_CHART);
-    for (const [id, s] of Object.entries(WALKUPS)) check(`walkup.${id}`, mel(s.mel), s.chartStr);
+    for (const [id, s] of Object.entries(WALKUPS)) {
+      check(`walkup.${id}`, mel(s.mel), s.chartStr);
+      if (s.mel2) check(`walkup.${id}.b`, mel(s.mel2), s.chartStr);
+    }
     return problems;
   }
 
@@ -2321,7 +2434,7 @@ class Music {
       stinger_sewer: [196, MT.swingHot], stinger_hit: [176, MT.swingHot],
     };
     if (t[name]) return { bpm: t[name][0], swing: t[name][1] };
-    const id = name.replace(/^walkup_/, '');
+    const id = name.replace(/^walkup_/, '').replace(/_b$/, '');
     if (WALKUPS[id]) return { bpm: WALKUPS[id].bpm, swing: WALKUPS[id].swing ?? MT.swing };
     return { bpm: 150, swing: MT.swing };
   }
@@ -2429,9 +2542,13 @@ export default registerSystem({
      * Each of them is idempotent: it only starts something if nothing better is
      * already playing, so an at-bat during a between-innings rag does not cut it off.
      */
+    // The front end must not still be playing once a pitch has been called; a
+    // moment (the between-innings rag, a win, a stinger) is allowed to finish.
+    const FRONT = new Set(['title', 'team_select']);
     const wantBed = () => {
       if (!music.enabled) return;
-      if (!music.current || music.current.startsWith('bed_')) music.startBed();
+      const c = music.current;
+      if (!c || c.startsWith('bed_') || FRONT.has(c)) music.startBed();
     };
     bus.on('atbat:begin', wantBed);
     bus.on('pitch:called', wantBed);
@@ -2440,10 +2557,13 @@ export default registerSystem({
     /* --- the score answers the game ------------------------------------ */
     // The announcer and the bat both outrank the band. Every plausible name the
     // announcer piece might emit is covered; whichever it uses, the band gets out.
-    // The engine's own mixer ducks `music` by -12 dB whenever the `voice` bus
-    // talks (MIX.duck.voice.music). Stacking our -14 on top of that would take
-    // the band to -26 and make it vanish, so ours only fires when the engine has
-    // no duck of its own. Either way the announcer wins, which is the rule.
+    //
+    // WHO ACTUALLY DUCKS. The engine's mixer pulls the whole `music` bus down by
+    // MIX.duck.voice.music = -12 dB every time the `voice` bus talks, and that is
+    // the shipped announcer duck. Ours is the SAME depth (MT.duckAnnouncerDb) and
+    // fires only if the engine has no ducker of its own, so the two can never
+    // stack to -24 and make the band disappear. Either way the announcer wins,
+    // which is the one rule this file has.
     const engineDucks = () => typeof (app.audio && app.audio.duck) === 'function';
     for (const ev of ['announcer:line', 'announcer:start', 'vo:line', 'vo:start', 'commentary', 'booth:line']) {
       bus.on(ev, (p) => {
@@ -2492,25 +2612,40 @@ export default registerSystem({
       return (typeof c === 'string' && CUES[`walkup_${c}`]) ? c : null;
     };
     let atBat = null;
+    const trips = new Map();          // kid -> how many times they have come up
+    let lastSting = -99;
     for (const ev of ['atbat:begin', 'batter:up', 'walkup', 'batter:ready']) {
       bus.on(ev, (p) => {
         const id = kidId(p);
         if (!id) return;
         atBat = id;
-        music.play(`walkup_${id}`, { layer: true });
+        // Several pieces announce the same at-bat (sim.js re-emits, the card UI
+        // emits its own), and two copies of one sting on top of each other is a
+        // phase mess, not a louder sting. One per second, and no more.
+        const ctx = music.ctx();
+        const now = ctx ? ctx.currentTime : 0;
+        if (ctx && now - lastSting < 1.0) return;
+        const n = trips.get(id) || 0;
+        // a sting that could not sound (no context yet, audio disabled) must not
+        // burn the kid's turn in the A/B rotation
+        if (!music.play(walkupCue(id, n), { layer: true })) return;
+        lastSting = now;
+        trips.set(id, n + 1);
       });
     }
     bus.on('ball:sewer', () => {
       music.play('stinger_sewer');
       // scheduled on the AUDIO clock, not a setTimeout: wall-clock timing is
       // non-deterministic and the harness forbids it (docs/CONTRACT.md)
-      if (atBat) music.play(`walkup_${atBat}`, { layer: true, delay: 1.2 });
+      if (atBat) music.play(walkupCue(atBat, (trips.get(atBat) || 1) - 1), { layer: true, delay: 1.2 });
     });
     bus.on('half:end', () => music.play('between_innings'));
     bus.on('game:over', (p) => {
       const s = (p && p.score) || { home: 0, away: 0 };
       music.play(s.home >= s.away ? 'win' : 'loss');
     });
+    // the card. BIBLE §7.3's first firing place — and the card always plays the
+    // kid's A-side, because that is the tune the game is teaching you here.
     bus.on('roster:picked', (p) => { if (p && p.id) music.play(`walkup_${p.id}`, { layer: true }); });
   },
   /**

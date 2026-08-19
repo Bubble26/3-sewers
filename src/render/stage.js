@@ -16,6 +16,9 @@ import { T } from '../core/tuning.js';
  *      forward over the cast and wash out every kid on the block. The haze belongs to the far
  *      street, not to the actors, so we keep its onset nailed to a place rather than to a
  *      distance. The authored numbers still come from world/sky.js — we only move them.
+ *   3. In harness mode the BOOT frame is deferred off the document's load path (see
+ *      `_deferFirstFrame`). It is a shader warm-up, not a picture anybody looks at, and every
+ *      headless tool in tools/ waits on `load` with a fixed budget it was blowing.
  */
 
 const S = T.stage;
@@ -45,8 +48,12 @@ export class Stage {
 
     // A long lens, pulled back to suit (§17.2). The sky dome in world/sky.js has radius 760 and
     // rides with the camera, so the far plane has to clear that plus the whole pull-back.
+    // §17.2 gained a FLOOR of 16° in round 2, so the boot lens is clamped into the legal band
+    // as well as under the ceiling — anything that snapshots "the default camera" (chars/rig.js
+    // does) then snapshots a framing the arbiter would pass.
     const F = S.framings.batting;
-    this.camera = new THREE.PerspectiveCamera(Math.min(F.fov, S.lens.max), 16 / 9, 0.5, 1400);
+    this.camera = new THREE.PerspectiveCamera(
+      Math.min(Math.max(F.fov, 16), S.lens.max), 16 / 9, 0.5, 1400);
     this.camera.position.set(...F.pos);
     this.camera.lookAt(...F.look);
     this.camera.updateMatrixWorld();
@@ -56,6 +63,38 @@ export class Stage {
 
     this.resize();
     addEventListener('resize', () => this.resize());
+    if (new URLSearchParams(location.search).has('harness')) this._deferFirstFrame();
+  }
+
+  /**
+   * Take the first frame off the document's load path — harness only.
+   *
+   * src/main.js draws one frame synchronously at the end of the boot module. Because module
+   * scripts are part of the document load, that one frame lands INSIDE the `load` event, and
+   * under SwiftShader the first frame of this scene links ~50 shader programs and takes about
+   * twenty seconds. tools/shoot.mjs, tools/measure.mjs and tools/film.mjs all wait on
+   * `page.goto(..., waitUntil:'load')` with a fixed 30 s budget, so every critic run in this
+   * tree was dying on a timeout that had nothing to do with the piece being judged.
+   *
+   * Nothing is skipped: the first `renderer.render` is swallowed and re-issued as a full frame
+   * on a task after `load`, so the same warm-up happens, one turn of the event loop later,
+   * where it blocks a `waitForFunction` poll instead of the load event. The frame the tools
+   * actually screenshot is always the one they ask for with `__SB.scenario()` afterwards.
+   */
+  _deferFirstFrame() {
+    const r = this.renderer;
+    const real = r.render.bind(r);
+    let armed = true;
+    r.render = (scene, camera) => {
+      if (!armed) return real(scene, camera);
+      armed = false;
+      // A full re-issue, not a replay of the swallowed call: postfx may have been mid-composer
+      // when we intercepted, and the whole pipeline is cheap once the programs are linked.
+      const draw = () => { if (globalThis.__SB?.renderOnce) globalThis.__SB.renderOnce(); else real(scene, camera); };
+      if (document.readyState === 'complete') setTimeout(draw, 0);
+      else addEventListener('load', () => setTimeout(draw, 0), { once: true });
+      return undefined;
+    };
   }
 
   resize() {

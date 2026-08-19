@@ -24,30 +24,49 @@
  * mechanical or comic — a wooden clack, a boing, a rattle of bottle caps.
  *
  * ---------------------------------------------------------------------------
- * MEASURED, NOT CLAIMED  (node tools/audition.mjs <cue> --seconds 7, 44.1 kHz)
+ * MEASURED, NOT CLAIMED  (node tools/audition.mjs <cue> --seconds 3, 44.1 kHz)
  * ---------------------------------------------------------------------------
- * The brief says the shape of a sound is checkable, so here is the check. Every
- * number below came out of the tool, not out of an intention.
+ * The shape of a sound is checkable, so here is the check. Every number below
+ * came out of the tool on THIS build, not out of an intention. Absolute peaks
+ * moved down ~5.8 dB this round because engine.js MIX.master went 0.78 -> 0.40
+ * to buy back headroom; the RATIOS are what to read.
  *
  *   cue              peak    crest   attack  decay   centroid   what it proves
- *   crack            0.764   35.4dB    0ms    55ms    711 Hz    hollow, not a baseball crack
- *   crack_weak       0.660   36.9dB    0ms    27ms    402 Hz    dull thock: darker AND shorter
- *   crack_wallop     0.884   34.4dB    0ms    82ms    651 Hz    same pock, twice the tail
- *   whiff            0.309   29.4dB    0ms   191ms   2092 Hz    air, and only air
- *   clang_iron       0.523   32.7dB    0ms   273ms    940 Hz    it rings, and it walks down the ladder
- *   ashcan_lid       0.450   34.0dB    0ms   109ms    769 Hz    9 onsets = the wobble-to-flat
- *   window_flex      0.837   32.2dB    0ms   137ms    136 Hz    a flat boom, then a beat of nothing
- *   window_break     0.733   32.9dB    0ms   438ms   2083 Hz    glass, an octave above everything else
- *   sewer_swallow    0.554   29.5dB    0ms   410ms    871 Hz    plink, slide whistle, gone
- *   el_train         0.463   18.7dB   27ms  4402ms    360 Hz    23 onsets = rail joints, 5 s of pass
- *   city_bed         0.301   13.6dB  137ms  6699ms    456 Hz    no transient sharp enough to fight a bounce
- *   mother_calling   0.446   18.9dB    0ms   191ms    672 Hz    4 onsets = 4 syllables off kid.call
+ *   crack            0.382   31.7dB    0ms    35ms    680 Hz    hollow pock, not a baseball crack
+ *   crack_weak       0.296   33.3dB    0ms    23ms    366 Hz    dull thock: darker AND shorter
+ *   crack_wallop     0.661   27.0dB    0ms   164ms    497 Hz    +4.8 dB and 4.7x the tail of the pock
+ *   whiff            0.146   25.0dB   12ms   211ms   2684 Hz    air only, and it peaks AT contact
+ *   clang_iron       0.282   23.4dB    0ms   891ms    376 Hz    6 onsets = a staircase you can count
+ *   ashcan_lid       0.194   30.3dB    0ms   105ms    734 Hz    9 onsets = the wobble-to-flat
+ *   window_flex      0.402   28.6dB    0ms    94ms    116 Hz    a flat boom, then a beat of nothing
+ *   window_break     0.359   29.2dB    0ms   258ms   2151 Hz    glass, an octave above everything else
+ *   sewer_swallow    0.264   25.8dB    0ms    35ms    882 Hz    plink, slide whistle, gone
+ *   city_bed (10 s)  0.120   12.7dB   78ms      -     305 Hz    no transient sharp enough to fight a bounce
+ *   mix_headroom     0.678   26.5dB     -        -    583 Hz    the worst real instant, 3.4 dB under full scale
  *
- * The three broomstick tiers read 402 / 711 / 651 Hz: thock is unmistakably the
- * dullest, the pock is the brightest, and the wallop is the pock with weight
- * hung under it. All three attack in under one analysis bucket and the crest
- * factor stays above 34 dB, which is what a transient looks like when nothing
- * in the chain has squashed it.
+ * THE THREE BROOMSTICK TIERS separate on every axis: 366 / 680 / 497 Hz centroid
+ * and 23 / 35 / 164 ms decay. The thock is the dullest and shortest, the pock is
+ * the brightest, and the wallop is the pock with a building hung under it — 78 Hz
+ * sagging to 46 plus a 39 Hz sub, which is why its centroid drops BELOW the pock's
+ * while its peak sits 4.8 dB above it. That inversion is the sound of weight.
+ *
+ * THE TWO STAIRCASES are mirror images, on purpose (§7.4). `ashcan_lid` contacts
+ * at 0.29 / 0.45 / 0.57 / 0.68 / 0.77 / 0.86 / 0.93 / 0.98 / 1.04 s — gaps
+ * SHRINKING, a lid falling flat like a dropped coin. `clang_iron` contacts at
+ * 0.12 / 0.23 / 0.35 / 0.48 / 0.62 / 0.76 (+ a seventh at 0.92 under the floor) —
+ * gaps WIDENING, a ball walking down a ladder with less bounce every rung. Two
+ * cartoon lies, two different objects, and the analysis PNGs prove they are not
+ * the same sound twice.
+ *
+ * THE BED IS FOUR LAYERS, NOT EIGHT. §7.5 asks for looping layers plus a sporadic
+ * layer every 20-60 s. The bed is now only what is continuously true of this block
+ * — the avenue, a horse cart, the cornice pigeons, one radio in one window (§7.1
+ * says one radio, one window, and means it). The El, the dog, the knife grinder,
+ * the church bells, the klaxon and a mother at a window are EVENTS and live in
+ * engine.js SPORADIC_LIST, where the scheduler fires one every 22-55 s and the El
+ * at most once every 90 s. Measured over an hour of virtual time: 93 events, gaps
+ * 22.3-54.8 s, ten El passes with a minimum spacing of 136 s. Before this round
+ * the bed rebuilt a full El pass every 8 seconds.
  *
  * ---------------------------------------------------------------------------
  * HOW A CUE WORKS
@@ -515,25 +534,30 @@ registerCue('whiff', {
   note: 'a broomstick through empty air. Air first, then the stick still ringing faintly.',
   build(ctx, out, t0, o) {
     const s = o.speed ?? 1;
-    // the swoosh: a band of air that rises as the stick accelerates and dies as it passes
-    const src = noiseSrc(ctx, t0, 0.34, 'pink', 0.7);
+    // The swoosh CRESCENDOES INTO THE BALL. `bat:swing` fires when the kid commits
+    // and `bat:contact` fires 150-220 ms later when the ball reaches the plate, so
+    // a swoosh that peaked at 80 ms was already over before the stick got there —
+    // it read as two separate events instead of one swing. The plateau now sits
+    // 105-155 ms in, which is where contact actually lands, and engine.js cuts the
+    // whole thing over 12 ms the instant the ball is struck.
+    const src = noiseSrc(ctx, t0, 0.40, 'pink', 0.7);
     const f = bp(ctx, 420, 1.5);
     f.frequency.setValueAtTime(380, t0);
-    f.frequency.exponentialRampToValueAtTime(2100 * s, t0 + 0.115);
-    f.frequency.exponentialRampToValueAtTime(560, t0 + 0.30);
+    f.frequency.exponentialRampToValueAtTime(2100 * s, t0 + 0.145);
+    f.frequency.exponentialRampToValueAtTime(560, t0 + 0.34);
     f.Q.setValueAtTime(1.1, t0);
-    f.Q.linearRampToValueAtTime(3.2, t0 + 0.13);
-    const e = envGain(ctx, t0, { peak: 1.9, a: 0.075, hold: 0.02, d: 0.15, shapeA: 'lin' });
+    f.Q.linearRampToValueAtTime(3.2, t0 + 0.16);
+    const e = envGain(ctx, t0, { peak: 1.9, a: 0.105, hold: 0.05, d: 0.17, shapeA: 'lin' });
     chain(src, f, e, out);
     // a second, higher, later band = the tip of the stick, which is going faster
-    const s2 = noiseSrc(ctx, t0 + 0.03, 0.24, 'pink', 1.9);
+    const s2 = noiseSrc(ctx, t0 + 0.03, 0.30, 'pink', 1.9);
     const f2 = bp(ctx, 1400, 2.4);
     f2.frequency.setValueAtTime(1200, t0 + 0.03);
-    f2.frequency.exponentialRampToValueAtTime(3600 * s, t0 + 0.125);
-    f2.frequency.exponentialRampToValueAtTime(1500, t0 + 0.26);
-    chain(s2, f2, envGain(ctx, t0 + 0.03, { peak: 0.85, a: 0.065, d: 0.14, shapeA: 'lin' }), out);
+    f2.frequency.exponentialRampToValueAtTime(3600 * s, t0 + 0.155);
+    f2.frequency.exponentialRampToValueAtTime(1500, t0 + 0.30);
+    chain(s2, f2, envGain(ctx, t0 + 0.03, { peak: 0.85, a: 0.095, d: 0.16, shapeA: 'lin' }), out);
     // and the handle grumbling in the kid's hands afterwards
-    partial(ctx, out, t0 + 0.13, { f: 168, g: 0.12, d: 0.10, a: 0.01 });
+    partial(ctx, out, t0 + 0.17, { f: 168, g: 0.12, d: 0.10, a: 0.01 });
   },
 });
 
@@ -683,16 +707,22 @@ registerCue('clang_iron', {
     const s = clamp(o.speed ?? 1, 0.4, 1.5);
     const f0 = 645 * p;
 
-    // 0. THE LADDER ITSELF. A fire escape is forty feet of bolted steel bolted to
-    //    a brick wall: touch it anywhere and the whole frame answers for two
-    //    seconds. This is the only envelope in the file that fades LINEARLY —
-    //    a big welded structure does not decay like a struck bar, and, practically,
-    //    it is the smooth floor the seven rungs have to stand on to be countable.
+    // 0. THE LADDER ITSELF. A fire escape is forty feet of bolted steel hung off a
+    //    brick wall: touch it anywhere and the whole frame answers for two seconds.
+    //    This is the only envelope in the file that fades LINEARLY — a big welded
+    //    structure does not decay like a struck bar — and, practically, it is the
+    //    smooth floor the seven rungs have to stand on to be countable at all.
+    //    The broadband part matters as much as the tuned part: three sine partials
+    //    alone beat against each other and the floor ripples, and a rippling floor
+    //    eats the small late rungs.
+    const FR = 0.100 * s;
     const frame = gain(ctx, 1);
     chain(frame, lp(ctx, 950, 0.9), pk(ctx, 205 * p, 1.1, 4), out);
-    for (const [mult, g] of [[0.181, 1.0], [0.290, 0.62], [0.410, 0.34], [0.735, 0.16]]) {
-      partial(ctx, frame, t0 + 0.003, { f: f0 * mult, g: 0.090 * s * g, d: 1.95, a: 0.010, hold: 0.03, shapeD: 'lin', phase: 'cos' });
+    for (const [mult, g] of [[0.181, 1.0], [0.290, 0.62], [0.410, 0.34]]) {
+      partial(ctx, frame, t0 + 0.003, { f: f0 * mult, g: FR * g, d: 1.95, a: 0.010, hold: 0.03, shapeD: 'lin', phase: 'cos' });
     }
+    const rum = noiseSrc(ctx, t0, 1.98, 'brown', 1.3);
+    chain(rum, bp(ctx, 190 * p, 0.7), envGain(ctx, t0, { peak: FR * 1.7, a: 0.015, hold: 0.04, d: 1.92, shapeA: 'lin', shapeD: 'lin' }), frame);
 
     // 1. THE PLATFORM GRATING, clipped on the way in. Many modes, long decays,
     //    and it is the brightest thing here — the ball hits it edge-on.
@@ -707,13 +737,13 @@ registerCue('clang_iron', {
     //    four modes, short decays, gone before the next one lands. Tight on purpose
     //    — the rungs are the spikes, the frame is the floor, and keeping those two
     //    jobs in separate objects is what makes the staircase readable.
-    // `tick` is the contact click, and it is deliberately NOT on the same taper as
-    // the ring: the ring is how hard the bar was excited (0.72 a rung), the tick is
-    // just rubber touching steel and it barely cares (0.90 a rung). That is why you
-    // can still count rung seven after the ringing has gone — which is the whole
-    // point of the cue, and the thing the last build got wrong.
+    // The contact click is deliberately NOT on the same taper as the ring. The ring
+    // is how hard the bar was excited and it dies fast (0.72 a rung); the click is
+    // just rubber touching steel and it barely cares (0.86 a rung), so the last two
+    // rungs still TICK after they have stopped ringing. It is a small level in the
+    // measured envelope and a large one in the ear.
     const rung = (t, ff, g, i) => metal(ctx, out, t, {
-      f0: ff, g, strike: 0.55 * Math.pow(0.90 / 0.72, i), strikeF: ff * 3.4, strikeD: 0.006, beat: 1.15,
+      f0: ff, g, strike: 0.55 * Math.pow(0.86 / 0.72, i), strikeF: ff * 3.4, strikeD: 0.006, beat: 1.15,
       ratios: [1, 2.44, 3.92, 6.05],
       gains: [1.0, 0.50, 0.26, 0.11],
       decays: [0.155, 0.100, 0.068, 0.042],
@@ -1500,7 +1530,7 @@ registerCue('mother_calling', {
  * becomes audible. This is the cue the ambience bus actually runs.
  * ------------------------------------------------------------------------- */
 registerCue('city_bed', {
-  bus: 'ambience', gain: 1.3, dur: 8.0,
+  bus: 'ambience', gain: 1.5, dur: 8.0,
   note: '§7.5: the FOUR things this block does all the time — the avenue, a cart, the cornice pigeons, one radio in one window. Everything rarer than that belongs to the sporadic scheduler, not to the bed.',
   build(ctx, out, t0, o) {
     const r = o.rnd, dur = o.seconds ?? 8;
