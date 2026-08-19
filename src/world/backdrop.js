@@ -262,7 +262,7 @@ function faceQuad(B, x, y0, y1, z0, z1, col, uv) {
  */
 const NEAR = [
   { x: 41, st: 5, brick: 'red', fe: 1, shop: 'tailor', tank: 1, pigeons: 1 },
-  { x: 16, st: 4, brick: 'ochre', fe: 1, shop: 'ice' },
+  { x: 16, st: 4, brick: 'ochre', fe: 1, shop: 'ice', flankSign: 'castoria' },
   { x: -9, st: 1, brick: 'red', bay: 1, roof: 'pots' },              // the quiet bay
   { x: -34, st: 1, brick: 'brown', shop: 'lunch', roof: 'sign' },
   { x: -59, st: 4, brick: 'brown', blind: 'uneeda', shop: 'laundry', tank: 1, coop: 1 },
@@ -270,20 +270,62 @@ const NEAR = [
 
 function buildNearFacade(card) {
   const r = new RNG(19250922);
-  for (const spec of NEAR) {
+  const nb = neighbourTops(NEAR);
+  NEAR.forEach((spec, i) => {
     const lot = cardLot(card, spec, r);
+    lot.flankSign = spec.flankSign || null;
     if (spec.bay) lot.ground = 'store';                 // wallGrid starts at the water table
     if (spec.blind) lot.sprites = SPRITES.slice(0, 4);
     buildTenement(card.rot, lot);
+    lotBack(card, lot, nb[i][1], nb[i][0]);
     if (spec.bay) wagonBay(card, lot, r);
     else if (lot.ground === 'store') buildStorefront(card.rot, lot);
     if (spec.blind) blindWall(card, lot, spec.blind);
     if (spec.roof === 'sign') roofSign(card, lot, 1, 10.5, 4.4, 0.42);
     if (spec.roof === 'pots') parapetPots(card, lot, r);
-  }
+  });
   plinth(card, -76, 78, 13, 34);
   curbDressing(card, r);
   apron(card, 84, CARD_Z.midBlock - 2, 92);
+}
+
+/**
+ * The back and two flanks of a lot. A stage flat is a solid thing seen from the wings; without
+ * this the roof decks read as floating shelves the moment the camera leaves the front.
+ */
+function lotBack(card, lot, leftTop, rightTop) {
+  const B = card.rotB('wallStone'), Sb = card.rotB('sign');
+  const top = storeyTop(lot.storeys) + M.corniceH - 0.3;
+  const x0 = lot.xf + 0.4, x1 = lot.xf + M.depth;
+  B.box(x1 - 1.2, 0, lot.z0 - 0.3, x1, top, lot.z0 + M.lot + 0.3,
+    (f) => (f === 'px' ? [0.60, 0.60, 0.63] : [0.48, 0.48, 0.52]), 'px pz nz', 8);
+  // party walls: only the strip the neighbour does not cover, exactly like a real block
+  const lo = Math.min(top - 0.5, Math.max(0, leftTop - 0.6));
+  if (top - lo > 1) {
+    B.box(x0, lo, lot.z0 - 0.25, x1, top, lot.z0 + 0.25, () => [0.90, 0.885, 0.845], 'nz', 8);
+    if (top - lo > 16 && lot.flankSign) {
+      const slot = card.atlas.get(`ghost:${lot.flankSign}`);
+      const h = Math.min(top - lo - 3, 26), w = Math.min(M.depth - 9, h * (slot.w / slot.h));
+      const ax = lot.xf + 4.5;
+      Sb.quad([ax, lo + 2, lot.z0 - 0.32], [ax + w, lo + 2, lot.z0 - 0.32],
+        [ax + w, lo + 2 + h, lot.z0 - 0.32], [ax, lo + 2 + h, lot.z0 - 0.32],
+        texTint(0.62), rectUV(slot), [0, 0, -1]);
+    }
+  }
+  const ro = Math.min(top - 0.5, Math.max(0, rightTop - 0.6));
+  if (top - ro > 1) {
+    B.box(x0, ro, lot.z0 + M.lot - 0.25, x1, top, lot.z0 + M.lot + 0.25, () => [0.50, 0.51, 0.56], 'pz', 8);
+  }
+}
+
+/** Roof height of each lot's two neighbours in a card row, for the party-wall strips. */
+function neighbourTops(specs) {
+  const tops = specs.map((sp) => storeyTop(sp.st) + M.corniceH);
+  return specs.map((sp, i) => {
+    const gapL = i > 0 && Math.abs(specs[i - 1].x - (sp.x + M.lot)) < 1;
+    const gapR = i < specs.length - 1 && Math.abs(sp.x - (specs[i + 1].x + M.lot)) < 1;
+    return [gapL ? tops[i - 1] : 0, gapR ? tops[i + 1] : 0];
+  });
 }
 
 /** The brick multiplier facade.js's wallGrid would have used, for infill we author ourselves. */
@@ -498,7 +540,7 @@ function apron(card, z0, z1, half) {
  * step is the whole trick of a stage set — it buys depth the lens is not allowed to.
  */
 const MID = [
-  { x: 8, st: 5, brick: 'red', fe: 1, pigeons: 1 },
+  { x: 8, st: 5, brick: 'red', fe: 1, pigeons: 1, flankSign: 'goldDust' },
   { x: 33, st: 4, brick: 'brown', fe: 1, tank: 1 },
   { x: 58, st: 5, brick: 'ochre', fe: 1, tank: 1 },
   { x: 83, st: 4, brick: 'red', fe: 1, coop: 1 },
@@ -509,10 +551,13 @@ const MID = [
 
 function buildMidBlock(card) {
   const r = new RNG(1925031);
-  for (const spec of MID) {
+  const nb = neighbourTops(MID);
+  MID.forEach((spec, i) => {
     const lot = cardLot(card, spec, r);
+    lot.flankSign = spec.flankSign || null;
     buildTenement(card.rot, lot);
-  }
+    lotBack(card, lot, nb[i][1], nb[i][0]);
+  });
   plinth(card, -134, 116, 11, 28);
   apron(card, 130, CARD_Z.farBlock - 2, 134);
 }
@@ -568,7 +613,7 @@ function massRow(card, o) {
             () => shadeLin(0x5a4a3c, 0.18), 'nz px nx');
         }
         Tb.cyl(tx, tz, 5.0, h + 11, h + 20, 12,
-          (n, c) => shadeLin(0x8e8579, farLit(n, c, SH) * 0.9), '');
+          (n, c) => shadeLin(0x8e8579, farLit(n, c, SH) * 0.9), 'py');
         Tb.cyl(tx, tz, 5.2, h + 19.5, h + 20.7, 12, () => shadeLin(0x4a4038, 0.16), '');
         Tb.box(tx - 0.4, h + 20.7, tz - 0.4, tx + 0.4, h + 24, tz + 0.4, () => shadeLin(0x4a4038, 0.2), 'nz px nx py');
       }
@@ -720,7 +765,7 @@ registerScenario('backdrop_layers', {
   seed: 1925,
   setup: ({ app }) => {
     app.sim.reset(1925);
-    setCam(app, [232, 138, -128], [-10, 24, 214], 22);
+    setCam(app, [300, 150, -60], [-20, 20, 180], 22);
   },
   settle: 0.4,
 });

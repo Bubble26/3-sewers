@@ -655,14 +655,17 @@ const instName = (n) => (INSTRUMENTS[n] ? n : (INSTRUMENT_ALIAS[n] || 'piano'));
  *   -> DUCK -> soft clip -> master -> out
  * ======================================================================== */
 class Render {
-  constructor(ctx, { seed = MT.seed, world = false, gain = 1 } = {}) {
+  constructor(ctx, { seed = MT.seed, world = false, gain = 1, dest = null } = {}) {
     this.ctx = ctx;
     this.rng = new RNG(seed);
     this.sr = ctx.sampleRate;
 
     this.master = ctx.createGain();
     this.master.gain.value = MT.masterGain * gain;
-    this.master.connect(ctx.destination);
+    // `dest` is how the audio engine's music bus gets to own the final balance.
+    // Offline renders go straight to the destination so a measurement is of the
+    // music and not of somebody else's mixer.
+    this.master.connect(dest || ctx.destination);
 
     this.limiter = ctx.createWaveShaper();
     this.limiter.curve = softClipCurve(0.74);
@@ -1638,15 +1641,19 @@ const CUES = {
     // BIBLE §7.5 / BYB §6.6: the bed sits 20 dB under the title. The +trim is the
     // MEASURED difference in arrangement density between this and `title`, not a
     // guess — bed RMS lands at title RMS − 20 dB with it.
-    seconds: 19.2, span: 19.2, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimDb),
+    seconds: 25.6, span: 25.6, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimDb),
     build(R, t0) {
       const P = planOf({ bpm: 150, swing: MT.swingHot, chartStr: BED_CHART, seed: MT.seed + 4 });
-      for (let rep = 0; rep < 3; rep++) {
+      // Four passes, four textures. A bed that plays the same four bars over and
+      // over becomes audible as a loop inside one inning (BYB §6.4), and an
+      // audible loop is worse than no music at all under an announcer.
+      for (let rep = 0; rep < 4; rep++) {
         const t = t0 + rep * barT(P, 4);
-        partBass(R, P, t, { inst: 'string_bass', gain: 0.9 });
-        partBanjo(R, P, t, { gain: 0.55, fills: rep === 1 });
-        partBrushes(R, P, t, { gain: 0.8, ticks: rep !== 0 });
+        partBass(R, P, t, { inst: 'string_bass', gain: rep === 3 ? 0.75 : 0.9 });
+        if (rep !== 2) partBanjo(R, P, t, { gain: 0.55, fills: rep === 1, push: rep === 3 });
+        partBrushes(R, P, t, { gain: rep === 2 ? 0.62 : 0.8, ticks: rep === 0 ? false : (rep === 3 ? 'all' : true) });
         if (rep === 1) partLead(R, P, t, BED_PUNCH, 'cornet_plunger', { gain: 0.55 });
+        if (rep === 2) partStride(R, P, t, { gain: 0.42, tenth: false });
       }
     },
   },
@@ -1659,6 +1666,11 @@ const CUES = {
       for (let bar = 0; bar < 4; bar++) {
         const c = chordAt(P.bars, bar, 0);
         R.note('string_bass', nearest(c.bass, 30, 42, 34), t0 + tAt(P, bar, 0), P.beat * 1.6, 0.95, { bus: 'bass', damp: P.beat * 1.6 });
+        // A CLOCK. Without a pulse this cue was a wash, and a wash is atmosphere,
+        // not tension — the player has to feel the count running out, and a bare
+        // wood block on 2 and 4 is the cheapest, oldest way to make them.
+        R.note('wood_block', 64, t0 + tAt(P, bar, 2), 0.09, 0.55 + bar * 0.06, { pan: -0.3 });
+        R.note('wood_block', 64, t0 + tAt(P, bar, 6), 0.09, 0.50 + bar * 0.06, { pan: -0.3 });
         partBanjoTremolo(R, P, t0, bar, 4, { rate: 15, gain: 0.42 });
         R.note('snare_roll', 0, t0 + tAt(P, bar, 0), P.beat * 3.6, 0.34 + bar * 0.10, {});
         // the clarinet trill climbs a semitone a bar and never resolves
@@ -1925,6 +1937,7 @@ class Music {
     this.enabled = true;
     this.current = null;
     this.mood = { tension: 0, rally: 0, intensity: 0.3 };
+    this.layers = [];
     this.count = { balls: 0, strikes: 0 };
     this.pendingBed = null;
   }
@@ -1950,6 +1963,7 @@ class Music {
       seed: MT.seed + hash(cue.seedAs || name),
       world: !!cue.world,
       gain: (cue.gain ?? 1) * (opts.gain ?? 1),
+      dest: opts.dest || null,
     });
     const total = opts.seconds ?? cue.seconds ?? 6;
     const span = this.span(name);
@@ -1975,6 +1989,12 @@ class Music {
     if (a && a.ctx) return a.ctx;
     return null;
   }
+  /** The engine owns the mix. If it has a music bus, the score plays into it. */
+  dest() {
+    const a = this.app && this.app.audio;
+    const b = a && a.graph && a.graph.buses && a.graph.buses.music;
+    return b || null;
+  }
   play(name, opts = {}) {
     if (!this.enabled || !CUES[name]) return false;
     const ctx = this.ctx();
@@ -1983,7 +2003,7 @@ class Music {
     const t0 = ctx.currentTime + 0.06;
     const loop = !!CUES[name].loop;
     const len = loop ? this.span(name) : (CUES[name].seconds || 6);
-    const R = this.renderInto(ctx, name, t0, { ...opts, seconds: len });
+    const R = this.renderInto(ctx, name, t0, { ...opts, seconds: len, dest: this.dest() });
     if (!R) return false;
     const entry = { R, cue: name, t0, endsAt: t0 + len, loop };
     if (opts.layer) { (this.layers = this.layers || []).push(entry); }
@@ -2028,14 +2048,20 @@ class Music {
   update(dt) {
     // moods relax; the score does not stay excited on its own
     this.mood.rally = Math.max(0, this.mood.rally - dt * 0.09);
+    const ctxNow = this.ctx();
+    // layered stingers were accumulating forever: one per big hit, for a whole
+    // game, each holding a graph. Retire them once they have rung out.
+    if (this.layers && this.layers.length && ctxNow) {
+      this.layers = this.layers.filter((e) => ctxNow.currentTime < e.endsAt + 3);
+    }
     if (!this.live) return;
-    const ctx = this.ctx();
+    const ctx = ctxNow;
     if (!ctx) return;
     if (this.live.loop && ctx.currentTime > this.live.endsAt - 0.45) {
       const name = this.live.cue;
       const t0 = this.live.endsAt;
       const len = this.span(name);
-      const R = this.renderInto(ctx, name, t0, { seconds: len });
+      const R = this.renderInto(ctx, name, t0, { seconds: len, dest: this.dest() });
       this.live = { R, cue: name, t0, endsAt: t0 + len, loop: true };
     } else if (!this.live.loop && ctx.currentTime > this.live.endsAt + 1.5) {
       this.live = null; this.current = null;
@@ -2099,13 +2125,20 @@ function attachToEngine(app) {
   if (!A || attachedTo === A) return;
   attachedTo = A;
 
+  // The engine's cue contract is build(ctx, out, t, opts) on bus 'music', so the
+  // score registers in exactly that shape: anything else in the game can then
+  // call app.audio.play('walkup_sal') and get it through the real mix, and the
+  // engine's own offline path can render it too.
   if (typeof A.registerCue === 'function') {
     for (const name of music.cueNames()) {
+      const cue = CUES[name];
       try {
         A.registerCue(name, {
-          seconds: CUES[name].seconds,
-          render: (ctx, t0, opts) => music.renderInto(ctx, name, t0, opts),
-          play: (opts) => music.play(name, opts),
+          bus: 'music', gain: 1, dist: 0, send: 0.06,
+          dur: cue.seconds || 6,
+          note: `1920s score — ${name}`,
+          build: (ctx, out, t, opts = {}) =>
+            music.renderInto(ctx, name, t, { ...opts, dest: out, seconds: opts.seconds || cue.seconds }),
         });
       } catch (e) { /* the engine's API is not ours to fight with */ }
     }
@@ -2156,9 +2189,20 @@ export default registerSystem({
     /* --- the score answers the game ------------------------------------ */
     // The announcer and the bat both outrank the band. Every plausible name the
     // announcer piece might emit is covered; whichever it uses, the band gets out.
+    // The engine's own mixer ducks `music` by -12 dB whenever the `voice` bus
+    // talks (MIX.duck.voice.music). Stacking our -14 on top of that would take
+    // the band to -26 and make it vanish, so ours only fires when the engine has
+    // no duck of its own. Either way the announcer wins, which is the rule.
+    const engineDucks = () => typeof (app.audio && app.audio.duck) === 'function';
     for (const ev of ['announcer:line', 'announcer:start', 'vo:line', 'vo:start', 'commentary', 'booth:line']) {
-      bus.on(ev, (p) => music.duck(MT.duckAnnouncerDb, (p && p.seconds) || 1.1, MT.duckRelease, MT.duckAttack));
+      bus.on(ev, (p) => {
+        if (engineDucks()) return;
+        music.duck(MT.duckAnnouncerDb, (p && p.seconds) || 1.1, MT.duckRelease, MT.duckAttack);
+      });
     }
+    // The crack of the bat is on the sfx bus and the engine's duck table has no
+    // sfx source, so nothing else in the game gets the band out of the way of the
+    // one sound the whole piece is built around. This does.
     bus.on('bat:contact', (p) => {
       music.duck(MT.duckCrackDb, MT.crackHold, MT.crackRelease, MT.crackAttack);
       if (p && (p.quality > 0.75 || p.power > 0.75)) music.play('stinger_hit', { layer: true });

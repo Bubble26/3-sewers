@@ -82,13 +82,13 @@ const COMPOSITION = {
     // Plate down on the floor of the frame (§17.4 "plate in the lower third"), the cast
     // centred across it, and a small bias left so the batter's body sits off the pitcher
     // rather than in front of him.
-    plateY: -0.76,
-    biasX: 0.05,
+    plateY: -0.74,
+    biasX: 0.04,
     // Where the back of the stage lands. This is what actually chooses the elevation: on a
     // long lens the cast's vertical spread is proportional to tan(pitch), so asking for the
     // deepest kid's head at a particular height IS asking for a camera height — and it stays
     // true when the field-layout piece moves somebody.
-    deepY: 0.62,
+    deepY: 0.56,
     // Nobody may tower: this is a shot of a batter, not a shot of an on-deck kid's elbow.
     softMaxPct: 27,
     fovBias: 0.55,
@@ -97,9 +97,9 @@ const COMPOSITION = {
   field: {
     // The wide one: a steeper seat in the same theatre. Plate on the floor, the whole stage
     // stacked above it, and enough elevation that the fielders separate instead of stacking.
-    plateY: -0.84,
+    plateY: -0.90,
     biasX: 0.0,
-    deepY: 0.78,
+    deepY: 0.88,
     softMaxPct: 27,
     fovBias: 0.35,
     pitchBias: 0.10,
@@ -292,7 +292,7 @@ function score(cast, comp, view, fov, dist, pitchDeg, detail) {
     if (!m) { cost += BAD; continue; }
     // §17.4 asks for a stage with the whole cast on it, so leaving somebody out of frame is a
     // failure of the framing, not a clever way to dodge the size floor.
-    const outX = Math.max(0, Math.abs(m.x) - 0.92);
+    const outX = Math.max(0, Math.abs(m.x) - 0.88);
     const outY = Math.max(0, m.yTop - 0.96, -0.97 - m.yBot);
     if (outX > 0 || outY > 0) cost += BAD * 0.9 * (outX + outY);
     if (m.pct < LIMIT.kidMin) cost += BAD * (LIMIT.kidMin - m.pct);
