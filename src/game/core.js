@@ -24,9 +24,12 @@
  *    as the source. Determinism is the whole point: same seed, same ball game.
  * 3. EVERY constant lives in T.play in src/core/tuning.js, with the measurement
  *    comments that justify it. Read those comments before you retune anything.
- * 4. If you change a rule, run `node tools/soak.mjs`. The baseline is 13.8 runs a
- *    game, 3.6 sewer shots and a smashed window about every 13 games. If your
- *    change moves those, you changed the game, not a detail.
+ * 4. If you change a rule, run `node tools/soak.mjs`. It plays their twelve kids
+ *    through these rules as a control — that run has to stay on their published
+ *    13.8 runs a game, 3.6 sewer shots and a window about every 13 games — and then
+ *    plays our sixteen, which score about two runs a game less because our block is
+ *    deeper and its hitting is split on purpose. Move the control and you have
+ *    broken the port; move only the block and you have changed the game.
  */
 
 import { RNG, rng as sharedRng } from '../core/rng.js';
@@ -79,16 +82,26 @@ const byDesc = (ids, score) => [...ids].sort((a, b) => score(b) - score(a));
    rhythm used to beat reading the pitch, because the three ideal presses sat
    inside one contact window. Narrow the gaps and the mechanic the game is named
    after becomes decoration again.
+
+   One oddity, flagged rather than silently fixed: read this way the drop bounces
+   40ms after release (0.62 - 0.58), which sits badly next to "lobs high, falling".
+   The other reading — pitchTB as release-to-bounce — puts the gaps at 60ms and
+   120ms and contradicts their own published table, so it is not the reading that
+   survives. Whoever builds the actual flight should re-measure against the table,
+   not against the constant, and say what they find here.
    ========================================================================= */
 
 export const PITCH_TYPES = ['fast', 'spinner', 'drop'];
+/** The six posts a stickball side fields (their POS_LIST). Our stage stages eight. */
+export const POSITIONS = P.positions;
 const PRESS_LEAD = 0.05;                 // a press lands 50ms before the ball crosses
 
 export function pitchTiming(type) {
-  const toPlate = P.pitchTimes[type];
-  const bounceToPlate = P.pitchTB[type];
+  const k = P.pitchTimes[type] ? type : 'fast';
+  const toPlate = P.pitchTimes[k];
+  const bounceToPlate = P.pitchTB[k];
   return {
-    type,
+    type: k,
     toPlate,                                       // release -> plate
     bounceAt: toPlate - bounceToPlate,             // release -> the one bounce
     bounceToPlate,                                 // the read window
@@ -176,6 +189,11 @@ export class MatchCore {
     pool = byDesc(pool, (id) => this.stat(id, 'SPD'));
     out.LF = pool.shift();
     out.RF = pool.shift();
+    // Short sides happen on a real block: with fewer than six kids somebody covers two
+    // spots and everybody shouts about which two. Their engine assumed six; ours does
+    // not, because our team-select lets you play four a side if that is who showed up.
+    let spare = 0;
+    for (const pos of P.positions) if (!out[pos]) out[pos] = ids[spare++ % ids.length];
     return out;
   }
 
@@ -341,7 +359,7 @@ export class MatchCore {
 
   classifyInPlay(b, quality, pull) {
     const I = P.inplay;
-    const S = P.street;
+    const S = P.streetRules;
     const pwr = this.stat(b, 'PWR');
     if (this.quirkOf(b) === 'wallop') quality = Math.max(quality, I.wallopFloor);
 
@@ -417,14 +435,14 @@ export class MatchCore {
 
     if (loft === 'fly') {
       if (this.rng.next() < this.catchProb(fpos)) { play.result = 'out_fly'; return play; }
-      play.result = carry > P.field.flyDoubleCarry ? 'double' : 'single';
+      play.result = carry > P.gloves.flyDoubleCarry ? 'double' : 'single';
       play.bases = play.result === 'double' ? 2 : 1;
       return play;
     }
 
     if (loft === 'line') {
-      if (this.rng.next() < this.catchProb(fpos) * P.field.lineCatchScale) { play.result = 'out_line'; return play; }
-      const two = carry > P.field.lineDoubleCarry && this.rng.next() < P.field.lineDoubleOdds;
+      if (this.rng.next() < this.catchProb(fpos) * P.gloves.lineCatchScale) { play.result = 'out_line'; return play; }
+      const two = carry > P.gloves.lineDoubleCarry && this.rng.next() < P.gloves.lineDoubleOdds;
       play.result = two ? 'double' : 'single';
       play.bases = two ? 2 : 1;
       return play;
@@ -511,7 +529,7 @@ export class MatchCore {
 
   // ── gloves ────────────────────────────────────────────────────────────────
   nearestFielder(carry, lane, loft) {
-    const F = P.field;
+    const F = P.gloves;
     if (carry > F.deepAt || loft === 'fly') return lane < 0 ? 'LF' : 'RF';
     if (lane < F.ssLane) return 'SS';
     if (lane > F.firstLane) return '1B';
@@ -519,7 +537,7 @@ export class MatchCore {
   }
 
   catchProb(pos) {
-    const F = P.field;
+    const F = P.gloves;
     const id = this.positions[this.fieldingSide()][pos];
     let p = F.catchBase + this.stat(id, 'GLV') * F.catchPerGlv;
     if (this.teamHasQuirk(this.fieldingSide(), 'spit_shine')) p += F.spitShine;
@@ -723,10 +741,14 @@ export const splitSides = pickSides;
 export function blockRoster() { return playRoster(ROSTER); }
 export function blockIds() { return ROSTER.map((k) => k.id).sort(); }
 
-/** A ready-to-play match between two halves of the block. */
-export function newMatch({ seed = 0, user = 1, innings = P.innings, rng = null } = {}) {
-  const [away, home] = pickSides(blockIds());
-  return new MatchCore({ rng }).setup(away, home, blockRoster(), user, innings, seed);
+/**
+ * A ready-to-play match between two halves of the block. Pass `away`/`home` to use
+ * sides somebody else picked — which is what the team-select screen should do the
+ * day it becomes authoritative; see setLiveLineups below.
+ */
+export function newMatch({ seed = 0, user = 1, innings = P.innings, rng = null, away = null, home = null } = {}) {
+  const sides = (away && home) ? [away, home] : pickSides(blockIds());
+  return new MatchCore({ rng }).setup(sides[0], sides[1], blockRoster(), user, innings, seed);
 }
 
 /* ============================================================================
@@ -742,6 +764,18 @@ export function newMatch({ seed = 0, user = 1, innings = P.innings, rng = null }
 
 const live = newMatch({ rng: sharedRng, user: 1 });
 export { live as liveMatch };
+
+/**
+ * The seam for the team-select screen (src/ui/teamselect.js): when the two captains
+ * have finished choosing up sides, hand the two lists of kid ids here and the rules
+ * core plays that game instead of the one it picked for itself. `user` is which side
+ * the player has — 1 for the gang, who bat last.
+ */
+export function setLiveLineups(away, home, user = 1) {
+  live.setup(away, home, blockRoster(), user, P.innings, 0);
+  live.rng = sharedRng;
+  return live;
+}
 
 /** sim tracks base occupancy only; the core wants kids. Nearest honest guess. */
 function syncFromSim(sim) {

@@ -154,17 +154,18 @@ export const T = {
       flyAt: 0.78, flyOdds: 0.6,                    // >0.78 quality: fly 60% / line 40%
       midAt: 0.5, midLineOdds: 0.55, midFlyOdds: 0.5,
     },
-    // The street itself. Every one of these is a signature moment, so they are
-    // deliberately rare enough to stay a moment.
-    street: {
+    // The street itself — named streetRules, not street, because T.street above is
+    // geometry and these are rules. Every one of them is a signature moment, so they
+    // are deliberately rare enough to stay a moment.
+    streetRules: {
       windowCarry: 0.75, windowLane: -0.55, windowOdds: 0.5,   // deep pull-side fly smashes glass = HOME RUN you sprint away from
       sewerCarry: 0.55,                                        // over the sewers on the fly
       sewerTwo: 0.72, sewerThree: 0.9,                         // graded in sewers, out loud, by the Gooch
       fireEscapeCarry: 0.38, fireEscapeLane: 0.7, fireEscapeOdds: 0.25,  // rattles into the ironwork = ground-rule double
-      flivverLane: 0.85, flivverCarry: 0.3, flivverOdds: 0.3,  // off Mr. Esposito's flivver — live carom
+      flivverLane: 0.85, flivverCarry: 0.3, flivverOdds: 0.3,  // off the parked Ford's fender — live carom (theirs: Mr. Esposito's flivver)
     },
     // Gloves. catch = 0.3 + HANDS*0.05, clamped; a liner is much harder than a fly.
-    field: {
+    gloves: {
       catchBase: 0.3, catchPerGlv: 0.05, catchMin: 0.2, catchMax: 0.92,
       spitShine: 0.08,            // quirk 'spit_shine': his side's gloves never let one slip
       lineCatchScale: 0.55,

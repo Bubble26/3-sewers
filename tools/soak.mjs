@@ -5,6 +5,7 @@
  *   node tools/soak.mjs                 # the acceptance run
  *   node tools/soak.mjs --games 400     # the same distributions, less noise
  *   node tools/soak.mjs --verbose       # a line per game
+ *   node tools/soak.mjs --game 6        # one seeded game written out pitch by pitch
  *
  * A port of tests/sim_test.gd from the Godot stickball project our rules core came
  * from (docs/godot-reference/, docs/PORT-SPEC.md), which published three numbers
@@ -40,6 +41,7 @@ const SETTLED = num('settled', 400);      // the low-noise control: 40 games of 
 const INNINGS = num('innings', T.play.innings);
 const GUARD = num('guard', 3000);         // their hang guard: 3000 pitches in one game
 const VERBOSE = argv.includes('--verbose');
+const GAME = argv.indexOf('--game') >= 0 ? Number(argv[argv.indexOf('--game') + 1] || 1) : 0;
 
 const BASE = {
   runs: { target: 13.8, tol: 2.0, label: 'runs a game' },
@@ -107,6 +109,71 @@ function soak(roster, away, home, games) {
   return r;
 }
 
+// ── one game, written out ───────────────────────────────────────────────────
+// Not commentary — the announcer is somebody else's piece and has its own voice.
+// This is Beans keeping the score in her head, out loud: every ported rule in one
+// screen, which is the only way a rules core can be looked at.
+function scorecard(roster, away, home, seed, nickOf) {
+  const core = new MatchCore().setup(away, home, roster, -1, INNINGS, seed);
+  const line = [];
+  let guard = 0, half = -1;
+  const halfName = () => `${core.half === 0 ? 'TOP' : 'BOT'} ${core.inning}`;
+  while (!core.gameOver && guard < GUARD) {
+    guard += 1;
+    if (half !== core.inning * 2 + core.half) {
+      half = core.inning * 2 + core.half;
+      line.push(d(`    ── ${halfName()} ─────────────────────────────────────`));
+    }
+    const batter = nickOf(core.batterId());
+    const before = `${core.outs} out  ${core.balls}-${core.strikes}`;
+    const p = core.makeCpuPitch();
+    core.beginPitch(p);
+    const sw = core.cpuSwing(p);
+    const ev = sw.swing ? core.resolveSwing(sw.errMs) : core.resolveNoSwing();
+    let say = '';
+    if (ev.kind === 'ball') say = d(`ball ${ev.count.b}`);
+    else if (ev.kind === 'strike') say = d(`called strike ${ev.count.s}`);
+    else if (ev.kind === 'whiff') say = d(`swing and a miss, strike ${ev.count.s}`);
+    else if (ev.kind === 'foul') say = d('fouled off down the block');
+    else if (ev.kind === 'strikeout') say = 'STRUCK OUT';
+    else if (ev.kind === 'walk') say = 'takes his base';
+    else if (ev.kind === 'in_play') {
+      const where = ev.lane < -0.4 ? 'pulled at the window side' : ev.lane > 0.4 ? 'the other way, past the flivver' : 'up the middle';
+      if (ev.window) say = b(`THROUGH MRS. KOWALSKI'S WINDOW — and he is running. ${ev.runs} in.`);
+      else if (ev.result === 'hr') say = b(`${ev.sewers} SEWER${ev.sewers > 1 ? 'S' : ''}, ${where}. ${ev.runs} in.`);
+      else if (ev.fireEscape) say = `off the fire escape, rattles down the ironwork — ground-rule two`;
+      else if (ev.result === 'double') say = `two bases, ${where}${ev.flivver ? ', off the flivver' : ''}`;
+      else if (ev.result === 'single') say = `on for one${ev.flivver ? ', off the flivver' : ''}`;
+      else if (ev.result === 'out_fly') say = d(`caught by ${ev.fielder}`);
+      else if (ev.result === 'out_line') say = d(`speared on a line by ${ev.fielder}`);
+      else if (ev.result === 'out_ground') say = d('beaten to the stoop');
+      else say = d(ev.result);
+      if (ev.runs > 0 && ev.result !== 'hr') say += `  (${ev.runs} in)`;
+    }
+    if (say) line.push(`    ${d(before.padEnd(11))}  ${batter.padEnd(9)} ${say}`);
+    const h = core.checkHalf();
+    if (h.cheese) line.push(yellow('           CHEESE IT! — the cop turns the corner, and everybody is suddenly just standing here'));
+    if (h.over) line.push(b(`    ${core.winnerText()}   ${core.score[0]}-${core.score[1]}${core.finalNote ? '   ' + core.finalNote : ''}`));
+  }
+  return line;
+}
+
+// ── determinism ─────────────────────────────────────────────────────────────
+// The whole critique loop rests on same seed, same ball game. One Math.random in
+// the core would quietly rot every number above, so we check rather than assume.
+function digest(roster, away, home, seed) {
+  const core = new MatchCore().setup(away, home, roster, -1, INNINGS, seed);
+  let h = 2166136261, guard = 0;
+  const eat = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } };
+  while (!core.gameOver && guard < GUARD) {
+    guard += 1;
+    const ev = core.playPitch();
+    eat(`${ev.kind}|${ev.result || ''}|${ev.runs || 0}|${core.score[0]}-${core.score[1]}|${core.outs}`);
+    core.checkHalf();
+  }
+  return (h >>> 0).toString(16);
+}
+
 // ── the two rosters ─────────────────────────────────────────────────────────
 // Their twelve, read straight from the reference dump. It is a test fixture and
 // nothing else: none of it reaches the game, which uses our sixteen.
@@ -141,6 +208,8 @@ const against = (got, spec, { hard = true } = {}) => {
 
 console.log('');
 console.log(b('  THREE SEWERS — RULES SOAK') + d(`   ${INNINGS} innings, CPU on both sides, ${ms}ms`));
+console.log('  ' + d(`${green('OK')} is inside the published tolerance. ${yellow('----')} is reported but not required: the`));
+console.log('  ' + d('baselines were measured on the control matchup and belong to it, not to our block.'));
 
 console.log('');
 console.log(b('  THE CONTROL') + d(`  their twelve kids, their split, our ported rules — ${GAMES} games, seeds 1..${GAMES}`));
@@ -176,7 +245,7 @@ row('sewer shots by', [...block.byKid.entries()].sort((x, y) => y[1] - x[1]).sli
 const gap = settled.runsPer - block.runsPer;
 if (Math.abs(gap) > 0.6) {
   console.log('');
-  console.log('  ' + d(`the block scores ${gap.toFixed(1)} runs a game ${gap > 0 ? 'under' : 'over'} the control on the same rules.`));
+  console.log('  ' + d(`the block scores ${gap.toFixed(1)} runs a game ${gap > 0 ? 'under' : 'over'} the settled control, on the same rules.`));
   console.log('  ' + d('our sixteen are eight a side against their six, and our hitting is deliberately split —'));
   console.log('  ' + d('Tiny can only wallop, Rosie can only meet it — so the two halves of a hitter rarely'));
   console.log('  ' + d('arrive in the same kid. That costs runs and it buys characters. It is not a port bug.'));
@@ -186,6 +255,15 @@ if (block.runsPer < 6 || block.runsPer > 20) {
   console.log('  ' + red(`the block is at ${block.runsPer.toFixed(1)} runs a game, outside the sane band of 6 to 20`));
 }
 
+// Same seed, same ball game — or nothing above means anything.
+const dA = digest(ourRoster, visitors, gang, 1);
+const dB = digest(ourRoster, visitors, gang, 1);
+const dC = digest(ourRoster, visitors, gang, 2);
+if (dA !== dB || dA === dC) broken += 1;
+console.log('');
+console.log('  ' + d(`replay: seed 1 twice -> ${dA} / ${dB}${dA === dB ? ' identical' : red(' DIFFERENT — something in the core is not on our PRNG')}`)
+  + d(`, seed 2 -> ${dC}`));
+
 // The measurement the timing constants exist to protect (T.play, and PORT-SPEC).
 const gaps = pressGaps();
 console.log('');
@@ -193,12 +271,22 @@ console.log('  ' + d(`the hop is still a tell: ideal presses ${gaps.presses.map(
   + `, gaps ${gaps.gaps.map((t) => Math.round(t) + 'ms').join(' and ')}`
   + `, perfect window ${Math.round(gaps.perfectWindowMs)}ms wide.`));
 console.log('  ' + d('A blind fixed rhythm cannot sit inside more than one of those. Do not close the gaps up.'));
+const sharp = pressGaps(9).perfectWindowMs;
+console.log('  ' + d(`honestly: at the block's best EYE the perfect window opens to ${Math.round(sharp)}ms, wider than the`));
+console.log('  ' + d('120ms gap, so Rosie and Fanny could still cover fast and spinner off one rhythm. Their'));
+console.log('  ' + d('measurement was taken at an average eye. Re-measure before trusting it for the best.'));
 
 const carried = Object.keys(QUIRK_HOLDER).length;
 const total = Object.keys(QUIRKS).length - 1;      // 'none' is not a mechanic
 if (carried < total) broken += 1;
 console.log('  ' + d(`${carried} of ${total} quirks carried: `)
   + d(Object.entries(QUIRK_HOLDER).map(([q, id]) => `${q}=${nick(id)}`).join(' ')));
+
+if (GAME) {
+  console.log('');
+  console.log(b(`  SEED ${GAME}, PITCH BY PITCH`) + d('   every ported rule, written out'));
+  for (const l of scorecard(ourRoster, visitors, gang, GAME, nick)) console.log(l);
+}
 
 console.log('');
 console.log(hangs === 0 && broken === 0 ? green(b('  SIM OK')) : red(b(`  SIM FAIL — ${hangs} hangs, ${broken} numbers out`)));

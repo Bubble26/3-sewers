@@ -546,8 +546,14 @@ export const SHARED_NICKS = (() => {
  * It is not linear on purpose: a 4 is meant to be a kid the block talks about, so the
  * top mark is worth more than the step below it. Under this map our sixteen average
  * PWR 5.6 / CON 6.1 / SPD 5.8 / ARM 5.9 / GLV 6.3 against the 5.4 / 6.2 / 5.8 / 5.7 / 6.5
- * of the roster the engine was balanced on, which is why tools/soak.mjs lands on their
- * run-scoring baseline without touching a rule.
+ * of the roster the engine was balanced on — the same kids, in their units.
+ *
+ * Our block still scores about 2 runs a game less than theirs on the identical rules,
+ * and that is a roster fact rather than a scale error: we are eight a side against
+ * their six, and our hitting is split on purpose, so power and eye rarely arrive in
+ * the same kid. `node tools/soak.mjs` prints both — their roster through our rules
+ * (the port check, which does land on the baseline) and ours (which is what ships).
+ * Move this table only after reading that report, and re-read it after.
  */
 export const PLAY_SCALE = [0, 2, 4, 6, 9];
 
