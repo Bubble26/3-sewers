@@ -350,7 +350,9 @@ function faceQuad(B, x, y0, y1, z0, z1, col, uv) {
 const NEAR = [
   { x: 41, st: 5, brick: 'red', fe: 1, shop: 'tailor', tank: 1, pigeons: 1 },
   { x: 16, st: 4, brick: 'ochre', fe: 1, shop: 'ice', flankSign: 'castoria' },
-  { x: -9, st: 1, brick: 'red', bay: 1, roof: 'pots', tank: 1 },     // the quiet bay
+  { x: -9, st: 1, brick: 'red', bay: 1, roof: 'pots' },              // the quiet bay
+  // (no tank: city pressure reached six storeys, so a tank on a one-storey taxpayer is both
+  //  wrong and, dead centre of the notch, the largest dark silhouette in the frame)
   { x: -34, st: 1, brick: 'brown', shop: 'lunch', roof: 'sign', coop: 1, pigeons: 1 },
   { x: -59, st: 4, brick: 'brown', blind: 'uneeda', shop: 'laundry', tank: 1, coop: 1 },
 ];

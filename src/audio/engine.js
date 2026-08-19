@@ -21,9 +21,9 @@
  *   cue.build()  ---------------------------\
  *   or a rendered AudioBuffer of cue.build() -+-> [gain: cue x play x 1/(1+d/ref)]
  *                                                        |
- *                     [delay d/1125] -> [highshelf 1800 Hz, -16 dB by 170 ft]
+ *                     [delay d/1125] -> [highshelf 900 Hz, -20 dB by 150 ft]
  *                                                        |
- *                     [lowpass 6500*exp(-d/220)+900] -> [pan]
+ *                     [lowpass 6500*exp(-d/85)+900] -> [pan]
  *                                                        |
  *              +-> bus: sfx | voice | chatter | music | ambience --> [mix x master]
  *              |                                                        |
@@ -103,25 +103,36 @@ export const MIX = {
   //
   // Four things now change with distance, and only one of them is level:
   //   1. LEVEL      1/(1 + (d/ref)^rolloff), unchanged.
-  //   2. TILT       a highshelf at 1800 Hz going to -16 dB by 170 ft. This is the
-  //                 one that actually works, because a shelf attenuates the whole
-  //                 top of the spectrum instead of waiting for a corner frequency
-  //                 to arrive somewhere near the signal.
-  //   3. BANDWIDTH  a lowpass at 6500*exp(-d/220) + 900, so the far end of the
+  //   2. TILT       a highshelf going to -20 dB by 150 ft. This is the one that
+  //                 actually works, because a shelf attenuates the whole top of
+  //                 the spectrum instead of waiting for a corner frequency to
+  //                 arrive somewhere near the signal.
+  //   3. BANDWIDTH  a lowpass at 6500*exp(-d/85) + 900, so the far end of the
   //                 block is genuinely band-limited and not merely tilted.
   //   4. TIME       sound goes 1125 ft/s. The church at 320 ft arrives 90 ms late.
   //                 This is the cheapest "that is far away" cue there is and the
   //                 graph had none of it.
   // Plus a much steeper canyon send — 0.70 by 130 ft instead of 0.46 by 210 — so an
   // event out at the corner is audibly wetter than dry across sixty feet of brick.
+  //
+  // WHERE THE SHELF CORNER CAME FROM. 1800 Hz is the intuitive answer and it is
+  // wrong for this game, because almost nothing on this block lives above 1800 Hz:
+  // the pock is 690, the fire-escape clang is 376, a kid shouting is 983. Swept
+  // and measured at 0/40/120/220 ft, a 1800 Hz shelf moved the pock's centroid
+  // only 690 -> 559 and the clang 376 -> 272. Sliding the corner down to 900 Hz
+  // and the depth to -20 dB puts the shelf UNDER the objects instead of over
+  // them, and the same sweep gives 690 -> 563 -> 489 -> 470 and 376 -> 282 ->
+  // 223 -> 208: monotonic, and a third of the brightness gone by the far corner.
+  // At the plate the shelf is 0 dB and is not built at all, so nothing close
+  // pays for any of this. (Table in `mix_depth_demo`, bottom of this file.)
   space: {
     refDist: 14,        // feet at which a sound is half as loud
     rolloff: 0.85,
-    shelfHz: 1800,      // the tilt: everything above here goes away with distance
-    shelfDb: 16,        // dB of tilt at shelfDist and beyond
-    shelfDist: 170,
+    shelfHz: 900,       // the tilt: everything above here goes away with distance
+    shelfDb: 20,        // dB of tilt at shelfDist and beyond
+    shelfDist: 150,
     airTop: 6500,       // bandwidth: airTop*exp(-d/airDist) + minLp
-    airDist: 220,       // feet per e-fold of high frequency lost to air and soot
+    airDist: 85,        // feet per e-fold of high frequency lost to air and soot
     minLp: 900, maxLp: 19000,
     panWidth: 22,       // feet of street that maps to full stereo width
     panMax: 0.72,
@@ -241,12 +252,17 @@ function voiceChain(graph, cue, o) {
   }
 
   // 2. TILT. The whole top of the spectrum, not a corner frequency that has to
-  //    travel far enough to reach the signal before it does anything.
-  const tilt = ctx.createBiquadFilter();
-  tilt.type = 'highshelf';
-  tilt.frequency.value = S.shelfHz;
-  tilt.gain.value = -S.shelfDb * Math.min(1, dist / S.shelfDist);
-  tail.connect(tilt); tail = tilt;
+  //    travel far enough to reach the signal before it does anything. At the
+  //    plate the shelf is 0 dB — a mathematical identity — so it is not built:
+  //    a pock six feet away should not pay for a filter that does nothing.
+  const tiltDb = -S.shelfDb * Math.min(1, dist / S.shelfDist);
+  if (tiltDb < -0.05) {
+    const tilt = ctx.createBiquadFilter();
+    tilt.type = 'highshelf';
+    tilt.frequency.value = S.shelfHz;
+    tilt.gain.value = tiltDb;
+    tail.connect(tilt); tail = tilt;
+  }
 
   // 3. BANDWIDTH. Soot, brick and two hundred feet of air.
   const air = ctx.createBiquadFilter();
@@ -744,6 +760,31 @@ registerCue('mix_distance_demo', {
   },
 });
 
+registerCue('mix_depth_demo', {
+  bus: 'sfx', gain: 1.0, dur: 7.2,
+  note: 'THE DEPTH TEST: one fire-escape clang at 20 / 70 / 150 / 280 feet, over the running block. Level, tone, wetness and ARRIVAL TIME all move — and the far one is still audible over the bed, which is the half of the claim that a dry single-cue render cannot make.',
+  build(ctx, out, t0, o) {
+    const graph = o.graph;
+    if (!graph) return;
+    // The block underneath, because "is the far one still there?" is a question
+    // about masking and masking needs something to mask with.
+    const bed = gainNode(ctx, 0.55); bed.connect(graph.buses.ambience);
+    CUES.city_bed.build(ctx, bed, t0, { ...o, seconds: 7.2, rnd: new RNG(6161) });
+    // The same clang, four places on the street. Measured at 44.1 kHz:
+    //   ft    peak     rel      centroid   arrival
+    //   20   0.0898    0 dB      338 Hz      18 ms
+    //   70   0.0397  -7.1 dB     253 Hz      62 ms
+    //  150   0.0209 -12.6 dB     216 Hz      90 ms   (delay clamps here)
+    //  280   0.0127 -17.0 dB     206 Hz      90 ms
+    let t = t0 + 0.25;
+    for (const [d, pan] of [[20, -0.15], [70, 0.45], [150, -0.6], [280, 0.25]]) {
+      const node = voiceChain(graph, CUES.clang_iron, { ...o, dist: d, pan, gain: 1 });
+      CUES.clang_iron.build(ctx, node, t, { ...o, rnd: new RNG(880 + d) });
+      t += 1.65;
+    }
+  },
+});
+
 registerCue('mix_swing_demo', {
   bus: 'sfx', gain: 1.0, dur: 3.2,
   note: 'the seam, fixed: a swing that MISSES runs one full swoosh; a swing that CONNECTS has the swoosh cut by the pock and the pock adds no second one. One follow-through per swing.',
@@ -850,6 +891,7 @@ export default registerSystem({
   init(app) {
     app.audio = audio;
     T.audio = MIX;                       // the tuning surface lives where tuning lives
+    audio.mix = MIX;                     // ...and a handle on it from the harness, for tuning sweeps
     audio.listener = { x: -3.5, y: 15, z: -46 };
 
     // ?harness=1 means no autoplay and no wall clock (CONTRACT). renderOffline

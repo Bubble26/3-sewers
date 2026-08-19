@@ -361,6 +361,16 @@ const DOT = {
     '— it has not landed. It has not landed —',
     '— I am up here and it is still up there —',
   ],
+  /* It went a long way and the street has not sorted it out yet. This is what
+     pays a build that nothing else in the sim ever answers. */
+  climb_far: [
+    '— and it is DOWN the block, and somebody had better start walking.',
+    '— it lands past the second casting. I am chalking that.',
+    '— gone. Gone, and nobody finds that before supper.',
+    '— down it comes, with nobody inside twenty feet of it.',
+    '— and it is on the ground somewhere and the arguing has already started.',
+    '— and that, on this street, is the whole story.',
+  ],
   climb_down: [
     '— and it comes down about four feet from where it started.',
     '— and it lands in the ash cans. Everything lands in the ash cans.',
@@ -1464,7 +1474,7 @@ class Announcer {
    */
   startClimb(hit) {
     const ladder = this.lib.pick('dot:climb', DOT.climb);
-    this.climb = { ladder, step: 0, t: 0, rung: 0, peak: 0, hung: 0, resolved: false, hit };
+    this.climb = { ladder, step: 0, t: 0, rung: 0, peak: 0, hung: 0, low: 0, resolved: false, hit };
     this.lastClimbAt = this.clock;
     this.sayRung(0);
     this.quiet = 0;
@@ -1491,7 +1501,13 @@ class Announcer {
     const ball = APP.sim?.ball;
     const y = ball ? ball.pos.y : 0;
     c.peak = Math.max(c.peak, y);
-    const up = !!ball && (ball.inFlight || ball.live) && y > 3.5;
+    // A rubber ball off Belgian block does not go up once. It comes down, it
+    // bounces, it goes up again, and it is still very much a live ball. So "is
+    // it still up" is hysteretic: the street has to be quiet for four tenths of
+    // a second before the booth is allowed to stop calling it.
+    const low = !ball || (!ball.inFlight && !ball.live) || y <= 3.5;
+    c.low = low ? c.low + dt : 0;
+    const up = c.low < 0.4;
     const last = c.ladder.length - 1;
 
     if (c.step < last) {
@@ -1515,7 +1531,7 @@ class Announcer {
 
     // if it never got anywhere, deflate it — a build that does not pay is a gag
     if (!c.resolved && c.t > 1.6 && !up) this.endClimb(null);
-    if (c.t > 7.0) this.endClimb(null);
+    if (c.t > 6.4) this.endClimb(null);
   }
 
   endClimb(result) {
@@ -1523,10 +1539,19 @@ class Announcer {
     if (!c) return;
     this.climb = null;
     if (result) return;
-    if (c.peak < 14) {
-      this.dot.say([{ text: this.line('dot:climbdown', DOT.climb_down), kind: 'talk', grow: 1 }]);
-      this.after(1.1, () => this.gooch.interrupt([{ text: this.line('gooch:nonseq', GOOCH.nonseq) }]));
-    }
+    // EVERY build pays. A small one deflates and the Gooch changes the subject;
+    // a big one that nothing in the sim ever resolved still gets its landing,
+    // because a call that just stops is a call the player thinks broke.
+    const bank = c.peak < 14 ? DOT.climb_down : DOT.climb_far;
+    const key = c.peak < 14 ? 'dot:climbdown' : 'dot:climbfar';
+    this.dot.say([{ text: this.line(key, bank), kind: 'talk', grow: 1, hold: 2.2 }]);
+    this.after(1.6, () => {
+      this.gooch.interrupt([{
+        text: this.line(c.peak < 14 ? 'gooch:nonseq' : 'gooch:sewer',
+          c.peak < 14 ? GOOCH.nonseq : GOOCH.after_sewer),
+      }]);
+      this.quiet = 0;
+    });
   }
 
   /* --- tick --------------------------------------------------------------- */

@@ -129,6 +129,10 @@ const CARDW = { dot: 512, gooch: 512, kid: 264 };
 const INSET = 32;
 const DRIFT = 40;
 const SETTLE = 0.85;
+/** The scorebug's own box, 640->960 x 12->100 at 1600x900, scaled with the
+    frame. It is the one permanently readable object in the picture and nothing
+    is ever allowed on top of it — not the ball's card, not the batter's. */
+const SCOREBUG_W = 320, SCOREBUG_H = 100, SCOREBUG_Y = 12;
 
 /* ============================================================================
    2. Halftone — what makes newsprint newsprint
@@ -586,7 +590,10 @@ class Bubbles {
     //    because it is the only permanently readable object in the frame and a
     //    card drawn over it is a card drawn over the score. 640->960 x 12->100
     //    at 1600x900, scaled with the frame.
-    B.push({ x: this.w * 0.5 - 160 * U, y: 12 * U, w: 320 * U, h: 88 * U, weight: 6 });
+    B.push({
+      x: this.w * 0.5 - SCOREBUG_W * 0.5 * U, y: SCOREBUG_Y * U,
+      w: SCOREBUG_W * U, h: (SCOREBUG_H - SCOREBUG_Y) * U, weight: 6,
+    });
     // 2. the ball. Always. It is the readability accent of the whole game (§2.4).
     const ball = app.sim?.ball;
     if (ball && (ball.live || ball.inFlight)) {
@@ -640,7 +647,11 @@ class Bubbles {
     const shout = card.kind === 'shout';
     const size = (isKid ? (shout ? TYPE.kidShout : TYPE.kid) : (shout ? TYPE.announceShout : TYPE.announce)) * U;
     const P = isKid ? PAD.kid : PAD.booth;
-    const maxW = (isKid ? CARDW.kid : CARDW.dot) * U - P.x * 2 * U;
+    // A card that is going to be drawn at 2x must be laid out at half the width,
+    // or a shout at the top of a climb becomes a billboard across the whole
+    // frame. The TYPE doubles; the piece of paper stays a piece of paper.
+    const gg = Math.max(1, card.growGoal || 1);
+    const maxW = ((isKid ? CARDW.kid : CARDW.dot) * U - P.x * 2 * U) / gg;
     const opt = { tracking: TYPE.track, condense: TYPE.condense };
     const lines = wrap(card.text, size, maxW, opt);
     let wid = 0;
@@ -691,12 +702,16 @@ class Bubbles {
     let best = null, bestCost = Infinity;
     // a card that is mid-escalation is drawn scaled about its own centre, so the
     // frame it has to fit inside is the grown one, not the laid-out one
-    const gw = card.rect.w * Math.max(1, card.grow), gh = card.rect.h * Math.max(1, card.grow);
+    const g = Math.max(1, card.grow, card.growGoal || 1);
+    const gw = card.rect.w * g, gh = card.rect.h * g;
     const ox = (gw - card.rect.w) / 2, oy = (gh - card.rect.h) / 2;
+    // a card mid-climb is about to be drawn at twice this size, so the scorebug
+    // test has to be run against the box that will actually be painted
+    if (card.who !== 'kid') cands.push({ x: cands[0].x, y: SCOREBUG_H * U + oy, pri: 0.8 });
     for (const c of cands) {
       const { x, y } = this.confineTo(card, c.x, c.y, ox, oy);
       const bl = card.bleed || 0;
-      const r = { x: x - bl, y: y - bl, w: card.rect.w + bl * 2, h: card.rect.h + bl * 2 };
+      const r = { x: x - ox - bl, y: y - oy - bl, w: gw + bl * 2, h: gh + bl * 2 };
       let cost = c.pri * 900 * U * U;
       for (const b of blocked) cost += this.overlap(r, b) * b.weight;
       for (const o of this.cards) {
@@ -1236,6 +1251,7 @@ export default registerSystem({
   order: 320,                 // after cameras (300): the camera must be final before we project
 
   init(app) {
+    app.bubbles = bubbles;      // so a critic (or a probe) can read the paper
     bubbles.mount();
     if (typeof addEventListener === 'function') addEventListener('resize', () => bubbles.resize());
   },
