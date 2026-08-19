@@ -480,7 +480,8 @@ export default registerSystem({
     }
     this.chaseDelay = delay;
     this.chase = best;
-    this.chaseTo = { x: THREE.MathUtils.clamp(lx, -20, 20), z: THREE.MathUtils.clamp(lz, 6, 150) };
+    // A ball may leave the stage; a kid may not. LAYOUT.chase() is the only gate.
+    this.chaseTo = LAYOUT.chase(lx, lz);
     // a second kid backs him up — nobody in this game stands still while a ball is live
     let second = null, sd = 1e9;
     for (const f of this.fielders) {
@@ -492,9 +493,12 @@ export default registerSystem({
   },
 
   sendRunner(bases) {
-    const r = this.runners.find((k) => !k.group.visible) || this.runners[0];
+    const r = this.runners.find((k) => !k.onBase) || this.runners[0];
+    r.onBase = true;
     r.group.visible = true;
     r.setLook((APP.sim.state.batterIdx + 4) % 9);
+    // The cut to the FIELD framing is already in flight when this fires (cameras.js holds it
+    // for the hitstop), so the kid leaving the curb for the plate changes seats on a cut.
     r.at(HOME.x + 1.4, HOME.z, 0);
     r.speed = 0;
     const path = [];
@@ -514,7 +518,17 @@ export default registerSystem({
     return r;
   },
 
-  clearRunners() { for (const r of this.runners) { r.group.visible = false; r.target = null; r.speed = 0; } },
+  /** The play is over: everybody who was on the bases trots back to the curb he came from. */
+  clearRunners() {
+    for (const r of this.runners) {
+      r.target = null; r.speed = 0;
+      if (!r.onBase) { r.goHome(); continue; }
+      r.onBase = false;
+      r.group.visible = true;
+      const h = r.home;
+      r.goTo(h.x, h.z, { gait: 'trot', speed: 10, onArrive: (k) => { k.goHome(); k.anim.play(k.restClip, { fade: 0.25 }); } });
+    }
+  },
 
   homeRun() {
     this.batter.act('point', { state: 'point', lock: 0.4 });
@@ -550,23 +564,30 @@ export default registerSystem({
     if (odd) { odd.target = null; odd.lookAt(HOME.x, HOME.z); odd.act('sulk', { state: 'sulk', lock: 3.0 }); }
   },
 
+  /**
+   * Put the whole street back on its marks. One loop, and every mark comes out of
+   * src/game/layout.js — so "did somebody wander" is answerable by reading one file, and
+   * `layout_positions` is a picture of that file rather than of this one.
+   */
   homePose() {
-    for (const k of this.kids) { k.restClip = k.homeClip || k.idleClip; k.baseFace = k.homeFace; k.faceHold = 0; k.setFace(k.baseFace); k._steps = undefined; }
-    for (const f of this.fielders) { f.at(f.post.x, f.post.z, f.post.face === undefined ? YAW(0, -1) : f.post.face); f.lock = 0; f.cycle = null; f.state = 'idle'; f.anim.stopLayers(); f.anim.play(f.restClip, { at: arng.range(0, 2), fade: 0 }); }
-    for (const f of this.fielders.slice(2)) { f.lookAt(HOME.x, HOME.z); f.snapFacing(); }
-    this.catcher.lookAt(0, T.street.moundZ).snapFacing();
-    this.pitcher.lookAt(HOME.x, HOME.z).snapFacing();
+    for (const k of this.kids) {
+      k.restClip = k.homeClip || k.idleClip;
+      k.baseFace = k.homeFace; k.faceHold = 0; k.setFace(k.baseFace);
+      k._steps = undefined;
+      k.cycle = null; k.cycleStep = -1; k.lock = 0; k.target = null; k.speed = 0; k.glide = 0;
+      k.state = 'idle';
+      k.anim.stopLayers();
+      k.group.visible = true;
+      k.goHome();
+      // a fifth of a period apart, so no two kids in the street are on the same frame
+      k.anim.play(k.restClip, { at: arng.range(0, 2), fade: 0 });
+      k.fidgetIn = arng.range(0.5, 4.4);
+    }
     this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW());
-    this.batter.cycle = null; this.batter.lock = 0; this.batter.anim.stopLayers();
     this.batter.showStick(true);
     this.batter.anim.play('stance', { fade: 0 });
-    this.onDeck.at(10.5, T.street.plateZ - 8.5, 0).lookAt(0, T.street.moundZ).snapFacing();
-    this.onDeck.cycle = null; this.onDeck.lock = 0; this.onDeck.showStick(true);
+    this.onDeck.showStick(true);
     this.onDeck.anim.play('bat_wait', { at: 1.2, fade: 0 });
-    this.stoopKid.at(-23.5, 26, YAW(1, 0));
-    this.stoopKid.cycle = null; this.stoopKid.lock = 0;
-    this.stoopKid.anim.play('sit_flip', { at: 1.1, fade: 0 });
-    this.clearRunners();
     this.chase = null; this.backup = null;
   },
 
@@ -614,7 +635,10 @@ export default registerSystem({
         });
         if (this.backup) {
           const b = this.backup; this.backup = null;
-          b.goTo(to.x - 7, to.z - 8, { speed: T.field.speed * 0.85 });
+          // the backup comes in BEHIND and to the side, which is where a real backup stands
+          // and, on this stage, is also the only way two kids on one ball read as two kids
+          const bt = LAYOUT.chase(to.x - Math.sign(to.x || 1) * 6.5, to.z + 7.5);
+          b.goTo(bt.x, bt.z, { speed: T.field.speed * 0.85 });
         }
       }
     }
