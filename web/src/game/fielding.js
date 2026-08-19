@@ -459,7 +459,11 @@ class Play {
     // system ends up looking like a blooper reel.
     const away = (ball.pos.x - pr.pos.x) * ball.vel.x + (ball.pos.z - pr.pos.y) * ball.vel.z > 0;
     const reach = (this.isOut && away) ? FT.diveReach : FT.reach;
-    if ((low && d < reach) || (low && slow && d < FT.reach * 1.7) || (this.t > 2.9 && d < 9)) {
+    // A kid going up for one leaves the ground BEFORE the ball arrives. Waiting
+    // for it to fall inside arm's reach turns every fly ball into a chest catch,
+    // and the jump — BYB §5.6's held apex — never happens once.
+    const goingUp = ball.vel.y < 2 && ball.pos.y > FT.jumpY && ball.pos.y < 8.2 && d < FT.reach * 2.6;
+    if ((low && d < reach) || (low && slow && d < FT.reach * 1.7) || goingUp || (this.t > 2.9 && d < 9)) {
       this.gather(pl, d);
     }
   }
@@ -539,6 +543,8 @@ class Play {
     // A bobbled ball has to keep existing somewhere while it is being bobbled.
     this.claimed = true;
     this.claimAt = new THREE.Vector3(ball.pos.x, Math.max(ball.pos.y, 1.0), ball.pos.z);
+    this.claimFrom = ball.pos.clone();
+    this.claimVel = ball.vel.clone();
     this.applyStyle(pl, k, style);
   }
 
@@ -640,10 +646,13 @@ class Play {
     bus.emit('field:catch', { clean: this.clean, pos: at, kid: k.home && k.home.id });
     this.holder = k;
 
-    // A catch is an out and the play is over the moment his hands close.
+    // A catch is an out and the play is over the moment his hands close. The
+    // word goes where the catch was, not where the bag is — a call floating over
+    // a bag nobody is looking at is a call about nothing.
     if (this.isOut && this.play && (this.play.result === 'out_fly' || this.play.result === 'out_line')) {
-      this.stamp('OUT!', BAG.home, true);
+      this.stamp('OUT!', { x: k.pos.x, z: k.pos.y }, true);
       this.celebrate(pl, true);
+      this.pullUp();
       return this.beat(FT.beat);
     }
 
@@ -846,7 +855,10 @@ class Play {
       r.fieldStep = 0;
       bus.emit('run:step', { pos: new THREE.Vector3(r.pos.x, 0.2, r.pos.y), surface: 'street', pitch: frng.range(0, 0.25) });
     }
-    if (d < 7.5 && !r.slidYet && this.isOut) {
+    // He goes in head first only when there is a throw to beat. Sliding into a
+    // bag on a caught fly ball is a kid who has not looked up, and it reads as a
+    // bug rather than as a joke.
+    if (d < 7.5 && !r.slidYet && this.isOut && this.arrow) {
       r.slidYet = 1;
       r.act('slide', { state: 'slide', glide: Math.max(9, r.speed) });
       bus.emit('run:slide', { pos: new THREE.Vector3(r.pos.x, 0.2, r.pos.y) });
@@ -858,6 +870,16 @@ class Play {
       if (!this.isOut) { r.act('cheer_arms', { state: 'cheer', lock: 1.2 }); r.setFace('grin', 1.6); }
       else r.setFace('shock', 1.4);
     }
+  }
+
+  /** Caught. He pulls up half way down the line and kicks the road. */
+  pullUp() {
+    const r = this.runner;
+    if (!r || !r.runOut) return;
+    r.runOut = false;
+    r.target = null;
+    r.act('run_stop', { state: 'stop', lock: 0.5, after: (k) => k.act('sulk', { state: 'sulk', lock: 1.4 }) });
+    r.setFace('sulk', 2.0);
   }
 
   /** The payoff frame: one word, chalked on the road at the bag. */
@@ -1097,10 +1119,10 @@ class Overlay {
         const s = this.project(app, bag.x + Math.cos(a) * 3.0, LAYOUT.groundAt(bag.x) + 0.05, bag.z + Math.sin(a) * 3.0);
         if (s) ring.push([s.x, s.y]);
       }
-      if (ring.length > 3) chalkStroke(g, ring, (lit ? 5.4 : 3.0) * U, 19 + card.bag.length, al, C(CHALK));
+      if (ring.length > 3) chalkMark(g, ring, (lit ? 5.8 : 3.4) * U, 19 + card.bag.length, al);
 
-      // the arrow, only to the ones worth running the ball to
-      if (!lit) continue;
+      // an arrow to every live bag — that is the picture of "which ones count",
+      // and a label alone is a list rather than a play
       const pts = [];
       for (let i = 1; i <= 7; i++) {
         const u = 0.10 + (i / 7) * 0.78;
@@ -1110,15 +1132,27 @@ class Overlay {
         if (s) pts.push([s.x, s.y]);
       }
       if (pts.length < 2) continue;
-      chalkStroke(g, pts, 6.2 * U, 37, al * 0.95, C(CHALK));
+      const aw = (lit ? 7.4 : 4.0) * U;
+      chalkMark(g, pts, aw, 37 + card.bag.length, al * 0.95);
       const a = pts[pts.length - 1], b = pts[pts.length - 2];
       const ang = Math.atan2(a[1] - b[1], a[0] - b[0]);
-      const L = 22 * U;
-      for (const sgn of [0.6, -0.6]) {
-        chalkStroke(g, [[a[0], a[1]], [a[0] - Math.cos(ang + sgn) * L, a[1] - Math.sin(ang + sgn) * L]],
-          6.2 * U, 63 + Math.round(sgn * 10), al, C(CHALK));
+      const L = (lit ? 27 : 17) * U;
+      for (const sgn of [0.62, -0.62]) {
+        chalkMark(g, [[a[0] - Math.cos(ang + sgn) * L, a[1] - Math.sin(ang + sgn) * L], [a[0], a[1]]],
+          aw, 63 + Math.round(sgn * 10) + card.bag.length, al);
       }
     }
+
+    // 1b. a ring round the boy with the ball. Three tags and two arrows do not
+    //     say WHO is deciding, and on a street with nine kids on it that is the
+    //     first thing a player has to find.
+    const me = [];
+    for (let i = 0; i <= 18; i++) {
+      const a = (i / 18) * Math.PI * 2;
+      const s = this.project(app, k.pos.x + Math.cos(a) * 2.6, (k.groundY || 0) + 0.05, k.pos.y + Math.sin(a) * 2.6);
+      if (s) me.push([s.x, s.y]);
+    }
+    if (me.length > 3) chalkMark(g, me, 6.0 * U, 97, pr.expired ? 0.35 : 0.95, urgent ? ACCENTS.red : CHALK);
 
     // 2. the tags. Solved so no two of them touch and none of them sits on the
     //    ball — a UI element covering the ball is the one unforgivable one.
@@ -1126,12 +1160,16 @@ class Overlay {
     for (const card of pr.cards) {
       const bag = BAG[card.bag];
       if (!bag) continue;
-      const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 5.0, bag.z);
+      // Anchored to the bag's own ground point and lifted a FIXED number of
+      // pixels, not a fixed number of feet: five feet of world above home plate
+      // is 140 px and five feet above second is 40, so a world offset put the
+      // near tag in orbit and the far one on the floor. A tag is a screen object.
+      const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 0.1, bag.z);
       if (!s) continue;
       const best = card.bag === pr.best;
-      const sc = (best ? 1.14 : 0.94) * U * (pr.choice === card.bag ? 1 + pr.pop * 0.10 : 1);
+      const sc = (best ? 1.34 : 0.90) * U * (pr.choice === card.bag ? 1 + pr.pop * 0.10 : 1);
       const w = 130 * sc, h = 66 * sc;
-      boxes.push({ card, best, sc, w, h, x: s.x - w / 2, y: s.y - h - 8 * U });
+      boxes.push({ card, best, sc, w, h, x: s.x - w / 2, y: s.y - h - 104 * U });
     }
     boxes.sort((A, B) => A.y - B.y);
     for (let i = 0; i < boxes.length; i++) {
@@ -1159,13 +1197,15 @@ class Overlay {
       this.tag(g, b.card, b.x, b.y, b.w, b.h, b.sc, b.best, pr.choice === b.card.bag, pr.expired ? 0.34 : 1);
     }
 
-    // 3. the clock
-    if (foot) {
-      this.tally(g,
-        clamp(foot.x, 138 * U, this.w - 138 * U),
-        clamp(foot.y + 40 * U, 120 * U, this.h - 62 * U),
-        U, pr, frac, urgent);
-    }
+    // 3. the clock.
+    //    It used to sit at the thrower's feet, which was diegetically neat and
+    //    practically useless: on a stage this shallow his feet are usually on top
+    //    of the catcher, and a countdown you have to hunt for is not a countdown.
+    //    The ring round HIM says who; this says how long, chalked on the flags at
+    //    the bottom of the frame where a kid would actually chalk something, in
+    //    one of the three corner clusters §11 allows.
+    void foot;
+    this.tally(g, 0.215 * this.w, this.h - 122 * U, U, pr, frac, urgent);
   }
 
   /** One torn butcher-paper tag: accent band, chalked key cap, bag, kid. */
@@ -1224,8 +1264,9 @@ class Overlay {
       const pad = 7 * sc;
       chalkStroke(g, [[-pad, -pad], [w + pad, -pad], [w + pad, h + pad], [-pad, h + pad], [-pad, -pad]],
         4.0 * sc, 77, chosen ? 1 : 0.86, C(CHALK));
-      chalk(g, chosen ? 'THAT ONE!' : (BAG_YELL[card.bag] || 'HERE!'), w / 2, -pad - 9 * sc, 19 * sc, {
-        align: 'center', color: C(CHALK), weight: 0.17, tracking: 0.11, alpha: 0.95, seed: 23,
+      slab(g, chosen ? 'THAT ONE!' : (BAG_YELL[card.bag] || 'HERE!'), w / 2, h + pad + 24 * sc, 21 * sc, {
+        align: 'center', color: C(CHALK), weight: 0.19, tracking: 0.10, condense: 0.94,
+        jitter: 1.2, seed: 23, shadow: { dx: 2.2 * sc, dy: 2.4 * sc, color: C(INK) },
       });
     }
     g.restore();
@@ -1239,76 +1280,106 @@ class Overlay {
   tally(g, cx, cy, U, pr, frac, urgent) {
     const n = FT.ticks;
     const leftN = pr.expired ? 0 : Math.ceil(frac * n - 1e-6);
-    const w = 250 * U, h = 92 * U;
+    const w = 296 * U, h = 60 * U;
+    const hot = urgent && !pr.expired;
     g.save();
     g.translate(cx, cy);
-    g.rotate(-1.8 * Math.PI / 180);
+    g.rotate(-2.0 * Math.PI / 180);
 
-    // the patch: scuffed asphalt, rubbed pale, with an ink shadow under it so it
-    // reads on a mid-value road (§6.4 — chalk on asphalt is 5.6:1, but only if
-    // the chalk sits on something)
+    // The road, rubbed clear with a sleeve. It has to be a good deal paler than
+    // the block work or the chalk on top of it is chalk on chalk: measured, a
+    // 0.42 mix of CHALK into asphalt shade is the same L* as the sun band this
+    // street already has running across it, and it vanished.
     const patch = new Path2D();
     const R = new RNG(404);
-    for (let i = 0; i <= 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      const rx = (w / 2) * (0.86 + R.next() * 0.20), ry = (h / 2) * (0.78 + R.next() * 0.30);
-      const X = Math.cos(a) * rx, Y = Math.sin(a) * ry;
+    for (let i = 0; i <= 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      const rx = (w / 2 + 13 * U) * (0.92 + R.next() * 0.12);
+      const ry = (h / 2 + 25 * U) * (0.86 + R.next() * 0.20);
+      const X = Math.cos(a) * rx, Y = -13 * U + Math.sin(a) * ry;
       if (i === 0) patch.moveTo(X, Y); else patch.lineTo(X, Y);
     }
     patch.closePath();
-    g.save();
-    g.globalAlpha = 0.34; g.fillStyle = C(INK);
-    g.translate(0, 4 * U); g.fill(patch); g.restore();
-    g.save();
-    g.globalAlpha = 0.46;
-    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.42));
-    g.fill(patch);
-    g.restore();
+    g.save(); g.globalAlpha = 0.36; g.fillStyle = C(INK);
+    g.translate(0, 6 * U); g.fill(patch); g.restore();
+    g.save(); g.globalAlpha = 0.58;
+    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.58)); g.fill(patch); g.restore();
 
-    chalk(g, pr.expired ? 'TOO LATE' : 'THROW IT', 0, -h * 0.14, 26 * U, {
-      align: 'center', color: C(urgent && !pr.expired ? ACCENTS.red : CHALK),
-      weight: 0.17, tracking: 0.13, alpha: 1, seed: 31,
+    slab(g, pr.expired ? 'TOO LATE' : 'THROW IT', 0, -h * 0.36, 30 * U, {
+      align: 'center', color: C(hot ? ACCENTS.red : INK),
+      weight: 0.21, tracking: 0.10, condense: 0.92, jitter: 1.2, seed: 31,
+      shadow: { dx: 2.4 * U, dy: 2.6 * U, color: C(hot ? INK : mix(PAVEMENT.asphaltShade, CHALK, 0.86)) },
     });
 
-    const step = (w * 0.70) / n;
+    // THE BOX: five chalked cells, and the marks get rubbed out of them left to
+    // right. Five empty cells with three marks in them is a countdown you can
+    // read in a still frame; a ring that closes is a progress bar in a hat.
+    const y0 = h * 0.10, y1 = h * 0.92;
+    const cell = w / n;
+    const box = [[-w / 2, y0], [w / 2, y0], [w / 2, y1], [-w / 2, y1], [-w / 2, y0]];
+    chalkMark(g, box, 3.6 * U, 137, 0.95, INK);
+    for (let i = 1; i < n; i++) {
+      const x = -w / 2 + cell * i;
+      chalkMark(g, [[x, y0], [x, y1]], 2.6 * U, 151 + i, 0.72, INK);
+    }
     for (let i = 0; i < n; i++) {
-      const x = -w * 0.35 + step * (i + 0.5);
+      const x = -w / 2 + cell * (i + 0.5);
+      const seg = [[x - 5 * U, y0 + 7 * U], [x + 5 * U, y1 - 7 * U]];
       const alive = i < leftN;
-      const dying = alive && i === leftN - 1;
-      const a = alive ? (dying ? 0.45 + 0.55 * ((frac * n) % 1 || 1) : 1) : 0.13;
-      const col = alive && urgent ? ACCENTS.red : CHALK;
-      chalkStroke(g, [[x - 3 * U, h * 0.06], [x + 3 * U, h * 0.36]], 9.0 * U, 41 + i * 3, a, C(col));
+      if (!alive) { chalkStroke(g, seg, 8 * U, 41 + i * 3, 0.20, C(INK)); continue; }
+      const dying = i === leftN - 1;
+      const a = dying ? 0.55 + 0.45 * ((frac * n) % 1 || 1) : 1;
+      chalkMark(g, seg, 11 * U, 41 + i * 3, a, hot ? ACCENTS.red : INK);
     }
     g.restore();
   }
+
   /* --- the call ----------------------------------------------------------- */
+  /**
+   * The payoff frame. One word, chalked on the road beside the bag, on a patch
+   * somebody has rubbed clear with a sleeve — because a word floating in the air
+   * over a pushcart is a HUD element, and there are no HUD elements in this game
+   * (§11). It punches in over four frames, holds, and is scuffed away.
+   */
   paintCall(app, g, p) {
     const U = this.U;
     const age = p.t - p.callAt;
-    const pop = clamp(age / 0.11, 0, 1);
-    const fade = clamp(1 - (age - 1.0) / 0.55, 0, 1);
+    const pop = clamp(age / 0.10, 0, 1);
+    const fade = clamp(1 - (age - 0.95) / 0.5, 0, 1);
     if (fade <= 0) return;
     const bag = p.callBag;
-    const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 7.4, bag.z);
+    const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 1.6, bag.z);
     if (!s) return;
-    const sc = U * (0.72 + 0.34 * pop) * (p.callWord.length > 5 ? 0.78 : 1);
+    const over = 1 + 0.24 * Math.sin(clamp(age / 0.16, 0, 1) * Math.PI);   // overshoot
+    const sc = U * (0.62 + 0.30 * pop) * over * (p.callWord.length > 5 ? 0.70 : 1);
+    const size = 82 * sc;
+    const wpx = slabW(p.callWord, size, { tracking: 0.06, condense: 0.88 });
     g.save();
     g.globalAlpha = fade;
-    g.translate(clamp(s.x, 130 * U, this.w - 130 * U), clamp(s.y, 70 * U, this.h - 70 * U));
-    g.rotate(-3.4 * Math.PI / 180);
+    g.translate(clamp(s.x, wpx * 0.5 + 26 * U, this.w - wpx * 0.5 - 26 * U),
+      clamp(s.y, 96 * U, this.h - 56 * U));
+    g.rotate(-3.6 * Math.PI / 180);
+
+    // the rubbed patch, with an ink shadow so it lifts off the block work
+    const patch = new Path2D();
+    const R = new RNG(909);
+    const rw = wpx * 0.62 + 26 * sc, rh = size * 0.78;
+    for (let i = 0; i <= 22; i++) {
+      const a = (i / 22) * Math.PI * 2;
+      const X = Math.cos(a) * rw * (0.88 + R.next() * 0.20);
+      const Y = -size * 0.28 + Math.sin(a) * rh * (0.80 + R.next() * 0.30);
+      if (i === 0) patch.moveTo(X, Y); else patch.lineTo(X, Y);
+    }
+    patch.closePath();
+    g.save(); g.globalAlpha = fade * 0.32; g.fillStyle = C(INK);
+    g.translate(0, 5 * U); g.fill(patch); g.restore();
+    g.save(); g.globalAlpha = fade * 0.52;
+    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.46)); g.fill(patch); g.restore();
+
     const col = p.callOut ? ACCENTS.red : CHALK;
-    // chalked ground under the word, so the word is ON something
-    g.save();
-    g.globalAlpha = fade * 0.34;
-    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.42));
-    const wpx = slabW(p.callWord, 74 * sc, { tracking: 0.07 }) + 44 * sc;
-    g.beginPath();
-    g.ellipse(0, -18 * sc, wpx / 2, 46 * sc, 0, 0, Math.PI * 2);
-    g.fill();
-    g.restore();
-    slab(g, p.callWord, 0, 0, 74 * sc, {
-      color: C(col), align: 'center', weight: 0.215, tracking: 0.07, condense: 0.9,
-      jitter: 1.3, seed: 71, shadow: { dx: 4.6 * sc, dy: 5.2 * sc, color: C(INK) },
+    slab(g, p.callWord, 0, 0, size, {
+      color: C(col), align: 'center', weight: 0.215, tracking: 0.06, condense: 0.88,
+      jitter: 1.4, seed: 71, shadow: { dx: 5.0 * sc, dy: 5.6 * sc, color: C(INK) },
     });
     g.restore();
   }
@@ -1320,6 +1391,38 @@ class Overlay {
     }
     return null;
   }
+}
+
+/**
+ * A chalk mark that survives a busy street.
+ *
+ * §6.4: chalk holds 5.60:1 on shaded asphalt, but this road is not one value —
+ * it is tar, Belgian block, sun band, shadow and a parked truck, and a broken
+ * chalk dash laid straight onto it disappears into the block work. So every mark
+ * this file puts on the road is drawn TWICE: an ink pass a little wider
+ * underneath (the 1.5 px outline §2.5 mandates, scaled up because these strokes
+ * are big), then the chalk on top of it. Cheap, and it is the difference between
+ * a mark a player sees and a mark a player finds.
+ */
+function chalkMark(g, pts, w, seed, alpha, colour) {
+  if (pts.length < 2) return;
+  // the ink pass is SOLID — a broken dash under a broken dash is still a dashed
+  // line, and a dashed line on Belgian block is camouflage
+  g.save();
+  g.globalAlpha = Math.min(1, alpha * 0.86);
+  g.strokeStyle = C(INK);
+  g.lineWidth = w * 1.9;
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  const R = new RNG(seed + 700);
+  g.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const jx = (R.next() - 0.5) * w * 0.45, jy = (R.next() - 0.5) * w * 0.45;
+    if (i === 0) g.moveTo(pts[i][0] + jx, pts[i][1] + jy);
+    else g.lineTo(pts[i][0] + jx, pts[i][1] + jy);
+  }
+  g.stroke();
+  g.restore();
+  chalkStroke(g, pts, w, seed, alpha, C(colour === undefined ? CHALK : colour));
 }
 
 /** A torn paper outline: four jittered edges, seeded so it never crawls. */
@@ -1382,12 +1485,23 @@ export default registerSystem({
 
   /** The live play, for a probe or a critic: `__SB.app.fielding.play`. */
   get play() { return current; },
+
+  /**
+   * Re-stage one of the three plays from t=0, so a critic can burst frames
+   * through the WHOLE play instead of from wherever the scenario settled:
+   *   __SB.app.fielding.stage('grounder'); then advance/renderOnce in a loop.
+   */
+  stage(which) {
+    const def = STAGED[which] || STAGED.grounder;
+    stage(APP, def);
+    return which;
+  },
   /** One line of state, for tools and for anybody debugging a stuck play. */
   get debug() {
     const p = current;
     if (!p) return { play: null };
     return {
-      t: +p.t.toFixed(2), phase: p.phase, style: p.style,
+      t: +p.t.toFixed(2), phase: p.phase, style: p.style, gt: +(p.gatherT || 0).toFixed(2),
       verdict: p.play && p.play.result, kind: p.result && p.result.kind,
       primary: p.primary && p.primary.home && p.primary.home.id,
       holder: p.holder && p.holder.home && p.holder.home.id,
@@ -1447,6 +1561,12 @@ export default registerSystem({
     // is never drawn a frame behind the kid carrying it.
     if (current.holder) {
       handAt(current.holder, sim.ball.pos);
+      // Pull it a foot toward the lens. A cocked arm puts the hand behind the
+      // torso from both locked seats, and a ball the player cannot see is the
+      // one unforgivable readability failure (§2.5, BYB anti-pattern 5).
+      _wp.copy(app.camera.position).sub(sim.ball.pos).setY(0).normalize().multiplyScalar(0.95);
+      sim.ball.pos.add(_wp);
+      sim.ball.pos.y += 0.35;
       sim.ball.vel.set(0, FT.holdLift, 0);
     } else if (current.claimed && !current.arrow && current.primary) {
       // Not in a hand yet — being scooped, or being juggled. A bobble that does
@@ -1456,10 +1576,23 @@ export default registerSystem({
       const g = current.gatherT || 0;
       const wob = current.clean === false ? Math.max(0, 1 - g / 1.15) : 0;
       const h = handAt(k, _wp);
+      let hx = h.x, hy = h.y, hz = h.z;
+      // Between "he has it" and "his hands close on it" the ball keeps flying and
+      // is STEERED into the hand rather than snapped to it. Without this every
+      // catch in the game is a one-frame teleport, which is the single most
+      // common way a fielding system reads as fake.
+      const grasp = current.graspAt || 0.2;
+      if (g < grasp && current.claimFrom) {
+        const u = Math.pow(clamp(g / grasp, 0, 1), 1.7);
+        const fx = current.claimFrom.x + current.claimVel.x * g;
+        const fy = current.claimFrom.y + current.claimVel.y * g - 0.5 * T.ball.gravity * g * g;
+        const fz = current.claimFrom.z + current.claimVel.z * g;
+        hx += (fx - hx) * (1 - u); hy += (fy - hy) * (1 - u); hz += (fz - hz) * (1 - u);
+      }
       sim.ball.pos.set(
-        h.x + Math.sin(g * 15.5) * 1.35 * wob,
-        Math.max((k.groundY || 0) + 0.36, h.y + Math.sin(g * 21.0 + 1.1) * 1.15 * wob),
-        h.z + Math.cos(g * 12.5 + 0.6) * 1.0 * wob,
+        hx + Math.sin(g * 15.5) * 1.35 * wob,
+        Math.max((k.groundY || 0) + 0.36, hy + Math.sin(g * 21.0 + 1.1) * 1.15 * wob),
+        hz + Math.cos(g * 12.5 + 0.6) * 1.0 * wob,
       );
       sim.ball.vel.set(0, FT.holdLift, 0);
     } else if (current.arrow && current.arrow.t >= 0) {
@@ -1522,7 +1655,7 @@ bus.on('atbat:begin', () => {
    produces, on a seed that produces it every time.
    ========================================================================= */
 
-function stage(app, { seed = 1920, ball, vel, play, bases = [null, null, null], settle = 0 } = {}) {
+function stage(app, { seed = 1920, ball, vel, play, bases = [null, null, null], settle = 0, prompt = false } = {}) {
   const sim = app.sim;
   sim.reset(seed);
   app.clock.advance(0.55);
@@ -1540,18 +1673,44 @@ function stage(app, { seed = 1920, ball, vel, play, bases = [null, null, null], 
   liveMatch.pendingThrow = {};
   sim.__forcePlay = play;
   gameplay.fielding.onBallInPlay(sim, sim.lastContact);
+  // the prompt the core would have asked for, on the play it just decided
+  if (prompt && current) {
+    current.wantPrompt = { targets: liveMatch.throwTargets(), best: '1B', deadline: P.race.throwDeadline };
+    liveMatch.pendingThrow = { play: current.play, margin: current.play.margin };
+  }
   if (settle) app.clock.advance(settle);
 }
+
+/**
+ * The three staged plays, in one table, so `field_grounder` and a critic's frame
+ * burst are the same play and not two guesses at it.
+ * `__SB.app.fielding.stage('prompt')` runs any of them from t=0.
+ */
+export const STAGED = {
+  grounder: {
+    seed: 3311,
+    ball: [0, 2.6, 3.0], vel: [-12, 6, 22],
+    play: { result: 'out_ground', loft: 'ground', fielder: 'SS', margin: -0.06, bases: 0, quality: 0.44, lane: -0.3 },
+  },
+  fly: {
+    seed: 8802,
+    ball: [0.5, 3.0, 2.0], vel: [2.0, 23, 27],
+    play: { result: 'out_fly', loft: 'fly', fielder: 'RF', margin: 0, bases: 0, quality: 0.82, lane: 0.6 },
+  },
+  prompt: {
+    seed: 5150,
+    bases: [true, null, true],
+    ball: [0, 2.6, 3.0], vel: [-12, 6, 22],
+    play: { result: 'out_ground', loft: 'ground', fielder: 'SS', margin: 0.04, bases: 0, quality: 0.42, lane: -0.25 },
+    prompt: true,
+  },
+};
 
 /** A hard one-hopper into the hole, and the throw beats him by a stride. */
 registerScenario('field_grounder', {
   seed: 3311,
   setup: ({ app }) => {
-    stage(app, {
-      seed: 3311,
-      ball: [0, 2.6, 3.0], vel: [-12, 6, 22],
-      play: { result: 'out_ground', loft: 'ground', fielder: 'SS', margin: -0.06, bases: 0, quality: 0.44, lane: -0.3 },
-    });
+    stage(app, STAGED.grounder);
   },
   // the throw has landed, the word is on the road and the runner is on his hip
   settle: 2.18,
@@ -1561,13 +1720,10 @@ registerScenario('field_grounder', {
 registerScenario('field_fly', {
   seed: 8802,
   setup: ({ app }) => {
-    stage(app, {
-      seed: 8802,
-      ball: [0.5, 3.0, 2.0], vel: [5, 31, 28],
-      play: { result: 'out_fly', loft: 'fly', fielder: 'RF', margin: 0, bases: 0, quality: 0.82, lane: 0.6 },
-    });
+    stage(app, STAGED.fly);
   },
-  settle: 2.0,
+  // the apex hold of the jump: full extension, ball in the hands, feet off the road
+  settle: 1.80,
 });
 
 /**
@@ -1578,18 +1734,7 @@ registerScenario('field_fly', {
 registerScenario('throw_prompt', {
   seed: 5150,
   setup: ({ app }) => {
-    stage(app, {
-      seed: 5150,
-      bases: [true, null, true],
-      ball: [0, 2.6, 3.0], vel: [-12, 6, 22],
-      play: { result: 'out_ground', loft: 'ground', fielder: 'SS', margin: 0.04, bases: 0, quality: 0.42, lane: -0.25 },
-    });
-    // the prompt the core would have asked for, on the play it just decided
-    const p = current;
-    if (p) {
-      p.wantPrompt = { targets: liveMatch.throwTargets(), best: '1B', deadline: P.race.throwDeadline };
-      liveMatch.pendingThrow = { play: p.play, margin: p.play.margin };
-    }
+    stage(app, STAGED.prompt);
   },
   // the ball is fielded just before a second; another 0.6 s puts the tally at
   // three strokes of five, which is what "how long is left" has to read as

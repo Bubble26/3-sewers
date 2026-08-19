@@ -8,6 +8,7 @@ import { rng, RNG } from '../core/rng.js';
 import { CHALK, BALL as BALLC } from '../render/palette.js';
 import { MAT, chalkTexture, slabText, slabWidth, LAYER } from '../render/materials.js';
 import { PITCH_TYPES, pitchTiming, blockRoster } from './core.js';
+import { roadHeight } from '../world/props.js';
 
 /**
  * ============================================================================
@@ -133,7 +134,7 @@ export const BT = {
   hitstop: { square: 0.105, glance: 0.062, nubber: 0.030, at: [0.85, 0.5] },
   dust: { bounce: 7, contact: 13 },
 
-  trail: { dots: 22, every: 1 / 45, life: 0.42, size: 0.19 },
+  trail: { dots: 44, every: 1 / 110, life: 0.85, size: 0.088, grow: 2.9 },
   verdictLife: 1.05,
   arcLife: 0.20,
   markLife: 1.30,
@@ -176,10 +177,16 @@ export function hopType(pitchId, flight) {
  *   apex      how high it comes back off the stone (BOUNCE_REST x arc)
  *   yCross    where it is when it gets to you: 1.93 / 2.84 / 4.08 ft at the tuned arc
  */
-export function hopPlan({ pitchId = 'heat', flight = 0.7, releaseY = 4.35, aimY = 2.6 } = {}) {
-  const type = hopType(pitchId, flight);
+export function hopPlan({ pitchId = 'heat', flight: thrown = 0.7, releaseY = 4.35, aimY = 2.6 } = {}) {
+  const type = hopType(pitchId, thrown);
   const tb = P.pitchTB[type];
-  const tBounce = Math.max(0.08, Math.min(flight - tb, flight * 0.86));
+  // THE READ WINDOW IS NOT NEGOTIABLE. `PITCH_TB` is the measurement; a delivery too
+  // quick to contain it gets stretched until it does, which is also the only honest
+  // speed: 42 feet in 0.50 s is a twelve-year-old at 39 mph, and the 0.32 s the solver
+  // was handing us is 60 mph out of a kid's arm with a rubber ball in it.
+  const flight = Math.max(thrown, tb + BT.minPreBounce);
+  const scale = thrown / flight;                 // sample the thrown path at this rate
+  const tBounce = flight - tb;
   const arc = clamp(BT.arc + (aimY - 2.6) * BT.arcPerAim, BT.arcMin, BT.arcMax);
   const apex = P.bounceRest[type] * arc;
   const vy1 = Math.sqrt(2 * BT.g * apex);                       // straight up off the stone
@@ -191,7 +198,7 @@ export function hopPlan({ pitchId = 'heat', flight = 0.7, releaseY = 4.35, aimY 
   const vImpact = Math.abs(vyA - BT.g * tBounce);
   const idealPress = flight - BT.pressLead;
   return {
-    type, tb, tBounce, flight, arc, apex, vy1, yCross, releaseY,
+    type, tb, tBounce, flight, thrown, scale, arc, apex, vy1, yCross, releaseY,
     vyA, vImpact, restitution: vy1 / Math.max(1e-4, vImpact),
     kick: P.spinKick[type] / BT.px,                              // ft/s sideways off the hop
     idealPress,
@@ -558,6 +565,32 @@ class ChalkPop {
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+/** A round scuff of chalk dust: soft, ragged, never a square. */
+let _dustTex = null;
+function dustSprite() {
+  if (_dustTex) return _dustTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const R = new RNG(77);
+  const grd = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(32, 32, 30, 0, 6.2832); g.fill();
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 26; i++) {
+    g.globalAlpha = R.range(0.10, 0.45);
+    g.beginPath();
+    g.ellipse(R.range(6, 58), R.range(6, 58), R.range(2, 7), R.range(2, 6), R.range(0, 3), 0, 6.2832);
+    g.fill();
+  }
+  _dustTex = new THREE.CanvasTexture(c);
+  _dustTex.colorSpace = THREE.SRGBColorSpace;
+  return _dustTex;
+}
+
 /**
  * The dotted chalk arc the ball leaves behind it. This is the READ, drawn: in a still
  * frame the bounce and the shape of the rebound are unmistakable, which is the whole
@@ -569,12 +602,15 @@ class DustTrail {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 4 * 3), 3));
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 4 * 4), 4));
+    const uv = new Float32Array(n * 4 * 2);
+    for (let i = 0; i < n; i++) uv.set([0, 0, 1, 0, 1, 1, 0, 1], i * 8);
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     const idx = [];
     for (let i = 0; i < n; i++) idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
     g.setIndex(idx);
     this.mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-      color: 0xffffff, vertexColors: true, transparent: true, depthWrite: false, fog: false,
-      blending: THREE.NormalBlending,
+      color: 0xffffff, map: dustSprite(), vertexColors: true, transparent: true,
+      depthWrite: false, fog: false, blending: THREE.NormalBlending, toneMapped: false,
     }));
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 12;
@@ -605,14 +641,16 @@ class DustTrail {
     for (let i = 0; i < BT.trail.dots; i++) {
       const d = this.dots[Math.min(i, n - 1)];
       const fade = i < n ? clamp(1 - d.age / BT.trail.life, 0, 1) : 0;
-      const s = BT.trail.size * (d.big ? 1.55 : 1) * (0.45 + 0.55 * fade);
+      // the head is a fat chalk smudge and the tail is dust: a comic-strip arc that
+      // makes the bounce and the rebound unmistakable in one still frame
+      const s = BT.trail.size * (d.big ? 2.1 : 1) * (1 + (BT.trail.grow - 1) * (i < 5 ? 1 - i / 5 : 0)) * (0.35 + 0.65 * fade);
       a.copy(right).multiplyScalar(s); b.copy(up).multiplyScalar(s);
       const o = i * 4;
       pos.setXYZ(o + 0, d.p.x - a.x - b.x, d.p.y - a.y - b.y, d.p.z - a.z - b.z);
       pos.setXYZ(o + 1, d.p.x + a.x - b.x, d.p.y + a.y - b.y, d.p.z + a.z - b.z);
       pos.setXYZ(o + 2, d.p.x + a.x + b.x, d.p.y + a.y + b.y, d.p.z + a.z + b.z);
       pos.setXYZ(o + 3, d.p.x - a.x + b.x, d.p.y - a.y + b.y, d.p.z - a.z + b.z);
-      const al = i < n ? fade * 0.72 : 0;
+      const al = i < n ? fade * 0.92 : 0;
       for (let v = 0; v < 4; v++) col.setXYZW(o + v, this.col.r, this.col.g, this.col.b, al);
     }
     pos.needsUpdate = true; col.needsUpdate = true;
@@ -622,7 +660,7 @@ class DustTrail {
 
 /** The stick's own smear: a chalk crescent through the contact zone, four frames long. */
 function swingArcMesh() {
-  const g = new THREE.RingGeometry(1.55, 3.55, 26, 1, Math.PI * 0.06, Math.PI * 0.78);
+  const g = new THREE.RingGeometry(1.05, 2.35, 24, 1, Math.PI * 0.10, Math.PI * 0.62);
   const m = new THREE.MeshBasicMaterial({
     color: CHALK, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, fog: false,
   });
@@ -637,6 +675,7 @@ function swingArcMesh() {
    ========================================================================= */
 
 const _v = new THREE.Vector3();
+const _w = new THREE.Vector3();
 
 const impl = {
   /** Called from sim.throwPitch, the instant the ball leaves the hand. */
@@ -651,7 +690,7 @@ const impl = {
     });
     plan.dir = p && p.p0.x >= 0 ? -1 : 1;                  // the hook goes with his arm
     if (p && p.path) {
-      p.path(plan.tBounce, _v);
+      p.path(plan.tBounce * plan.scale, _v);
       plan.bounce = new THREE.Vector3(_v.x, T.ball.radius, _v.z);
       // Hand the pitching piece its own bounce back, retimed onto the tuned read window,
       // so `ball:bounce` fires once, at the right instant, from the file that owns it.
@@ -665,19 +704,31 @@ const impl = {
     return plan;
   },
 
-  /** The hop itself: pitching owns where it goes, this owns how it gets there. */
+  /**
+   * The hop itself. The pitching piece owns WHERE the ball goes — its lane, its break,
+   * its arrival point — and this owns HOW it gets there: the tuned tempo, the one bounce
+   * off the block, the rebound, and the sideways kick. The thrown path is re-sampled at
+   * `h.scale` so the shape is still his and the clock is the measurement's.
+   */
   shapeFlight(dt, sim, tail = false) {
     const h = sim.hop;
     if (!h) return;
     const t = sim.pitchT;
     const b = sim.ball;
+    const p = sim.pitch;
+    if (p && p.path) {
+      p.path(Math.min(t * h.scale, h.thrown), _v);
+      b.pos.x = _v.x; b.pos.z = _v.z;
+      p.path(Math.min((t + 1 / 120) * h.scale, h.thrown), _w);
+      b.vel.x = (_w.x - _v.x) * 120; b.vel.z = (_w.z - _v.z) * 120;
+    }
     b.pos.y = hopY(h, t);
+    b.vel.y = hopVY(h, t);
     if (t > h.tBounce) {
       const s = t - h.tBounce;
       b.pos.x += h.dir * h.kick * s;
       b.vel.x += h.dir * h.kick;
     }
-    b.vel.y = hopVY(h, t);
     if (!tail) system.onFlight(sim, h, t, dt);
   },
 
@@ -764,7 +815,7 @@ const system = registerSystem({
     app.scene.add(this.group);
 
     this.trail = new DustTrail(this.group);
-    this.pop = new ChalkPop(this.group, { w: 5.0, h: 5.0 });
+    this.pop = new ChalkPop(this.group, { w: 4.2, h: 4.2 });
     this.arc = swingArcMesh();
     this.group.add(this.arc);
     this.arcT = 0;
@@ -773,13 +824,12 @@ const system = registerSystem({
     this.marks = {};
     for (const k of PITCH_TYPES) {
       const m = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.6, 3.6),
+        new THREE.PlaneGeometry(4.6, 4.6),
         MAT.chalkMark(chalkTexture(BOUNCE_DRAW[k], { size: 256, seed: 40 + PITCH_TYPES.indexOf(k) }), { opacity: 0.9 }).clone(),
       );
       m.material = m.material.clone();
       m.rotation.x = -Math.PI / 2;
-      m.position.y = 0.035;
-      m.renderOrder = LAYER.chalk;
+      m.renderOrder = 6;
       m.visible = false;
       this.marks[k] = m;
       this.group.add(m);
@@ -858,7 +908,7 @@ const system = registerSystem({
   showMark(h) {
     for (const k in this.marks) this.marks[k].visible = false;
     const m = this.marks[h.type] || this.marks.fast;
-    m.position.set(h.bounce.x, 0.035, h.bounce.z);
+    m.position.set(h.bounce.x, roadHeight(h.bounce.x) + 0.05, h.bounce.z);
     m.rotation.z = h.dir > 0 ? 0 : Math.PI;
     m.visible = true;
     m.material.opacity = 0.95;
@@ -868,10 +918,10 @@ const system = registerSystem({
 
   onSwing(sim, kind, jumped) {
     const h = sim.hop;
-    const y = jumped ? 3.0 : clamp(h ? h.yCross : 2.8, 1.6, 4.3);
-    this.arc.position.set(2.0, y, T.street.plateZ + 1.0);
-    this.arc.rotation.set(0, jumped ? -0.9 : -0.35, jumped ? 0.55 : 0.16);
-    this.arc.scale.setScalar(jumped ? 0.82 : 1.0);
+    const y = jumped ? 3.1 : clamp(h ? h.yCross : 2.8, 1.7, 4.2);
+    this.arc.position.set(2.6, y, T.street.plateZ + 1.4);
+    this.arc.rotation.set(0.22, -0.42, jumped ? 0.72 : 0.24);
+    this.arc.scale.setScalar(jumped ? 0.78 : 1.0);
     this.arc.visible = true;
     this.arcT = BT.arcLife;
     this.arcJump = jumped;
@@ -889,7 +939,7 @@ const system = registerSystem({
    */
   onVerdict(sim, ev) {
     const err = sim.lastErrMs;
-    const at = new THREE.Vector3(3.2, 5.4, T.street.plateZ + 0.6);
+    const at = new THREE.Vector3(6.2, 7.6, T.street.plateZ + 1.2);
     const t = sim.hop ? sim.hop.type.toUpperCase() : '';
     if (ev.kind === 'in_play' && ev.quality >= 0.85) {
       this.pop.say('ON IT!', at, { sub: t, seed: 3, scale: 1.12 });
@@ -918,7 +968,7 @@ const system = registerSystem({
     if (this.arcT > 0) {
       this.arcT -= dt;
       const u = 1 - this.arcT / BT.arcLife;
-      this.arc.material.opacity = (this.arcJump ? 0.5 : 0.85) * Math.sin(Math.PI * clamp(u, 0, 1));
+      this.arc.material.opacity = (this.arcJump ? 0.34 : 0.62) * Math.sin(Math.PI * clamp(u, 0, 1));
       this.arc.rotation.z += dt * (this.arcJump ? 9 : 15);
       if (this.arcT <= 0) this.arc.visible = false;
     }
@@ -945,206 +995,303 @@ const system = registerSystem({
 });
 
 
+
 /* ============================================================================
-   6. THE EVIDENCE — two chalk boards hung broadside across the block
+   6. THE EVIDENCE — two boards, pinned up across the block
    ----------------------------------------------------------------------------
-   The pitching piece hangs WHAT HE'S GOT across the street at z=38 so a critic can
-   see five real trajectories side on. These are the batting piece's two boards, in
-   the same idiom and deliberately at a different depth so the two never argue:
-   HOP READ (what the hop tells you) and the SWING WINDOW (what you may do about it).
-   Both are chalk on air, both are drawn from the same functions the live pitch flies.
+   DESIGN-BIBLE §11: every element is a depicted physical object you can name the
+   material of. These are TWO SHEETS OF BUTCHER PAPER off the salumeria's roll,
+   torn all round, pinned to the ice wagon's side rail and chalked on — which is
+   how a kid explains a pitch to another kid. The arcs on them are not drawings:
+   they come out of `hopY()`, the same function the live ball flies.
+
+   The pitching piece hangs WHAT HE'S GOT in the air at z=38; these sit at z=32 so
+   the two boards never argue about the same air.
    ========================================================================= */
 
-const BOARD = { z: 30, y: 1.15, halfW: 13.5, zSpan: 24, k: 27 / 24 };
-
-/** Street (z, height) -> a point on the hung board. Uniform scale: no exaggeration. */
-function W(zStreet, y) {
-  return new THREE.Vector3(-(BOARD.halfW - zStreet * BOARD.k), BOARD.y + y * BOARD.k, BOARD.z);
-}
-
-const CHART_ID = { fast: 'heat', spinner: 'slow', drop: 'loft' };
+const BOARD = { z: 32.0, w: 27.0, h: 16.2, y: 11.2 };
 const NAMES = { fast: 'FAST', spinner: 'SPINNER', drop: 'DROP' };
+const CHART_ID = { fast: 'heat', spinner: 'slow', drop: 'loft' };
+const PAPER = '#e7d8b2';
+const PAPER_DARK = '#c9b489';
+const INK_CSS = '#2a1d1a';
 
 /** Three canonical pitches, one per family, all arriving at the same plate. */
 function chartPlans() {
   return PITCH_TYPES.map((k) => {
-    const plan = hopPlan({ pitchId: CHART_ID[k], flight: P.pitchTB[k] + 0.34, releaseY: 4.35, aimY: 2.6 });
+    const plan = hopPlan({ pitchId: CHART_ID[k], flight: P.pitchTB[k] + 0.30, releaseY: 4.35, aimY: 2.6 });
     plan.dir = -1;
-    plan.z0 = T.street.moundZ - 2.4;
     return plan;
   });
 }
 
-/** Where a plan is, in street coordinates, `t` after release. */
-function planPoint(plan, t) {
-  const z = lerp(plan.z0, T.street.plateZ, clamp(t / plan.flight, 0, 1));
-  return { z, y: hopY(plan, t) };
-}
+/* --- the paper itself ------------------------------------------------------ */
 
-/** A dotted chalk line on the board — one quad per dot, one draw call per line. */
-function dotLine(pts, { size = 0.13, alpha = 0.7 } = {}) {
-  const n = pts.length;
-  const g = new THREE.BufferGeometry();
-  const pos = new Float32Array(n * 12);
-  const idx = [];
-  for (let i = 0; i < n; i++) {
-    const p = pts[i];
-    const s = size * (p.w ?? 1);
-    const o = i * 12;
-    pos.set([p.x - s, p.y - s, p.z, p.x + s, p.y - s, p.z, p.x + s, p.y + s, p.z, p.x - s, p.y + s, p.z], o);
-    idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
+/** A torn sheet, drawn straight onto a canvas: deckled edges, a fold, four pins. */
+function tornPaper(g, R, W, H, { pad = 0 } = {}) {
+  const x0 = pad, y0 = pad, x1 = W - pad, y1 = H - pad;
+  let started = false;
+  const tear = (ax, ay, bx, by, amp) => {
+    const n = 26;
+    for (let i = 0; i <= n; i++) {
+      const u = i / n;
+      const nx = -(by - ay), ny = (bx - ax);
+      const L = Math.hypot(nx, ny) || 1;
+      const j = (R.range(-1, 1) + Math.sin(u * 19.1) * 0.5) * amp;
+      const px = ax + (bx - ax) * u + (nx / L) * j;
+      const py = ay + (by - ay) * u + (ny / L) * j;
+      if (!started) { g.moveTo(px, py); started = true; } else g.lineTo(px, py);
+    }
+  };
+  g.beginPath();
+  tear(x0, y0, x1, y0, H * 0.014);
+  tear(x1, y0, x1, y1, H * 0.020);
+  tear(x1, y1, x0, y1, H * 0.016);
+  tear(x0, y1, x0, y0, H * 0.020);
+  g.closePath();
+  g.save();
+  g.shadowColor = 'rgba(30,20,16,0.45)';
+  g.shadowBlur = H * 0.035;
+  g.shadowOffsetY = H * 0.014;
+  g.fillStyle = PAPER;
+  g.fill();
+  g.restore();
+  // the fold it was carried in, and the grain
+  g.save();
+  g.clip();
+  g.globalAlpha = 0.30;
+  g.fillStyle = PAPER_DARK;
+  g.fillRect(W * 0.497, 0, W * 0.006, H);
+  g.globalAlpha = 0.16;
+  for (let i = 0; i < 90; i++) {
+    g.fillRect(R.range(0, W), R.range(0, H), R.range(6, 90), R.range(0.6, 1.8));
   }
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-    color: CHALK, transparent: true, opacity: alpha, depthWrite: false, fog: false, side: THREE.DoubleSide,
-  }));
-  m.renderOrder = 16;
-  return m;
+  g.globalAlpha = 1;
+  g.restore();
 }
 
-function boardLabel(text, pos, size = 1.0, sub = '', seed = 21) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(size * 8.0, size * 8.0),
-    MAT.chalkMark(chalkWordTexture(text, { seed, sub }), { opacity: 0.97 }));
-  m.position.copy(pos);
-  m.renderOrder = 18;
+/** Chalk stroke helper: broken, scuffed, never a clean vector. */
+function chalkPath(g, pts, R, { width = 6, alpha = 0.95, dash = 0, color = INK_CSS } = {}) {
+  g.save();
+  g.strokeStyle = color;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.lineWidth = width;
+  g.globalAlpha = alpha;
+  if (dash) g.setLineDash([dash, dash * 0.85]);
+  g.beginPath();
+  pts.forEach(([x, y], i) => {
+    const jx = R.range(-1, 1) * width * 0.16, jy = R.range(-1, 1) * width * 0.16;
+    if (i === 0) g.moveTo(x + jx, y + jy); else g.lineTo(x + jx, y + jy);
+  });
+  g.stroke();
+  g.restore();
+}
+
+function chalkDot(g, x, y, r, { fill = INK_CSS, alpha = 1, ring = false } = {}) {
+  g.save();
+  g.globalAlpha = alpha;
+  g.beginPath(); g.arc(x, y, r, 0, 6.2832);
+  if (ring) { g.strokeStyle = fill; g.lineWidth = r * 0.42; g.stroke(); }
+  else { g.fillStyle = fill; g.fill(); g.strokeStyle = INK_CSS; g.lineWidth = r * 0.24; g.stroke(); }
+  g.restore();
+}
+
+function word(g, text, x, y, size, { align = 'left', alpha = 1, color = 0x2a1d1a, seed = 3 } = {}) {
+  const w = slabWidth(text, size);
+  const ax = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+  g.save();
+  g.globalAlpha = alpha;
+  slabText(g, text, ax, y, size, { color, seed, tracking: 0.18 });
+  g.restore();
+  return w;
+}
+
+/**
+ * A board mesh from a draw function. Its own canvas at the board's own aspect — NOT
+ * `chalkTexture`, whose scuff pass knocks holes in everything it is handed and would
+ * eat the paper along with the chalk.
+ */
+const boardCache = new Map();
+function boardMesh(key, draw, { w = BOARD.w, h = BOARD.h, px = 2048 } = {}) {
+  let tex = boardCache.get(key);
+  if (!tex) {
+    const c = document.createElement('canvas');
+    c.width = px; c.height = Math.round(px * h / w);
+    const g = c.getContext('2d');
+    draw(g, new RNG(1925), c.width, c.height);
+    tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    boardCache.set(key, tex);
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, depthWrite: false, fog: true, side: THREE.DoubleSide,
+  }));
+  m.renderOrder = 20;
   return m;
 }
 
 /* ---------------------------------------------------------------------------
-   6a. HOP READ — three pitch types after the bounce, in one frame
+   6a. HOP READ — three pitch types after the bounce, on one sheet
    ------------------------------------------------------------------------ */
 
-function buildHopChart(app) {
-  if (system.chart) { system.chart.visible = true; return system.chart; }
-  const g = new THREE.Group();
-  g.name = 'hop_read_board';
+function drawHopBoard(g, R, S, H) {
+  const W = S;
+  tornPaper(g, R, W, H);
   const plans = chartPlans();
   const sep = separability();
 
-  for (const plan of plans) {
-    // the approach: faint, so the eye starts where the read starts — the stone
-    const before = [];
-    for (let t = 0; t <= plan.tBounce; t += plan.flight / 90) {
-      const q = planPoint(plan, t);
-      if (q.z <= BOARD.zSpan) before.push(Object.assign(W(q.z, q.y), { w: 0.72 }));
-    }
-    if (before.length) g.add(dotLine(before, { size: 0.10, alpha: 0.26 }));
+  /* The axis is MILLISECONDS AFTER THE STONE, because that is the only clock a
+     hitter has. All three pitches leave the stone together at 0 and arrive 300,
+     420 and 580 ms later — the read, drawn. */
+  const L = W * 0.075, Rt = W * 0.700;
+  const MS0 = -230, MS1 = 640;
+  const X = (ms) => L + (Rt - L) * ((ms - MS0) / (MS1 - MS0));
+  const base = H * 0.775, top = H * 0.275;
+  const maxY = 5.6;
+  const Y = (ft) => base - (base - top) * (ft / maxY);
 
-    // the rebound: the tell, drawn fat
-    const after = [];
-    for (let t = plan.tBounce; t <= plan.flight + 1e-6; t += plan.tb / 54) {
-      const q = planPoint(plan, t);
-      after.push(W(q.z, q.y));
-    }
-    g.add(dotLine(after, { size: 0.155, alpha: 0.9 }));
-
-    // the scuff on the stone, stood up on the board where the hop happens
-    const b = planPoint(plan, plan.tBounce);
-    const mk = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6),
-      MAT.chalkMark(chalkTexture(BOUNCE_DRAW[plan.type], { size: 256, seed: 60 + PITCH_TYPES.indexOf(plan.type) }), { opacity: 0.95 }));
-    mk.position.copy(W(b.z, b.y + 0.1));
-    mk.renderOrder = 17;
-    g.add(mk);
-
-    // the ball at the two instants the separability measurement names
-    for (const [s, solid] of [[0.100, false], [0.133, true]]) {
-      const q = planPoint(plan, plan.tBounce + s);
-      const dot = new THREE.Mesh(new THREE.CircleGeometry(T.ball.radius * BOARD.k * (solid ? 1.0 : 1.0), 18),
-        new THREE.MeshBasicMaterial({
-          color: solid ? BALLC.new : CHALK, transparent: true,
-          opacity: solid ? 1 : 0.45, fog: false, depthWrite: false,
-        }));
-      dot.position.copy(W(q.z, q.y));
-      dot.position.z += 0.02;
-      dot.renderOrder = 19;
-      g.add(dot);
-    }
-
-    // who this arc is, and when to hit it
-    const cross = planPoint(plan, plan.flight);
-    g.add(boardLabel(NAMES[plan.type], W(-2.9, cross.y + 0.35), 0.50, `${Math.round(IDEAL_AFTER[plan.type])} MS`, 21 + plan.type.length));
-    g.add(boardLabel(`${plan.yCross.toFixed(1)} FT`, W(4.2, cross.y + 1.15), 0.30, '', 31 + plan.type.length));
+  // the Belgian block, and the moment it hits
+  chalkPath(g, [[X(MS0), base], [X(MS1), base]], R, { width: H * 0.013, alpha: 0.9 });
+  for (let x = X(MS0); x < X(MS1); x += W * 0.016) {
+    chalkPath(g, [[x, base + H * 0.010], [x + W * 0.010, base + H * 0.026]], R, { width: H * 0.005, alpha: 0.35 });
   }
+  chalkPath(g, [[X(0), base + H * 0.03], [X(0), top - H * 0.03]], R, { width: H * 0.007, alpha: 0.4, dash: H * 0.020 });
+  word(g, 'THE STONE', X(0) - W * 0.008, top + H * 0.010, H * 0.038, { align: 'right', alpha: 0.75 });
 
-  // the plate, so the three heights mean something
-  const post = [];
-  for (let y = 0; y <= 5.2; y += 0.28) post.push(Object.assign(W(0, y), { w: 0.6 }));
-  g.add(dotLine(post, { size: 0.10, alpha: 0.34 }));
+  // the ruler along the bottom
+  for (let ms = 0; ms <= 600; ms += 100) {
+    chalkPath(g, [[X(ms), base], [X(ms), base + H * 0.028]], R, { width: H * 0.006, alpha: 0.55 });
+    word(g, String(ms), X(ms), base + H * 0.078, H * 0.034, { align: 'center', alpha: 0.55 });
+  }
+  word(g, 'MILLISECONDS AFTER THE STONE', (L + Rt) / 2, base + H * 0.128, H * 0.034, { align: 'center', alpha: 0.6 });
 
-  g.add(boardLabel('THE HOP IS THE TELL', new THREE.Vector3(-1.0, BOARD.y + 9.4, BOARD.z), 1.05,
-    `${sep.at100.worst.toFixed(2)} BALLS APART AT 100 MS`, 41));
-  g.add(boardLabel('EVERY PITCH BOUNCES ONCE', new THREE.Vector3(-1.0, BOARD.y + 7.3, BOARD.z), 0.44,
-    `PRESSES 120 AND 160 MS APART`, 47));
+  // rows ordered by where each one arrives, so no two leader lines ever cross
+  const ROW = [top + H * 0.330, top + H * 0.175, top + H * 0.020];
+  plans.forEach((plan, i) => {
+    const t0 = plan.tBounce;
+    // the approach, faint: nothing before the stone is the read
+    const pre = [];
+    for (let t = Math.max(0, t0 + MS0 / 1000); t <= t0; t += 0.006) pre.push([X((t - t0) * 1000), Y(hopY(plan, t))]);
+    pre.push([X(0), Y(0)]);
+    chalkPath(g, pre, R, { width: H * 0.009, alpha: 0.26, dash: H * 0.017 });
 
-  app.scene.add(g);
-  system.chart = g;
-  return g;
+    // THE HOP, in fat pencil, because this is the whole game
+    const post = [];
+    for (let t = t0; t <= t0 + plan.tb + 1e-6; t += plan.tb / 80) post.push([X((t - t0) * 1000), Y(hopY(plan, t))]);
+    chalkPath(g, post, R, { width: H * 0.021, alpha: 0.95 });
+
+    // where it arrives, and when you have to have swung
+    const xEnd = X(plan.tb * 1000), yEnd = Y(plan.yCross);
+    chalkPath(g, [[xEnd, yEnd], [xEnd, base]], R, { width: H * 0.006, alpha: 0.42, dash: H * 0.014 });
+    chalkDot(g, xEnd, yEnd, H * 0.020, { ring: true, alpha: 0.9 });
+    chalkPath(g, [[xEnd, yEnd], [Rt + W * 0.020, ROW[i]]], R, { width: H * 0.006, alpha: 0.45 });
+    word(g, NAMES[plan.type], Rt + W * 0.028, ROW[i] + H * 0.014, H * 0.050, { align: 'left' });
+    word(g, `COMES IN AT ${plan.yCross.toFixed(1)} FT`, Rt + W * 0.028, ROW[i] + H * 0.058, H * 0.030, { align: 'left', alpha: 0.72 });
+    word(g, `SWING AT ${Math.round(IDEAL_AFTER[plan.type])} MS`, Rt + W * 0.028, ROW[i] + H * 0.098, H * 0.030, { align: 'left', alpha: 0.72 });
+
+    // the ideal press, ticked on the ruler
+    const xp = X(IDEAL_AFTER[plan.type]);
+    chalkPath(g, [[xp, base - H * 0.055], [xp, base]], R, { width: H * 0.011, alpha: 0.85 });
+    chalkPath(g, [[xp - H * 0.017, base - H * 0.038], [xp, base - H * 0.058], [xp + H * 0.017, base - H * 0.038]], R,
+      { width: H * 0.008, alpha: 0.85 });
+
+    // the ball, 100 ms and 133 ms off the stone: the separability instants
+    for (const [ms, solid] of [[100, false], [133, true]]) {
+      chalkDot(g, X(ms), Y(hopY(plan, t0 + ms / 1000)), H * (solid ? 0.028 : 0.023),
+        solid ? { fill: '#f2828a' } : { ring: true, alpha: 0.5 });
+    }
+  });
+
+  // the caliper on the worst pair, measured where the source measured it
+  const [pf, ps] = plans;
+  const cx = X(100);
+  const ya = Y(hopY(pf, pf.tBounce + 0.100)), yb = Y(hopY(ps, ps.tBounce + 0.100));
+  const off = W * 0.042;
+  chalkPath(g, [[cx - off, ya], [cx - off, yb]], R, { width: H * 0.008, alpha: 0.9 });
+  chalkPath(g, [[cx - off * 1.6, ya], [cx - off * 0.15, ya]], R, { width: H * 0.007, alpha: 0.9 });
+  chalkPath(g, [[cx - off * 1.6, yb], [cx - off * 0.15, yb]], R, { width: H * 0.007, alpha: 0.9 });
+  word(g, `${sep.at100.worst.toFixed(2)} BALL APART AT 100 MS`, cx - off * 2.0, (ya + yb) / 2 + H * 0.012, H * 0.036,
+    { align: 'right', alpha: 0.92 });
+
+  // the headline
+  word(g, 'EVERY PITCH BOUNCES ONCE', W * 0.055, H * 0.115, H * 0.082, { seed: 11 });
+  word(g, 'AND THE HOP IS THE TELL', W * 0.055, H * 0.192, H * 0.055, { alpha: 0.72, seed: 13 });
+  word(g, 'THE THREE PRESSES ARE 120 AND 160 MS APART. NO ONE RHYTHM FITS TWO.',
+    W * 0.055, H * 0.985, H * 0.031, { alpha: 0.58, seed: 17 });
+}
+
+function buildHopChart(app) {
+  if (system.chart) { system.chart.visible = true; return system.chart; }
+  const m = boardMesh('bat:board:hop', drawHopBoard);
+  m.position.set(-0.6, BOARD.y, BOARD.z);
+  m.rotation.y = Math.PI;          // face down the street, at the camera
+  m.rotation.z = 0.012;
+  m.name = 'hop_read_board';
+  app.scene.add(m);
+  system.chart = m;
+  return m;
 }
 
 /* ---------------------------------------------------------------------------
-   6b. THE SWING WINDOW — for a critic only. The game never draws this.
-   A prompt that lights before the ball arrives IS the read; see the header.
+   6b. THE SWING WINDOW — for a critic only. The game never draws this, because a
+   prompt that lights before the ball arrives IS the read (see the header).
    ------------------------------------------------------------------------ */
 
-function timingTexture(type) {
-  return chalkTexture(named(`bat:timing:${type}`, (g, R, s) => {
-    const X = (ms) => s * (0.055 + 0.90 * clamp((ms + 60) / 700, 0, 1));
-    const y = s * 0.50;
-    g.lineCap = 'round';
-    g.lineWidth = s * 0.008;
-    g.globalAlpha = 0.62;
-    g.beginPath(); g.moveTo(X(-60), y); g.lineTo(X(640), y); g.stroke();
+function drawWindowBoard(type) {
+  return (g, R, S, H) => {
+    const W = S;
+    tornPaper(g, R, W, H);
+    const X = (ms) => W * 0.075 + W * 0.86 * clamp((ms + 40) / 660, 0, 1);
+    const axis = H * 0.60;
 
+    chalkPath(g, [[X(-40), axis], [X(620), axis]], R, { width: H * 0.011, alpha: 0.8 });
+
+    // the three ideal presses
     for (const k of PITCH_TYPES) {
       const x = X(IDEAL_AFTER[k]);
       const live = k === type;
-      g.globalAlpha = live ? 1 : 0.42;
-      g.lineWidth = s * (live ? 0.016 : 0.008);
-      g.beginPath(); g.moveTo(x, y - s * (live ? 0.115 : 0.07)); g.lineTo(x, y + s * (live ? 0.115 : 0.07)); g.stroke();
-      const nm = NAMES[k];
-      slabText(g, nm, x - slabWidth(nm, s * 0.048) / 2, y - s * 0.135, s * 0.048, { color: CHALK, seed: 9 });
-      const n = String(Math.round(IDEAL_AFTER[k]));
-      slabText(g, n, x - slabWidth(n, s * 0.042) / 2, y + s * 0.20, s * 0.042, { color: CHALK, seed: 12 });
+      chalkPath(g, [[x, axis - H * (live ? 0.16 : 0.10)], [x, axis + H * (live ? 0.10 : 0.06)]], R,
+        { width: H * (live ? 0.020 : 0.010), alpha: live ? 1 : 0.45 });
+      word(g, NAMES[k], x, axis - H * 0.19, H * 0.058, { align: 'center', alpha: live ? 1 : 0.5 });
+      word(g, String(Math.round(IDEAL_AFTER[k])), x, axis + H * 0.165, H * 0.050, { align: 'center', alpha: live ? 0.9 : 0.45 });
     }
 
     // the gaps, which are the whole guarantee
-    g.globalAlpha = 0.7;
-    g.lineWidth = s * 0.006;
-    for (const [a, b, lab] of [[IDEAL_AFTER.fast, IDEAL_AFTER.spinner, '120'], [IDEAL_AFTER.spinner, IDEAL_AFTER.drop, '160']]) {
-      const x0 = X(a), x1 = X(b), yy = y - s * 0.20;
-      g.beginPath(); g.moveTo(x0, yy); g.lineTo(x1, yy); g.stroke();
-      g.beginPath(); g.moveTo(x0, yy - s * 0.02); g.lineTo(x0, yy + s * 0.02); g.stroke();
-      g.beginPath(); g.moveTo(x1, yy - s * 0.02); g.lineTo(x1, yy + s * 0.02); g.stroke();
-      slabText(g, lab, (x0 + x1) / 2 - slabWidth(lab, s * 0.038) / 2, yy - s * 0.035, s * 0.038, { color: CHALK, seed: 14 });
+    for (const [a, b, lab] of [[IDEAL_AFTER.fast, IDEAL_AFTER.spinner, '120 MS'], [IDEAL_AFTER.spinner, IDEAL_AFTER.drop, '160 MS']]) {
+      const x0 = X(a), x1 = X(b), y = axis - H * 0.30;
+      chalkPath(g, [[x0, y], [x1, y]], R, { width: H * 0.008, alpha: 0.75 });
+      chalkPath(g, [[x0, y - H * 0.022], [x0, y + H * 0.022]], R, { width: H * 0.008, alpha: 0.75 });
+      chalkPath(g, [[x1, y - H * 0.022], [x1, y + H * 0.022]], R, { width: H * 0.008, alpha: 0.75 });
+      word(g, lab, (x0 + x1) / 2, y - H * 0.035, H * 0.046, { align: 'center', alpha: 0.85 });
     }
 
-    // the window, for the pitch that is actually in the air
+    // the window that is actually live, for the pitch in the air
     const open = X(IDEAL_AFTER[type] - P.swingEarly * 1000);
     const close = X(IDEAL_AFTER[type] + P.swingLate * 1000);
-    g.globalAlpha = 0.92;
-    g.lineWidth = s * 0.026;
-    g.beginPath(); g.moveTo(open, y + s * 0.062); g.lineTo(close, y + s * 0.062); g.stroke();
-    for (const x of [open, close]) {
-      g.lineWidth = s * 0.012;
-      g.beginPath(); g.moveTo(x, y + s * 0.015); g.lineTo(x, y + s * 0.105); g.stroke();
-    }
-    slabText(g, 'SWING WINDOW 310 MS', open, y + s * 0.30, s * 0.046, { color: CHALK, seed: 15 });
+    g.save();
+    g.globalAlpha = 0.20;
+    g.fillStyle = INK_CSS;
+    g.fillRect(open, axis - H * 0.075, close - open, H * 0.15);
+    g.restore();
+    chalkPath(g, [[open, axis + H * 0.075], [close, axis + H * 0.075]], R, { width: H * 0.026, alpha: 0.95 });
+    for (const x of [open, close]) chalkPath(g, [[x, axis + H * 0.02], [x, axis + H * 0.125]], R, { width: H * 0.012, alpha: 0.9 });
+    word(g, 'SWING WINDOW  310 MS', (open + close) / 2, axis + H * 0.245, H * 0.050, { align: 'center', alpha: 0.9 });
 
-    slabText(g, 'MS AFTER THE BOUNCE', s * 0.055, s * 0.135, s * 0.058, { color: CHALK, seed: 17 });
-    g.globalAlpha = 0.72;
-    slabText(g, 'NO ONE RHYTHM FITS TWO', s * 0.055, s * 0.94, s * 0.042, { color: CHALK, seed: 19 });
-    g.globalAlpha = 1;
-  }), { size: 1024, seed: 5 });
+    word(g, 'MILLISECONDS AFTER THE BOUNCE', W * 0.075, H * 0.14, H * 0.088, { color: 0x2a1d1a, seed: 21 });
+    word(g, 'NO ONE RHYTHM FITS TWO OF THEM', W * 0.075, H * 0.955, H * 0.042, { color: 0x2a1d1a, alpha: 0.65, seed: 23 });
+  };
 }
 
 function buildTimingChart(app) {
   const type = app.sim.hop ? app.sim.hop.type : 'fast';
   if (system.timing) { app.scene.remove(system.timing); system.timing = null; }
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(29, 10.2),
-    MAT.chalkMark(timingTexture(type), { opacity: 0.96 }));
-  m.position.set(-1.0, 9.6, BOARD.z);
-  m.renderOrder = 18;
+  const m = boardMesh(`bat:board:win:${type}`, drawWindowBoard(type), { w: 24, h: 8.6, px: 1792 });
+  m.position.set(-0.6, 14.6, BOARD.z);
+  m.rotation.y = Math.PI;          // face down the street, at the camera
+  m.rotation.z = -0.010;
   m.name = 'swing_window_board';
   app.scene.add(m);
   system.timing = m;
@@ -1155,26 +1302,23 @@ function buildTimingChart(app) {
    6c. The scenarios themselves
    ------------------------------------------------------------------------ */
 
-/** Run an at-bat forward to the release, fast, then on to a chosen press. */
-function toPress(seed, offsetSec, { rate = 8 } = {}) {
+/** Set an at-bat up with the human at the plate and a press already booked. */
+function stagePress(seed, offsetSec, { rate = 6 } = {}) {
   const sim = app.sim;
   sim.humanBatsFirst();
   sim.reset(seed);
   sim.windupRate = rate;
+  sim.autoPress = offsetSec;
   let guard = 0;
   while (sim.state.phase !== 'pitch' && guard++ < 900) app.clock.advance(1 / 60);
   sim.windupRate = 1;
-  if (sim.state.phase !== 'pitch') return null;
-  const w = sim.swingWindow();
-  const want = clamp(w.ideal + offsetSec, w.open + 0.004, w.close - 0.004);
   guard = 0;
-  while (sim.state.phase === 'pitch' && sim.pitchT < want && guard++ < 300) app.clock.advance(1 / 60);
-  sim.swing();
-  return w;
+  while (sim.swingAt < 0 && sim.state.phase === 'pitch' && guard++ < 400) app.clock.advance(1 / 60);
+  sim.autoPress = null;
 }
 
-/** Hold the ball a chosen moment after the hop, so a still frame shows the read. */
-function toBounce(seed, after = 0.10, { rate = 8 } = {}) {
+/** Hold the ball a chosen moment after the hop, so a still shows the read. */
+function toBounce(seed, after = 0.10, { rate = 6 } = {}) {
   const sim = app.sim;
   sim.humanBatsFirst();
   sim.reset(seed);
@@ -1185,10 +1329,10 @@ function toBounce(seed, after = 0.10, { rate = 8 } = {}) {
   if (!sim.hop) return;
   const want = sim.hop.tBounce + after;
   guard = 0;
-  while (sim.state.phase === 'pitch' && sim.pitchT < want && guard++ < 300) app.clock.advance(1 / 60);
+  while (sim.state.phase === 'pitch' && sim.pitchT < want && guard++ < 400) app.clock.advance(1 / 60);
 }
 
-/** THE READ. Three pitch types after the bounce, chalked across the block. */
+/** THE READ. Three pitch types after the bounce, chalked on a sheet of butcher paper. */
 registerScenario('hop_read', {
   seed: 1925,
   setup: () => {
@@ -1198,15 +1342,15 @@ registerScenario('hop_read', {
     sim.state.phase = 'idle';
     sim.ball.live = false; sim.ball.inFlight = false;
     buildHopChart(app);
-    app.camera.fov = 31;
-    app.camera.position.set(0.4, 7.4, -6.4);
-    app.camera.lookAt(-1.0, 7.0, BOARD.z);
+    app.camera.fov = 30;
+    app.camera.position.set(-0.6, 10.6, -6.0);
+    app.camera.lookAt(-0.6, BOARD.y, BOARD.z);
     app.camera.updateProjectionMatrix();
   },
   settle: 0,
 });
 
-/** THE WINDOW, and a live ball 140 ms off the stone underneath it. */
+/** THE WINDOW, over a live ball that is 140 ms off the stone. */
 registerScenario('swing_timing', {
   seed: 1925,
   setup: () => {
@@ -1216,8 +1360,8 @@ registerScenario('swing_timing', {
   settle: 0,
 });
 
-registerScenario('swing_early', { seed: 4242, setup: () => { toPress(4242, -0.155); }, settle: 0.26 });
-registerScenario('swing_square', { seed: 4242, setup: () => { toPress(4242, 0.0); }, settle: 0.26 });
-registerScenario('swing_late', { seed: 4242, setup: () => { toPress(4242, 0.115); }, settle: 0.26 });
+registerScenario('swing_early', { seed: 4242, setup: () => { stagePress(4242, -0.150); }, settle: 0.24 });
+registerScenario('swing_square', { seed: 4242, setup: () => { stagePress(4242, 0.0); }, settle: 0.24 });
+registerScenario('swing_late', { seed: 4242, setup: () => { stagePress(4242, 0.110); }, settle: 0.24 });
 
 export default system;

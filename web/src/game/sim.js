@@ -113,6 +113,13 @@ export class Sim {
      * settles it (via `autoThrow`) if the play ends with nobody having answered.
      */
     this.deferThrow = false;
+    /**
+     * SCENARIOS ONLY. Seconds either side of the ideal press at which the sim presses
+     * for itself, so a deterministic still or film strip can be taken of an early, an
+     * on-time and a late swing without the harness having to guess when the ball will
+     * arrive. Never set during play; the game reads a human's hands or `core.cpuSwing`.
+     */
+    this.autoPress = null;
     this.__forcePlay = null;    // the decided play, handed to the fielding slot at the crack
     this.shown = { away: 0, home: 0 };   // runs already announced on the bus
   }
@@ -141,6 +148,7 @@ export class Sim {
 
   /** The live pitch's crossing time. Everything that animates to contact reads this. */
   get timeToPlate() {
+    if (this.hop) return this.hop.flight;          // the hop owns the tempo (batting.js)
     if (this.pitch && this.pitch.flight > 0) return this.pitch.flight;
     return (T.street.moundZ - T.street.plateZ) / T.pitch.speed;
   }
@@ -497,6 +505,11 @@ export class Sim {
       gameplay.batting?.updateSwing?.(dt, this);
       gameplay.batting?.updateFx?.(dt, this);
       const w = this.swingWindow();
+      if (this.autoPress !== null && this.swingAt < 0 && this.jumpedAt < 0
+          && this.pitchT >= THREE.MathUtils.clamp(w.ideal + this.autoPress, w.open + 0.004, w.close - 0.004)) {
+        this.swing('normal');
+        return;
+      }
       if (this.cpuAt >= 0 && this.swingAt < 0 && this.jumpedAt < 0 && this.pitchT >= this.cpuAt) {
         this.swingAt = this.cpuAt;
         this.pressBy = 'cpu';
@@ -537,10 +550,10 @@ export class Sim {
   flyTail(dt) {
     this.tailT -= dt;
     this.ball.live = this.tailT > 0;
-    if (!this.pitch || !this.pitch.path) return;
+    if (!this.hop) return;
     this.pitchT += dt;
-    this.pitch.path(Math.min(this.pitchT, this.pitch.flight), this.ball.pos);
     gameplay.batting?.shapeFlight?.(dt, this, true);
-    this.ball.pos.z -= Math.max(0, this.pitchT - this.pitch.flight) * 34;
+    this.ball.pos.z -= Math.max(0, this.pitchT - this.hop.flight) * 30;
+    this.ball.pos.y = Math.max(0.9, this.ball.pos.y);
   }
 }

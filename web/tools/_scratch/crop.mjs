@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+import { readFileSync } from 'node:fs';
+const [,, src, x, y, w, h, out, scale='2'] = process.argv;
+const b = readFileSync(src).toString('base64');
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] });
+const p = await browser.newPage({ viewport: { width: Math.round(+w * +scale), height: Math.round(+h * +scale) } });
+await p.setContent(`<style>body{margin:0;overflow:hidden}img{position:absolute;left:${-x * +scale}px;top:${-y * +scale}px;width:${1600 * +scale}px;image-rendering:auto}</style><img src="data:image/png;base64,${b}">`);
+await p.screenshot({ path: out });
+await browser.close();
+console.log(out);
