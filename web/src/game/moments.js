@@ -238,7 +238,7 @@ function cardMesh(tex, w, h, { name = 'street:card', order = 6 } = {}) {
  * a dark shadow (§2.5). Two frames, alternated: he shifts his weight and his
  * near arm swings, which is the "small idle fidget" the reference asks for.
  */
-function chalkShape(g, pts, { fill = 0.3, edge = 0.95, w = 6, rnd = mrng, ink = true, close = true } = {}) {
+function chalkShape(g, pts, { fill = 0.34, edge = 1, w = 6, rnd = mrng, ink = true, close = true } = {}) {
   const path = () => {
     g.beginPath();
     pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
@@ -301,9 +301,15 @@ function drawGhost(g, W, H, frame) {
 
 class ChalkGhost {
   constructor(scene) {
+    // Drawn opaque into a scratch canvas and composited ONCE at 0.62, so the
+    // chalk reads as one translucent figure instead of a pile of overlapping
+    // fills that stack up to solid where the arms cross the shirt.
     this.frames = [0, 1].map((f) => {
+      const scratch = canvas2d(256, 384);
+      drawGhost(scratch.g, 256, 384, f);
       const { c, g } = canvas2d(256, 384);
-      drawGhost(g, 256, 384, f);
+      g.globalAlpha = 0.72;
+      g.drawImage(scratch.c, 0, 0);
       return texFrom(c);
     });
     this.mesh = cardMesh(this.frames[0], 4.0, 6.0, { name: 'street:ghost', order: 7 });
@@ -364,12 +370,15 @@ class ChalkGhost {
  * against both locked framings that is the largest piece of empty roadway in the
  * picture, it is inside frame in both, and nobody stands on it.
  *
- * It is written square and comes back squashed, because the ground plane is seen
- * at eleven degrees from BATTING. That is what chalk on a street looks like from
- * standing height and it is the correct answer rather than a defect: the LEGIBLE
- * copy of the same fact is the placard over the kid's head, two seconds later.
+ * And it is deliberately NOT trying to be legible from the seat. The ground plane
+ * is seen at eleven degrees, so a letter drawn big enough to read comes back as a
+ * two-hundred-pixel smear that fights the chalk base lines already painted there
+ * — measured, three times, in this round. What goes on the road is what goes on a
+ * real road: a tight cluster of initials and tally strokes that reads as SOMEBODY
+ * HAS BEEN KEEPING SCORE HERE and grows all afternoon. The legible copy of the
+ * same fact is the placard over the kid's head, two seconds later.
  */
-const LEDGER = { x: -13.5, z: 12.0, w: 10.0, d: 28.0, rows: 5, cw: 448, ch: 1024 };
+const LEDGER = { x: -15.2, z: 6.0, w: 7.0, d: 12.0, rows: 5, cw: 256, ch: 448 };
 
 class CurbTally {
   constructor(scene) {
@@ -393,14 +402,12 @@ class CurbTally {
     const rnd = new RNG(1925);
     if (this.entries.length) {
       // the heading, written once at the top of the afternoon and gone over twice
-      chalkText(g, 'SEWERS', 22, 16, 150, { w: 13, rnd, tilt: 0.06, alpha: 0.82, squash: 0.42 });
-      chalkPath(g, [[18, 182], [330, 190]], { w: 10, rnd, alpha: 0.7 });
       this.entries.forEach((e, i) => {
-        const y = 212 + i * 162;
-        chalkText(g, e.initial, 26, y, 140, { w: 14, rnd, tilt: 0.05, squash: 0.42 });
+        const y = 18 + i * 84;
+        chalkText(g, e.initial, 16, y, 74, { w: 9, rnd, tilt: 0.05, squash: 0.6 });
         for (let k = 0; k < e.sewers; k++) {
-          chalkPath(g, [[124 + k * 62 + rnd.range(-4, 4), y + 6], [108 + k * 62, y + 136]],
-            { w: 14, rnd, alpha: 0.9, jitter: 3.0 });
+          chalkPath(g, [[86 + k * 32 + rnd.range(-3, 3), y + 4], [78 + k * 32, y + 72]],
+            { w: 9, rnd, alpha: 0.92, jitter: 2.4 });
         }
       });
     }
@@ -884,9 +891,9 @@ function drawWoman(g, W, H) {
 
 class WindowFace {
   constructor(scene) {
-    const { c, g } = canvas2d(160, 224);
-    drawWoman(g, 160, 224);
-    this.mesh = cardMesh(texFrom(c), 3.0, 4.2, { name: 'street:woman', order: 8 });
+    const { c, g } = canvas2d(224, 300);
+    drawWoman(g, 224, 300);
+    this.mesh = cardMesh(texFrom(c), 4.0, 5.4, { name: 'street:woman', order: 8 });
     this.mesh.visible = false;
     scene.add(this.mesh);
     this.t = -1;
@@ -1032,6 +1039,56 @@ const M = {
   copLen: STREET.cop.len,
 };
 
+/**
+ * Three of these fire more than five times in a game, and DESIGN-BIBLE §9 is
+ * explicit that anything that does needs at least three variants or it stops
+ * being a moment on the sixth viewing. Picked off our own PRNG, so the same seed
+ * tells the same jokes in the same order.
+ */
+const LINES = {
+  sewer1: [
+    'One sewer, and the Gooch counted it out loud so nobody can shorten it later.',
+    'One sewer. The Gooch has seen better. The Gooch has also seen worse.',
+    'That is a sewer. A sewer is a sewer. The Gooch does not round up.',
+  ],
+  sewer2: [
+    'Two sewers. The Gooch measured it. The Gooch does not measure for everybody.',
+    'Two. And the Gooch walked it off himself, which he does not do in this heat.',
+    'Two sewers, and the second one was not close. Put it on the curb.',
+  ],
+  sewer3: [
+    'Three sewers. The Gooch has not measured three since the spring.',
+    'Three. The Gooch would like everybody to remember where they were standing.',
+    'Three sewers. The Gooch is going to sit down for a minute.',
+  ],
+  fender: [
+    'Mr Esposito parks it there every Tuesday and every Tuesday he is amazed.',
+    'Off the flivver. That fender has taken more of this game than anybody.',
+    'The Gooch has told Mr Esposito. The Gooch has told him twice.',
+  ],
+  wagon: [
+    'The Gooch works off that wagon. The Gooch would prefer you did not.',
+    'Off the ice. Which is now a wall, and the wall is winning.',
+    'That wagon has been a wall since eleven o\'clock and nobody has voted on it.',
+  ],
+  cans: [
+    'Not legal. Nobody is objecting. The Gooch has stopped objecting to things.',
+    'He fielded that with a lid. The Gooch is going to allow it.',
+    'The lid is a glove now. Everything on this block is something else now.',
+  ],
+  rungs: [
+    'Rung by rung. The Gooch could set his watch by that ladder.',
+    'Every bar of it on the way down. That is a tune, that is.',
+    'The Gooch counted eight rungs. There are six. The Gooch stands by it.',
+  ],
+  yells: {
+    fender: ['OFF THE FENDER!', 'ESPOSITO! YOUR MACHINE!', 'It is LIVE! It is live off the fender!'],
+    cans: ['He is fielding it with the LID!', 'THE LID! GET THE LID!', 'That is not a glove, that is a CAN!'],
+    wagon: ['Off the ice wagon! It is a wall, it is a WALL!', 'The wagon is fair! The wagon is FAIR!', 'Dead off the box! Dead off the box!'],
+  },
+};
+const pickLine = (bank) => bank[mrng.int(0, bank.length - 1)];
+
 function fired(name, payload = {}) {
   M.fired[name] = (M.fired[name] || 0) + 1;
   bus.emit('moment:' + name, { n: M.fired[name], ...payload });
@@ -1061,18 +1118,24 @@ function cheeseIt(p) {
     }],
     [0.24, () => {
       M.cop?.start();
-      // the freeze: everybody, mid-stride, and the sticks go behind backs
+      // THE FREEZE, and the whole read of it is that nine heads turn at once.
+      // §13 asks for one synchronised group gag per venue; this is it, and it is
+      // the difference between "some kids standing about" and "caught".
       for (const k of cast()) {
         k.target = null; k.speed = 0;
         k.act?.('freeze', { state: 'freeze', lock: Math.max(1.5, len - 2.6) });
-        k.setFace?.('shock', 0.9);
+        k.setFace?.('shock', 1.4);
+        k.lookAt?.(BEAT.x0 + 1, BEAT.z0 + 4);
+        k.snapFacing?.();
+        k.showStick?.(false);            // every stick on the block goes behind a back
       }
-      bat?.showStick?.(false);
     }],
     [1.75, () => {
       // …and then the innocent conversation, which is the actual joke
       for (const k of cast()) { k.lock = 0; k.act?.('idle_slouch', { state: 'idle', lock: len }); }
+      // …and then nobody has ever seen a ball in their lives
       if (bat && ss) { bat.lookAt(ss.pos.x, ss.pos.y); ss.lookAt(bat.pos.x, bat.pos.y); }
+      for (const k of cast()) if (k !== bat && k !== ss) { k.setFace?.('squint', 1.6); k.lookAt?.(k.pos.x + 4, k.pos.y + 30); }
       says('Some weather.', bat);
     }],
     [2.45, () => { says('Sure is.', ss); }],
@@ -1165,9 +1228,7 @@ function sewerShot(p) {
     [0.12, () => { sting(who); }],                 // §7.3: his instrument, on the trot
     ...count,
     [0.78 + s * 0.62, () => {
-      gooch(s >= 3 ? 'Three sewers. The Gooch has not measured three since the spring.'
-        : s === 2 ? 'Two sewers. The Gooch measured it. The Gooch does not measure for everybody.'
-        : 'One sewer, and the Gooch counted it out loud so nobody can shorten it later.');
+      gooch(pickLine(s >= 3 ? LINES.sewer3 : s === 2 ? LINES.sewer2 : LINES.sewer1));
     }],
     [1.15 + s * 0.62, () => {
       M.tally?.add(initialOf(who), s);
@@ -1197,19 +1258,26 @@ function sewerShot(p) {
    ------------------------------------------------------------------------ */
 function windowHeld(p) {
   fired('window_held');
-  const at = p?.pos ? p.pos.clone() : new THREE.Vector3(-24, 15, 34);
-  street.interrupt?.('glass', { seconds: 1.15, doOver: false, defer: false, why: 'the glass held' });
+  const at = p?.pos ? p.pos.clone() : glassAt();
+  // she leans out of the sash one floor above whatever the ball hit
+  const her = at.clone().setY(Math.max(12.5, at.y + 6.5));
+  street.interrupt?.('glass', { seconds: 1.5, doOver: false, defer: false, why: 'the glass held' });
   beats.play('glass', [
     [0.00, () => {
       // THE SILENCE. Everything on the mix goes down to a whisper for one beat,
       // which is the loudest thing this game ever does (§7.4, plate glass).
       duckWorld(0.06, 0.02);
-      for (const k of cast()) { k.target = null; k.speed = 0; k.act?.('freeze', { state: 'freeze', lock: 1.4 }); k.setFace?.('shock', 1.3); }
+      for (const k of cast()) {
+        k.target = null; k.speed = 0;
+        k.act?.('freeze', { state: 'freeze', lock: 1.8 });
+        k.setFace?.('shock', 1.8);
+        k.lookAt?.(at.x, at.z); k.snapFacing?.();
+      }
       framing('field');
     }],
-    [0.95, () => { M.woman?.show(at); duckWorld(1, 0.35); }],
-    [1.25, () => { sfx('window_flex', { gain: 0.28, dist: 40, pan: -0.3 }); }],
-    [1.60, () => {
+    [0.55, () => { M.woman?.show(her); }],
+    [0.95, () => { duckWorld(1, 0.35); sfx('window_flex', { gain: 0.28, dist: 40, pan: -0.3 }); }],
+    [1.55, () => {
       unpin();
       sendHome();
       // "the game resumes at double speed" — the pitcher's theatre, rushed, for
@@ -1295,22 +1363,32 @@ function fireEscape(p) {
     ...steps,
     [0.94, () => { sfx('bounce_stone', { gain: 0.7, dist: 24, pan, speed: 0.86 }); }],
     [1.10, () => { says('IT IS ON THE SECOND FLOOR!', cast()[2]); }],
-    [1.85, () => { gooch('Rung by rung. The Gooch could set his watch by that ladder.'); }],
+    [1.85, () => { if (mrng.chance(0.7)) gooch(pickLine(LINES.rungs)); }],
   ]);
 }
 
-/* --- the flivver (§10, Ninety-Fifth Street's third prop) -------------------- */
+/* --- the flivver (§10, Ninety-Fifth Street's third prop) --------------------
+   The ball hits a fender THIRTY TIMES in a measured game — it is a parked car in
+   a sixty-foot street and the block plays around it all afternoon. So the carom
+   itself gets a tin tonk and a spring boing every time, and the full beat, with
+   the klaxon and the Gooch, is rationed to the ones the RULES call a flivver
+   carom. A moment that fires thirty times is a sound effect.                */
 let lastFender = -99;
+function fenderTouch(p) {
+  const at = p?.pos ? p.pos.clone() : new THREE.Vector3(-18, 2, 18);
+  puff(at, 4, 1.7);
+  sfx('ui_boing', { gain: 0.34, dist: 22, pan: at.x > 0 ? -0.4 : 0.4, delay: 0.04, gate: 0.25 });
+}
 function flivver(p) {
-  if (APP.time - lastFender < 1.2) return;
+  const at = p?.pos ? p.pos.clone() : new THREE.Vector3(-18, 2, 18);
+  fenderTouch(p);
+  if (APP.time - lastFender < 9) return;
   lastFender = APP.time;
   fired('flivver');
-  const at = p?.pos ? p.pos.clone() : new THREE.Vector3(-18, 2, 18);
   beats.play('flivver', [
-    [0.00, () => { puff(at, 5, 2.0); sfx('ui_boing', { gain: 0.5, dist: 20, pan: at.x > 0 ? -0.4 : 0.4, delay: 0.04 }); }],
-    [0.55, () => { sfx('klaxon', { gain: 0.34, dist: 30, pan: at.x > 0 ? -0.4 : 0.4 }); }],
-    [0.85, () => { says('OFF THE FENDER!', cast()[6]); }],
-    [1.55, () => { gooch('Mr Esposito parks it there every Tuesday and every Tuesday he is amazed.'); }],
+    [0.40, () => { sfx('klaxon', { gain: 0.34, dist: 30, pan: at.x > 0 ? -0.4 : 0.4 }); }],
+    [0.70, () => { says(pickLine(LINES.yells.fender), cast()[6]); }],
+    [1.55, () => { if (mrng.chance(0.7)) gooch(pickLine(LINES.fender)); }],
   ]);
 }
 
@@ -1320,21 +1398,29 @@ function downTheSewer(p) {
   const at = p?.pos ? p.pos.clone() : new THREE.Vector3(16, 0.2, 12);
   street.interrupt?.('sewer', { seconds: 2.6, doOver: false, defer: false, why: 'down the grate' });
   beats.play('sewer', [
-    [0.00, () => { framing('field'); sfx('sewer_swallow', { gain: 0.95, pos: at, gate: 0 }); }],
+    [0.00, () => {
+      framing('field');
+      sfx('sewer_swallow', { gain: 0.95, pos: at, gate: 0 });
+      sfx('klaxon', { gain: 0.22, dist: 170, pan: -0.5, delay: 1.35 });
+    }],
     [0.35, () => {
-      // five kids on their knees at the gutter, and one arm in to the shoulder
-      const crew = cast().slice(0, 5);
+      // Four kids on their knees round the grate, in an ARC and three and a half
+      // units apart. Round 1 put five of them 1.6 apart on one line and they
+      // fused into a single lump of knees — a kid is two units wide.
+      const crew = cast().slice(0, 4);
+      const side = Math.sign(at.x) || 1;
       crew.forEach((k, i) => {
+        const a = -0.62 + i * 0.41;
         k.target = null; k.speed = 0;
-        k.goTo?.(at.x + (i - 2) * 1.6, at.z - 1.2, {
+        k.goTo?.(at.x - side * (2.2 + Math.cos(a) * 2.0), at.z + Math.sin(a) * 4.4, {
           speed: T.run.speed, hard: true,
-          onArrive: (x) => { x.lookAt(at.x, at.z); x.act?.('crouch', { state: 'crouch', lock: 2.2 }); },
+          onArrive: (x) => { x.lookAt(at.x, at.z); x.act?.('crouch', { state: 'crouch', lock: 2.6 }); },
         });
       });
       yell('DOWN THE SEWER!', crew[0]);
     }],
-    [1.30, () => { argue(); }],
-    [2.05, () => { says('Who has got the coat hanger? Somebody has got the coat hanger.', cast()[1]); }],
+    [1.40, () => { says('Who has got the coat hanger?', cast()[1]); }],
+    [2.10, () => { argue(); }],
     [2.60, () => { unpin(); sendHome(); }],
   ]);
 }
@@ -1347,8 +1433,8 @@ function ashCan(p) {
   beats.play('ashcan', [
     [0.00, () => { M.lid?.pop(at, 1); puff(at, 7, 3.0); }],
     [0.95, () => { sfx('clatter_tin', { gain: 0.7, pos: at, gate: 0 }); }],
-    [1.30, () => { says('He is fielding it with the LID!', cast()[3]); }],
-    [2.20, () => { gooch('Not legal. Nobody is objecting. The Gooch has stopped objecting to things.'); }],
+    [1.30, () => { says(pickLine(LINES.yells.cans), cast()[3]); }],
+    [2.20, () => { if (mrng.chance(0.8)) gooch(pickLine(LINES.cans)); }],
   ]);
 }
 
@@ -1442,13 +1528,28 @@ function handOverHand() {
   const p = players();
   const a = p?.batter, b = p?.onDeck;
   beats.play('hands', [
-    [0.00, () => { framing('batting'); sfx('ui_clack', { gain: 0.6, dist: 10 }); dot('Fist over fist, and the block is counting.', 'shout'); }],
-    [0.55, () => { says('ONE.', a); a?.act?.('point', { state: 'point', lock: 0.5 }); }],
-    [1.05, () => { says('TWO.', b); b?.act?.('point', { state: 'point', lock: 0.5 }); }],
-    [1.55, () => { says('THREE.', a); }],
-    [2.05, () => { says('FOUR — and that is the tip, that is the TIP.', b); }],
-    [2.70, () => { says('Then swing it round your head three times without dropping it.', a); b?.setFace?.('shock', 1.4); }],
-    [3.60, () => { gooch('The Gooch has watched this ritual for eleven years and has never once seen it go smoothly.'); unpin(); }],
+    [0.00, () => {
+      framing('batting');
+      sfx('ui_clack', { gain: 0.6, dist: 10 });
+      // The two captains stand nose to nose over the handle. `curb_wait` is the
+      // only clip in the build that holds a stick VERTICAL, which is exactly the
+      // pose this ritual is — so it is borrowed rather than faked.
+      if (a) { a.target = null; a.at(2.2, 5.2); a.showStick(true); a.lookAt(-1.8, 5.6); a.snapFacing(); a.act('curb_wait', { state: 'ritual', lock: 3.6 }); }
+      if (b) { b.target = null; b.at(-1.8, 5.6); b.showStick(true); b.lookAt(2.2, 5.2); b.snapFacing(); b.act('curb_wait', { state: 'ritual', lock: 3.6 }); }
+      // and the block comes in to watch, because being picked is the ceremony
+      cast().slice(2, 7).forEach((k, i) => {
+        k.target = null;
+        k.goTo?.(-9 + i * 4.4, 13 + (i % 2) * 2.4, { speed: 11, gait: 'trot', hard: true, onArrive: (x) => { x.lookAt(0, 5.4); x.act?.('ready', { state: 'watch', lock: 3.2 }); } });
+      });
+      dot('Fist over fist, and the block is counting.', 'shout');
+    }],
+    [0.55, () => { says('ONE.', a); a?.act?.('point', { state: 'point', lock: 0.45 }); }],
+    [1.05, () => { says('TWO.', b); b?.act?.('point', { state: 'point', lock: 0.45 }); }],
+    [1.55, () => { says('THREE.', a); a?.act?.('point', { state: 'point', lock: 0.45 }); }],
+    [2.05, () => { says('FOUR — and that is the TIP.', b); b?.setFace?.('grin', 1.6); }],
+    [2.70, () => { says('Swing it round your head three times, then.', a); b?.setFace?.('shock', 1.6); }],
+    [3.60, () => { gooch('The Gooch has watched this ritual for eleven years and has never once seen it go smoothly.'); }],
+    [4.30, () => { unpin(); sendHome(); }],
   ]);
 }
 
@@ -1463,16 +1564,30 @@ function lightsComeOn() {
   ]);
 }
 
+/* --- where the block's three hazards actually stand ------------------------
+   The deli's plate glass, the catch-basin castings and the ash cans at the curb
+   are real boxes in src/game/ballphysics.js and src/world/props.js. When the
+   RULES fire one of them rather than the ball finding it, the beat still has to
+   happen at the object, not at the origin — so these are the same coordinates
+   those two files register, and if either moves this is wrong and it will look
+   wrong immediately.                                                        */
+const glassAt = () => new THREE.Vector3(-31.4, 6.0, 17.5);        // 'deli plate glass', x = -facadeX
+const grateAt = (p) => new THREE.Vector3((p?.side ?? 1) * 17.0, 0.2, 11.0);
+const canAt = (p) => new THREE.Vector3((p?.side ?? 1) * 19.6, 1.5, 9.0);
+
 /* --- 9. THE ICEMAN'S WAGON (§9.9) ------------------------------------------ */
 let lastWagon = -99;
 function wagon(p) {
-  if (APP.time - lastWagon < 6) return;
+  // The ball finds the ice wagon's box a lot: it is a nine-foot wall standing in
+  // short right (§9.9) and the block plays off it all afternoon. Twice a game is
+  // a running gag; seven times is wallpaper. Measured, and rationed.
+  if (APP.time - lastWagon < 45 || (M.fired.wagon || 0) >= 3) return;
   lastWagon = APP.time;
   fired('wagon');
   beats.play('wagon', [
     [0.00, () => { puff(p?.pos || new THREE.Vector3(-18, 2, 26), 6, 2.2); sfx('thud_wood', { gain: 0.8, pos: p?.pos, gate: 0 }); }],
-    [0.50, () => { says('Off the ice wagon! It is a wall, it is a WALL!', cast()[5]); }],
-    [1.40, () => { gooch('The Gooch works off that wagon. The Gooch would prefer you did not.'); }],
+    [0.50, () => { says(pickLine(LINES.yells.wagon), cast()[5]); }],
+    [1.40, () => { gooch(pickLine(LINES.wagon)); }],
   ]);
 }
 
@@ -1557,6 +1672,11 @@ function wire() {
   bus.on('street:mother', mother);
   bus.on('street:roof', onRoof);
 
+  // --- the three hazards rules.js rolls off the core's own verdict
+  bus.on('street:glass', (p) => windowHeld({ pos: glassAt(p) }));
+  bus.on('street:down_sewer', (p) => downTheSewer({ pos: grateAt(p) }));
+  bus.on('street:ashcan', (p) => ashCan({ pos: canAt(p), lid: true, speed: 22 }));
+
   // --- what core.js decided
   bus.on('street:sewers', sewerShot);
   bus.on('street:window', (p) => { if (!M.sawSmash) windowBroke(p); M.sawSmash = false; });
@@ -1568,7 +1688,7 @@ function wire() {
   bus.on('ball:fire_escape', (p) => { if (p?.phase !== 'through_grating') fireEscape(p); });
   bus.on('ball:sewer', downTheSewer);
   bus.on('ball:ashcan', ashCan);
-  bus.on('ball:fender', flivver);
+  bus.on('ball:fender', fenderTouch);
   bus.on('ball:impact', (p) => { if (/wagon|ice|truck/i.test(p?.name || '')) wagon(p); });
 
   // --- the two that belong to the game rather than to the ball
@@ -1578,9 +1698,11 @@ function wire() {
     // must never pick up our speech cards or our camera pin.
     if (street.atBats === 1 && !M.inScenario) beats.play('__hands', [[0.25, handOverHand]]);
     if (M.rushed > 0 && APP.sim) { M.rushed -= 1; if (M.rushed === 0) APP.sim.windupRate = 1; }
-    // §9.12: the last half-inning of a three-inning game, once
+    // §9.12: the last INNING, not the last half. A three-inning game can be called
+    // after the top of the third when the gang are ahead, so a bottom-half trigger
+    // missed the ending in two games out of three — measured.
     const s = APP.sim?.state;
-    if (s && !M.fired.lights && s.inning >= T.game.innings && s.half === 'bottom') lightsComeOn();
+    if (s && !M.fired.lights && s.inning >= T.game.innings) lightsComeOn();
   });
 }
 
@@ -1615,6 +1737,11 @@ export default registerSystem({
   },
 
   update(dt, app) {
+    // A fresh ball game means fresh chalk. `sim.reset()` builds a new state object
+    // and never announces itself, so watching that object's identity is how this
+    // file finds out — the same signal src/game/rules.js uses, and the reason the
+    // curb is not still carrying last game's tally in the first frame of this one.
+    if (app.sim && app.sim.state !== M._stateRef) { M._stateRef = app.sim.state; this.newGame(app); }
     beats.update(dt);
     M.lid?.update(dt);
     M.shards?.update(dt);
@@ -1628,8 +1755,28 @@ export default registerSystem({
     M.woman?.update(dt, app.camera);
   },
 
+  /** Everything this file has drawn on the street, taken back off it. */
+  newGame(app) {
+    beats.clear();
+    beats.faults.length = 0;
+    M.fired = {};
+    M.rushed = 0;
+    M.sawSmash = false;
+    M.copLen = STREET.cop.len;
+    lastRattle = -99; lastFender = -99; lastWagon = -99;
+    M.ghost?.hide();
+    M.tally?.clear();
+    M.placard?.clear();
+    M.cop?.stop();
+    if (M.woman) { M.woman.t = -1; M.woman.mesh.visible = false; }
+    if (M.lid) { M.lid.t = -1; M.lid.mesh.visible = false; }
+    if (app?.sim) app.sim.windupRate = 1;
+    duckWorld(1, 0.01);
+  },
+
   onScenario(name, app) {
     M.inScenario = true;
+    M._stateRef = app.sim ? app.sim.state : null;
     mrng.reset(19250922);
     beats.clear();
     beats.faults.length = 0;
@@ -1682,8 +1829,8 @@ registerScenario('rule_window', {
   setup: () => {
     setUp(4242, 0.5);
     // the pane that does NOT break: a flat boom, a frozen block, a woman deciding
-    bus.emit('ball:window', { broke: false, pos: new THREE.Vector3(-22.5, 15.5, 32), name: 'window S2' });
-    APP.clock.advance(1.15);
+    bus.emit('ball:window', { broke: false, pos: new THREE.Vector3(-31.4, 6.0, 17.5), name: 'deli plate glass' });
+    APP.clock.advance(0.85);        // the beat of total silence, with her arriving at the sash
   },
   settle: 0,
 });
@@ -1692,8 +1839,8 @@ registerScenario('rule_window_smash', {
   seed: 77,
   setup: () => {
     setUp(77, 0.5);
-    bus.emit('ball:window', { broke: true, pos: new THREE.Vector3(-22.5, 15.5, 32), name: 'window S2' });
-    APP.clock.advance(0.75);
+    bus.emit('ball:window', { broke: true, pos: new THREE.Vector3(-31.4, 6.0, 17.5), name: 'deli plate glass' });
+    APP.clock.advance(0.95);
   },
   settle: 0,
 });
@@ -1768,8 +1915,8 @@ registerScenario('moment_down_sewer', {
   seed: 71,
   setup: () => {
     setUp(71, 0.5);
-    bus.emit('ball:sewer', { pos: new THREE.Vector3(15.5, 0.2, 14), name: 'grate N1' });
-    APP.clock.advance(1.5);
+    bus.emit('ball:sewer', { pos: new THREE.Vector3(17.0, 0.2, 11), name: 'grate N1' });
+    APP.clock.advance(1.7);
   },
   settle: 0,
 });
@@ -1781,7 +1928,7 @@ registerScenario('moment_frankie', {
     const side = liveMatch.battingSide();
     const who = liveMatch.lineups[side][3];
     street.callUpstairs(who, side);
-    APP.clock.advance(2.1);
+    APP.clock.advance(1.15);        // her shout is still on the wall and his shoulders have just dropped
   },
   settle: 0,
 });
@@ -1801,7 +1948,7 @@ registerScenario('moment_hands', {
   setup: () => {
     setUp(111, 0.4);
     M.play('hands');
-    APP.clock.advance(2.9);
+    APP.clock.advance(2.25);
   },
   settle: 0,
 });

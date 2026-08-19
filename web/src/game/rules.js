@@ -75,12 +75,13 @@ import { CAPTAINS } from '../chars/roster.js';
 export const STREET = {
   /** CHEESE IT — the beat cop. ~1.4 a game: twice is a routine, once is a story. */
   cop: {
-    chance: 0.048,          // per at-bat  -> 45 * 0.048 = 2.2 rolls, cooldown eats ~0.8
+    chance: 0.075,          // per at-bat. Measured: 0.048 gave a cop in one game of three,
+                            // which is not a running gag, it is a rumour. 0.075 gives 1-2 a game.
     cooldown: 6,            // at-bats before he can come round again
     firstAt: 3,             // never in the first three at-bats: let the game start
     len: 4.6,               // seconds of held game. DESIGN-BIBLE §9.6 says thirty; thirty
     lookoutLen: 2.9,        // seconds of dead air is a punishment, so the beat is compressed
-    lookoutChance: 0.026,   // quirk 'lookout' (Ears): sees him a block off, half as often
+    lookoutChance: 0.040,   // quirk 'lookout' (Ears): sees him a block off, half as often
     betweenHalves: 0.55,    // core.js also rolls one at a half-inning; take this share of them
   },
   /** CAR! — a Model T at eight miles an hour. ~0.9 a game, and it costs a pitch. */
@@ -90,10 +91,19 @@ export const STREET = {
     firstAt: 5,
     len: 3.9,
   },
-  /** FRAAAAN-KIEEE! — a mother wins. Once a game at most, and never in the first inning. */
+  /**
+   * FRAAAAN-KIEEE! — a mother wins. Once a game at most, never in the first
+   * inning, and rolled AT AN AT-BAT rather than between halves. That is not a
+   * detail: `core.checkHalf()` empties the bases before the break, so a call
+   * rolled there could never catch a kid standing on one — measured over three
+   * games, the ghost man (§9.8) therefore never once appeared, because the only
+   * thing that creates him is a runner going upstairs. Rolled mid-inning he is
+   * on a bag about half the time, which is exactly the frequency that moment
+   * wants: memorable, and not every game.
+   */
   mother: {
     fromInning: 2,
-    chance: 0.44,           // rolled at each half-inning break from the 2nd -> ~0.85 a game
+    chance: 0.095,          // per at-bat from the 2nd -> ~1 a game, capped at 1
     len: 3.2,
     maxPerGame: 1,
   },
@@ -105,6 +115,30 @@ export const STREET = {
   },
   /** Somebody has to go up for it. */
   roof: { len: 2.4, trip: 2.0 },
+  /**
+   * THE THREE HAZARDS THE BALL DOES NOT ALWAYS FIND ON ITS OWN.
+   *
+   * Measured over three full games with `tools/playthrough.mjs`, the physical
+   * ball hit the deli's plate glass, the ash cans and the catch-basin grate
+   * either once or not at all — because those are three small boxes in sixty
+   * feet of street and a batted ball is not aiming at them. Three of
+   * DESIGN-BIBLE §9's twelve moments were therefore unreachable in a real game,
+   * which makes them cutscenes rather than moments.
+   *
+   * So the block decides as well as the geometry: after a ball has been played,
+   * the verdict's own lane and loft say whether it was the KIND of ball that
+   * finds one, and then it is a roll. These do not change a single outcome —
+   * nobody is out, nobody advances, no run scores — they say where the ball went
+   * on its way to being retrieved, which is precisely the half of a street game
+   * the rules core has no concept of.
+   *
+   * Rates are per qualifying ball, quoted against the ~26 balls in play a game.
+   */
+  hazard: {
+    glass: { chance: 0.17, cooldown: 6, lane: -0.28 },   // ~1.2 a game: pull side, in the air
+    sewer: { chance: 0.17, cooldown: 8 },                // ~1 a game: a grounder to the gutter
+    ashcan: { chance: 0.15, cooldown: 5, lane: 0.55 },   // ~1.4 a game: a hot one into the cans
+  },
   /** How many spaldeens the block owns on a Tuesday. Property is the first joke (§8.1). */
   balls: { start: 3 },
 };
@@ -119,7 +153,7 @@ export const street = {
   /** An interrupt that arrived while the ball was in the air. */
   pending: null,
   /** at-bats since each interrupt kind last fired, so nothing stacks up. */
-  since: { cop: 99, car: 99 },
+  since: { cop: 99, car: 99, glass: 99, sewer: 99, ashcan: 99 },
   atBats: 0,
   doOvers: 0,
   /** kid ids whose mother has won. They are still on the card; they are not on the block. */
@@ -165,7 +199,7 @@ function reset(seed = 19250922) {
   srng.reset(seed >>> 0);
   street.hold = null;
   street.pending = null;
-  street.since.cop = 99; street.since.car = 99;
+  for (const k of Object.keys(street.since)) street.since[k] = 99;
   street.atBats = 0;
   street.doOvers = 0;
   street.gone.clear();
@@ -357,15 +391,21 @@ function rollMother() {
   if (liveMatch.inning < M.fromInning) return;
   if (street.hold || street.pending) return;
   if (!srng.chance(M.chance)) return;
-  const side = 1 - liveMatch.battingSide();     // the side that has just finished batting
-  const pool = onBlock(side).filter((id) => !CAPTAINS.includes(id));
+  const side = liveMatch.battingSide();
+  const eligible = (id) => id && !CAPTAINS.includes(id) && !street.gone.has(id);
+  // She calls whoever is standing on a bag, because the whole street can see him
+  // and because a kid who has just got himself into scoring position is the
+  // funniest kid on the block to lose. He leaves a ghost. If nobody is on, she
+  // takes the best hitter, which is the same joke one beat earlier.
+  const onBag = liveMatch.bases.filter(eligible);
+  if (onBag.length) return callUpstairs(onBag[onBag.length - 1], side);
+  const pool = onBlock(side).filter(eligible);
   if (pool.length <= 2) return;
-  // She calls the best hitter, because of course she does.
   const called = pool.slice().sort((a, b) => {
     const s = (id) => { try { return liveMatch.stat(id, 'PWR') + liveMatch.stat(id, 'CON'); } catch { return 0; } };
     return s(b) - s(a) || (a < b ? -1 : 1);
   })[0];
-  callUpstairs(called, side);
+  return callUpstairs(called, side);
 }
 
 /** She won. He goes up, and he is not coming back down. */
@@ -435,6 +475,53 @@ function reconcileGhosts() {
       // the bag changed hands and the side is still short: the ghost moves up with it
       street.ghosts.set(base, { ...g, id: occupant, name: safeName(occupant) });
     }
+  }
+}
+
+/**
+ * THE THREE HAZARDS. Called once per ball in play, after the verdict is known.
+ *
+ * `sim.lastEv` is the core's own play object — carry, lane, loft, result — so the
+ * kind of ball decides which hazard is even possible and the roll decides
+ * whether it happened. Everything here is announced and nothing here is
+ * adjudicated: `street:glass` is the pane that BOOMS and holds, not a broken
+ * one; core.js owns the broken one and it is a home run.
+ */
+function rollHazards() {
+  const sim = APP.sim;
+  const ev = sim && sim.lastEv;
+  if (!ev || ev.kind !== 'in_play' || street.hold || street.pending) return;
+  const H = STREET.hazard;
+  const lane = ev.lane ?? 0;
+  const loft = ev.loft || 'ground';
+  for (const k of ['glass', 'sewer', 'ashcan']) street.since[k] += 1;
+
+  // THE WINDOW THAT DOES NOT BREAK (§9.5). Pull side, in the air, off the deli's
+  // plate glass — and core.js has already decided this ball is not the one that
+  // goes through, because that one is a home run and it is not here.
+  if (loft !== 'ground' && lane < H.glass.lane && !ev.window
+      && street.since.glass >= H.glass.cooldown && srng.chance(H.glass.chance)) {
+    street.since.glass = 0;
+    note('glass');
+    bus.emit('street:glass', { batter: ev.batter, lane, carry: ev.carry });
+    return;
+  }
+  // DOWN THE SEWER (§9.3). A grounder that gets past everybody finds the grate.
+  if (loft === 'ground' && street.since.sewer >= H.sewer.cooldown && srng.chance(H.sewer.chance)) {
+    street.since.sewer = 0;
+    street.balls = Math.max(0, street.balls - 1);
+    note('down_sewer', { balls: street.balls });
+    bus.emit('street:down_sewer', {
+      batter: ev.batter, lane, side: Math.sign(lane) || 1, balls: street.balls,
+    });
+    return;
+  }
+  // THE ASH CAN LID (§9.7). A hot one into the cans at the curb.
+  if (loft !== 'fly' && Math.abs(lane) > H.ashcan.lane
+      && street.since.ashcan >= H.ashcan.cooldown && srng.chance(H.ashcan.chance)) {
+    street.since.ashcan = 0;
+    note('ashcan');
+    bus.emit('street:ashcan', { batter: ev.batter, lane, side: Math.sign(lane) || 1 });
   }
 }
 
@@ -510,13 +597,11 @@ function wire() {
       else interrupt(p.kind, { seconds: p.seconds, doOver: p.doOver, why: p.why, ...(p.extra || {}) });
       return;
     }
-    rollTraffic();
+    rollMother();
+    if (!street.hold) rollTraffic();
   });
 
-  bus.on('half:end', () => {
-    reconcileGhosts();
-    rollMother();
-  });
+  bus.on('half:end', () => { reconcileGhosts(); });
 
   // core.js rolls its own cop between halves (T.play.cheese). Take a share of
   // those and give them the full beat instead of a silent pause; leave the rest
@@ -530,6 +615,9 @@ function wire() {
 
   bus.on('ball:roof', ballOnRoof);
   bus.on('street:sewers', markSewers);
+  // one roll per ball in play, on whichever of the two the sim announces
+  bus.on('hit', (p) => { if (p?.kind !== 'walk') rollHazards(); });
+  bus.on('out', (p) => { if (p?.kind !== 'strikeout') rollHazards(); });
 
   bus.on('game:over', () => { street.hold = null; street.pending = null; });
 }

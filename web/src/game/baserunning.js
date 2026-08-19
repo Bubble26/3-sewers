@@ -795,6 +795,22 @@ class Runner {
 
   aimAt(b) { if (b) this.faceGoal = headingTo(b.x - this.p.x, b.z - this.p.z); }
 
+  /**
+   * Play a one-shot, or QUEUE it behind whatever is still telling the story.
+   *
+   * A kid who scores on a slide must celebrate, but not by snapping out of the
+   * slide on the frame his hand touches the manhole — and a bare `if (lock <= 0)`
+   * means he never celebrates at all, which is what round 3 of this piece shipped:
+   * he crossed the plate and then lay in the road for a second and a half.
+   */
+  queue(name, o = {}) {
+    const k = this.kid;
+    if (!k) return;
+    if (k.lock > 0.03) { k.after = (kk) => kk.act(name, o); return; }
+    k.lock = 0;
+    k.act(name, o);
+  }
+
   /** Put him where the chalk is, in the pose of a kid who has just got there. */
   settleOnBase(i) {
     const b = BAGS[i];
@@ -1317,7 +1333,7 @@ class Runner {
     this.lead = 0;
     if (this.beaten) { this.st = 'out'; if (k && k.lock <= 0) k.act('sulk', { state: 'sulk', lock: 1.7 }); return; }
     if (k) {
-      if (celebrate && k.lock <= 0) { k.act('cheer_arms', { state: 'cheer', lock: 1.1 }); k.setFace('grin', 1.8); }
+      if (celebrate) { k.setFace('grin', 1.8); this.queue('cheer_arms', { state: 'cheer', lock: 1.1 }); }
       else if (k.lock <= 0) k.anim.play('ready', { fade: 0.25 });
     }
     bus.emit('run:planted', { who: this.id, name: this.name, bag: BAG_TAG[this.at], base: BAG_WORD[this.at] });
@@ -1354,7 +1370,7 @@ class Runner {
     this.st = 'score';
     this.v = 0;
     const k = this.kid;
-    if (k && k.lock <= 0) { k.act('cheer_jump', { state: 'cheer', lock: 1.4 }); k.setFace('grin', 2.2); }
+    if (k) { k.setFace('grin', 2.4); this.queue('cheer_jump', { state: 'cheer', lock: 1.4 }); }
     bus.emit('run:score', { who: this.id, name: this.name, from: this.from });
   }
 
