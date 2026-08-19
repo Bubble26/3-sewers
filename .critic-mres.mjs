@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+import { listen } from './tools/serve.mjs';
+const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const { srv, port } = await listen(0);
+const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-angle=swiftshader','--use-gl=angle','--enable-unsafe-swiftshader','--no-sandbox','--disable-dev-shm-usage'] });
+const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+await page.goto(`http://127.0.0.1:${port}/index.html?harness=1`, { waitUntil: 'commit', timeout: 30000 });
+await page.waitForFunction(() => globalThis.__SB?.ready, null, { timeout: 180000 });
+const res = await page.evaluate(() => performance.getEntriesByType('resource').map(r=>({n:r.name.split('/').slice(-2).join('/'), s:Math.round(r.startTime), d:Math.round(r.duration)})).sort((a,b)=>b.d-a.d).slice(0,15));
+console.log('slowest resources:', JSON.stringify(res,null,1));
+const last = await page.evaluate(() => { const r = performance.getEntriesByType('resource').sort((a,b)=>(b.startTime+b.duration)-(a.startTime+a.duration))[0]; return {n:r.name.split('/').pop(), end:Math.round(r.startTime+r.duration)}; });
+console.log('last resource ends at', JSON.stringify(last));
+console.log('domContentLoaded', await page.evaluate(()=>Math.round(performance.getEntriesByType('navigation')[0].domContentLoadedEventStart)));
+await browser.close(); srv.close();

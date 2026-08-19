@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+import { listen } from './tools/serve.mjs';
+const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const { srv, port } = await listen(0);
+const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-angle=swiftshader','--use-gl=angle','--enable-unsafe-swiftshader','--no-sandbox','--disable-dev-shm-usage','--hide-scrollbars'] });
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
+page.on('pageerror', e => console.log(`[pageerror] ${e.message}`));
+page.on('console', m => { if (m.type()==='error') console.log('[cerr] '+m.text()); });
+await page.goto(`http://127.0.0.1:${port}/.critic-boot.html`, { waitUntil: 'commit', timeout: 20000 });
+await page.waitForFunction(() => globalThis.__T && globalThis.__T.done, null, { timeout: 180000 });
+console.log(JSON.stringify(await page.evaluate(() => globalThis.__T), null, 1));
+await browser.close(); srv.close();

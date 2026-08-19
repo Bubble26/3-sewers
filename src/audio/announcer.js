@@ -84,7 +84,7 @@ const DOT = {
     'That is {B} digging in, on Belgian block, which does not dig.',
     '{B} steps in and the whole outfield takes one step back. One.',
     'Batting: {B}. And I want it on the record that I called this.',
-    '{B} now. I have him down for nothing so far, and I keep an honest sill.',
+    '{B} now. I have {him} down for nothing so far, and I keep an honest sill.',
     '{B} up, and the on-deck kid has already asked to go next.',
   ],
 
@@ -93,27 +93,27 @@ const DOT = {
     'Strike {S}, and the stick never moved.',
     'Called! Straight over the manhole.',
     'Right through the middle of the afternoon. Strike {S}.',
-    'He looked at it. He is allowed to look at it. Strike {S}.',
-    'Over the plate, over the cover, over him. Strike {S}.',
+    '{He} looked at it. {He} is allowed to look at it. Strike {S}.',
+    'Over the plate, over the cover, over {him}. Strike {S}.',
     'Took that one. Strike {S}, and I am chalking it.',
     'That is a strike on this block, and it would be a strike on any block.',
-    'Strike {S}! He is still looking at where it was.',
+    'Strike {S}! {He} is still looking at where it was.',
     'Down the middle, {S}. {P} is enjoying this far too much.',
-    'He watched it go by like a trolley he did not want.',
+    '{He} watched it go by like a trolley {he} did not want.',
     'Strike {S}. Clean as a whistle and twice as loud.',
     'That is a strike and I do not care who is arguing about it.',
   ],
   strike_swinging: [
     'Swung and missed! Strike {S}.',
-    'He went after it. It was not there. Strike {S}.',
-    'Whiffed him! That is {S}.',
+    '{He} went after it. It was not there. Strike {S}.',
+    'Whiffed {him}! That is {S}.',
     'All the way around, and nothing on the end of it.',
-    'Strike {S}, and he swung hard enough for two.',
+    'Strike {S}, and {he} swung hard enough for two.',
     'Missed it by a foot and a half, and I measured.',
     'That swing had ambition. No accuracy. But ambition.',
     'Cut at it! Cut at it and got air. Strike {S}.',
-    'He swung so hard his cap came off. The cap is fine.',
-    'Strike {S}! He is telling everybody he had it timed.',
+    '{He} swung so hard {his} cap came off. The cap is fine.',
+    'Strike {S}! {He} is telling everybody {he} had it timed.',
     'Nothing but wind, and the wind is off the river.',
     'Strike {S}. {P} did that on purpose and I have proof.',
   ],
@@ -126,7 +126,7 @@ const DOT = {
     'That is foul by the rules of this street, which are the rules.',
     'Tipped it. Barely. The stick heard about it.',
     'Off the awning, and the awning is not happy.',
-    'He got a piece. A very small piece.',
+    '{He} got a piece. A very small piece.',
     'Foul, and Beans is already explaining why it was not.',
   ],
   ball: [
@@ -141,25 +141,25 @@ const DOT = {
     'Off the plate by a foot. Ball {N}.',
     '{P} missed the manhole by the width of a manhole. Ball {N}.',
     'Ball {N}. Nobody swings at that, on this block or any other.',
-    'Way inside. He stepped back and he was right to.',
+    'Way inside. {He} stepped back and {he} was right to.',
   ],
   walk: [
-    'Ball four! {B} takes his base, and the base is a chalk mark.',
-    'That is a walk. {B} strolls down there taking his time about it.',
+    'Ball four! {B} takes {his} base, and the base is a chalk mark.',
+    'That is a walk. {B} strolls down there taking {his} time about it.',
     'Four wide ones. {P} has lost the manhole entirely.',
-    'He walks him. A free base, on a street where nothing is free.',
+    '{P} walks {him}. A free base, on a street where nothing is free.',
     'Ball four, and {B} did not swing once, which is a kind of genius.',
-    'Walked. {P} is looking at his own hand like it belongs to somebody else.',
+    'Walked. {P} is looking at that hand like it belongs to somebody else.',
   ],
   strikeout: [
-    'Struck him out! Sit down, {B}.',
+    'Struck {him} out! Sit down, {B}.',
     'That is three. {B} is out, and the stick goes back to whoever owns it.',
-    'Strike three! {P} has him, and knows it.',
-    'He is out swinging. He is out, and he is explaining.',
+    'Strike three! {P} has {him}, and knows it.',
+    '{He} is out swinging. {He} is out, and {he} is explaining.',
     'Three strikes. That is out here, that is out anywhere.',
-    'Got him! {P} does not smile. {P} never smiles.',
+    'Got {him}! {P} does not smile. {P} never smiles.',
     'Strike three, and {B} is talking to the stick. The stick has no comment.',
-    'Down on strikes. He will want that one back and he cannot have it.',
+    'Down on strikes. {He} will want that one back and {he} cannot have it.',
   ],
 
   /* --- outs and hits ---------------------------------------------------- */
@@ -168,69 +168,69 @@ const DOT = {
     '{F} takes it. Bare hands, no fuss. Out.',
     'Right at somebody. That is the worst luck on this street. Out.',
     'Squeezed it! {F} had that in both hands and one prayer.',
-    'Two hands, no glove, and out he goes.',
-    'Off the block, one hop, and {F} throws him out.',
+    'Two hands, no glove, and out {he} goes.',
+    'Off the block, one hop, and {F} throws {him} out.',
     '{F} takes it on the fly and now wants everybody to know.',
     'That is out. And {B} is going to argue about it anyway.',
     'Fielded clean. {F} does not even look at the runner.',
     'Caught. And caught with the hands, which is the only way there is.',
     'Out! The block has one less runner and one more argument.',
-    'He is out, and the ash can goes back where it was.',
+    '{He} is out, and the ash can goes back where it was.',
   ],
   hit: [
     'Base hit! Right past everybody.',
-    'He got it! Through the gap and up the street.',
+    '{He} got it! Through the gap and up the street.',
     'Solid! That is a clean one and it is rolling for the corner.',
-    'Base hit for {B}. He is safe and he is loud about it.',
+    'Base hit for {B}. {He} is safe and {he} is loud about it.',
     'Through the infield, which is four kids and a fire hydrant.',
     'That is a hit. That is a hit anywhere they play this.',
-    'Off the block, past the ash cans, up the gutter. He is on.',
-    'He put it where nobody was standing, which is the whole trick.',
+    'Off the block, past the ash cans, up the gutter. {He} is on.',
+    '{He} put it where nobody was standing, which is the whole trick.',
     'Line drive! Nobody moved. Nobody could.',
     'That found the seam. Base hit.',
     'One hop off the tar and away it goes. Safe.',
     'Right up the middle. {P} did not even turn round.',
     'Base hit — and I am chalking that on my sill, in my own hand.',
-    'He is on! And whoever wanted him last is very quiet now.',
+    '{He} is on! And whoever wanted {him} last is very quiet now.',
   ],
   double: [
     'Two bases! Off the fender and away!',
-    'Off the wall, and the carom beat everybody. He is standing on second.',
+    'Off the wall, and the carom beat everybody. {He} is standing on second.',
     'That is a double, and second base is a coal chute cover.',
-    'Way past the outfield. He pulls up at second, easy.',
-    'Off the truck and it went sideways. He has two.',
+    'Way past the outfield. {He} pulls up at second, easy.',
+    'Off the truck and it went sideways. {He} has two.',
     'Rattled it off the ironwork! Two bases, and the ironwork is fine.',
-    'Into the gutter and running. He is into second standing up.',
-    'Two bases. The right fielder knew that fender kicks left. He forgot.',
+    'Into the gutter and running. {He} is into second standing up.',
+    'Two bases. The right fielder knew that fender kicks left. {He} forgot.',
   ],
   triple: [
-    'Three bases! He is not stopping!',
-    'All the way to the corner and he is still going. Triple!',
-    'That is three. Three, and he is out of breath and delighted.',
-    'Under the parked car and out the other side. He has three!',
-    'Way, way up the block. He pulls into third and everybody yells at him.',
+    'Three bases! {He} is not stopping!',
+    'All the way to the corner and {he} is still going. Triple!',
+    'That is three. Three, and {he} is out of breath and delighted.',
+    'Under the parked car and out the other side. {He} has three!',
+    'Way, way up the block. {He} pulls into third and everybody yells at {him}.',
     'Three bases. Somebody go and get that ball. Somebody.',
   ],
   sewer: [
     'SEWER SHOT! Past the second casting, on the fly!',
-    'That is TWO SEWERS! I saw it, and his mark goes on the curb!',
+    'That is TWO SEWERS! I saw it, and {his} mark goes on the curb!',
     'Gone! Over everything! {B} is a two-sewer man!',
-    'That is out of here! Chalk it! Chalk his initial on the curb!',
+    'That is out of here! Chalk it! Chalk {his} initial on the curb!',
     'GOODBYE! Goodbye down the block and goodbye out of this game!',
     'Two sewers for {B}. I keep the sill, and the sill says two!',
-    'He got all of it! ALL of it! Somebody is going up on a roof!',
+    '{He} got all of it! ALL of it! Somebody is going up on a roof!',
     'Past the second manhole on the fly, which here is the whole story!',
     'That ball is a block away and it is not coming back today!',
-    'He hit that into next Thursday and I am marking it down as Thursday!',
+    '{He} hit that into next Thursday and I am marking it down as Thursday!',
   ],
   run: [
     'That is a run! Chalk it up. I am chalking it up.',
-    'He scores! Across the plate, and the plate is a manhole he stamped on.',
-    'He scores standing! And Beans is already saying the number out loud.',
+    '{He} scores! Across the plate, and the plate is a manhole {he} stamped on.',
+    '{He} scores standing! And Beans is already saying the number out loud.',
     'One in. I have it, and my sill is not wrong.',
-    'Home he comes. Somebody move the stick.',
+    'Home {he} comes. Somebody move the stick.',
     'That is a run, and they heard about it two streets over.',
-    'In he comes, and the whole stoop is on its feet.',
+    'In {he} comes, and the whole stoop is on its feet.',
     'A run scores, and I am out of chalk, and I am using it anyway.',
   ],
 
@@ -239,21 +239,21 @@ const DOT = {
     'What a catch! {F} had no business with that!',
     'Off the wall, off the hands, and {F} still has it!',
     '{F} went into the gutter for that. Into the gutter. On purpose!',
-    'Bare hands, one hop, and he throws him out from where he was standing!',
+    'Bare hands, one hop, and the throw gets there from where {he} was standing!',
     'That is the play of the afternoon and there are innings left!',
-    '{F} caught that with his back to it. His back to it!',
-    'He went under the truck and came out with the ball!',
+    '{F} caught that with {his} back to it. {His} back to it!',
+    '{He} went under the truck and came out with the ball!',
     'That is the best pair of hands on this block and everybody just found out!',
   ],
   error: [
     'Off the hands! Straight off the hands and into the ash cans!',
-    'He had it. He had it, and then it had him.',
-    'Dropped it! And he is looking at his hands like they lied to him.',
-    'Right through him. Right through, and it is still rolling.',
-    'He called for it. Twice. Then he did not catch it.',
+    '{He} had it. {He} had it, and then it had {him}.',
+    'Dropped it! And {he} is looking at {his} hands like they lied to {him}.',
+    'Right through {him}. Right through, and it is still rolling.',
+    '{He} called for it. Twice. Then {he} did not catch it.',
     'Two of them went for it and neither one of them got it.',
     'Off the knee and out to the curb, and now everybody is running.',
-    'He kicked it. Not on purpose. He kicked it a long way, though.',
+    '{He} kicked it. Not on purpose. {He} kicked it a long way, though.',
   ],
   collision: [
     'They ran into each other! Both of them are on the ground!',
@@ -300,11 +300,11 @@ const DOT = {
 
   /* --- the pause before a close call ------------------------------------ */
   close_call: [
-    'Safe! He is SAFE and I saw the whole thing!',
+    'Safe! {He} is SAFE and I saw the whole thing!',
     'OUT! Out by a step and a half!',
-    'He is out. He is out, and here comes everybody.',
+    '{He} is out. {He} is out, and here comes everybody.',
     'SAFE! And I will chalk that on the curb for anybody who wants to look.',
-    'Got him! By nothing. By absolutely nothing.',
+    'Got {him}! By nothing. By absolutely nothing.',
     'That is out and I am not taking questions.',
   ],
 
@@ -320,7 +320,7 @@ const DOT = {
     '— and it comes down about four feet from where it started.',
     '— and it lands in the ash cans. Everything lands in the ash cans.',
     '— and it is caught. Well. That was a lot of noise for nothing.',
-    '— and it drops in the gutter and rolls back to him. The street gave it back.',
+    '— and it drops in the gutter and rolls back to {him}. The street gave it back.',
   ],
 
   /* --- Dot's own business ------------------------------------------------ */
@@ -340,13 +340,13 @@ const GOOCH = {
     'The Gooch would have swung at that. The Gooch would have missed it.',
     'In there like the rent. Right on time, and nobody wanted it.',
     'That is a good pitch. The Gooch does not say that often. The Gooch has now said it.',
-    'He never moved. The Gooch respects a man who does not move. The Gooch does not move.',
+    '{He} never moved. The Gooch respects a man who does not move. The Gooch does not move.',
     'Ooh. That one had a little something on it. Or the wind did.',
     'That is one. There are two more where that came from. Allegedly.',
     'The Gooch has seen better. The Gooch has also seen worse, and worse was Tuesday.',
     'Right over the iron. You could set a watch by it, if you had a watch.',
     'That is what they call a hummer. The Gooch calls it a Tuesday.',
-    'He is going to tell you he was taking all the way. He was not taking all the way.',
+    '{He} is going to tell you {he} was taking all the way. {He} was not taking all the way.',
   ],
   after_ball: [
     'That was thrown at nobody in particular.',
@@ -361,26 +361,26 @@ const GOOCH = {
   after_out: [
     'Caught. The Gooch could not have caught that. The Gooch does not catch things.',
     'Bare hands. In September. In January that is a different conversation.',
-    'He is out, and he is going to be out about it for a while.',
+    '{He} is out, and {he} is going to be out about it for a while.',
     'That is one gone. Two more and the Gooch gets his tailgate back.',
     'Two hands. Nobody does that any more, except everybody here.',
     'Out. And here comes the arguing, right on schedule, like the El.',
     'The Gooch likes that. The Gooch is easy to please and hard to impress.',
     'Good hands. The Gooch has hands like a pair of tongs. That is not praise.',
-    'He is out. His mother will hear about it before he gets upstairs.',
+    '{He} is out. {His} mother will hear about it before {he} gets upstairs.',
     'That is the third one. The Gooch is going to go and stand somewhere else.',
   ],
   after_hit: [
     'Base hit. The Gooch is going to allow it.',
     'That is a hit, and the Gooch will have one of those, thank you.',
-    'He hit that like it owed him money.',
+    '{He} hit that like it owed {him} money.',
     'Through the middle. There was nobody in the middle. There is a lesson there.',
     'The Gooch is loving that.',
     'Sweet. Sweet like a hot sweet potato off a cart. The Gooch likes those. Everybody does.',
-    'He put it in the one place nobody was. Genius, or Tuesday.',
+    '{He} put it in the one place nobody was. Genius, or Tuesday.',
     'Somebody is going to have to go and get that.',
     'A clean hit. The Gooch does not use the word clean lightly. On account of the wagon.',
-    'Look at him go. The Gooch has not moved like that since the war, and the Gooch was not in the war.',
+    'Look at {him} go. The Gooch has not moved like that since the war, and the Gooch was not in the war.',
   ],
   after_sewer: [
     'Two sewers. The Gooch measured. The Gooch measures ice, but the principle holds.',
@@ -394,11 +394,11 @@ const GOOCH = {
   ],
   after_error: [
     'Off the hands. It happens. It happens to the Gooch daily.',
-    'He had it, and then the ball had opinions.',
+    '{He} had it, and then the ball had opinions.',
     'Dropped. The Gooch would like the record to show that he said nothing.',
     'The Gooch has dropped a hundred pounds of ice on his own foot. The Gooch will not say one word.',
-    'Right through him. Like the Gooch through a screen door.',
-    'He is going to blame the sun. There is no sun on that side of the street.',
+    'Right through {him}. Like the Gooch through a screen door.',
+    '{He} is going to blame the sun. There is no sun on that side of the street.',
     'That is going to come up at supper.',
     'The ball did that on purpose. The Gooch is being generous. It did not.',
   ],
@@ -608,20 +608,20 @@ const CHATTER = {
   /* infield noise: encouragement to your own pitcher */
   infield: [
     'Chuck it here!', 'Right here! Right here!', 'Put it over!', 'Little easy now.',
-    'No batter! No batter!', 'Nothing on him!', 'He cannot hit it!', 'One more like that!',
+    'No batter! No batter!', 'Nothing on {him}!', '{He} cannot hit it!', 'One more like that!',
     'Come on, pitch it!', 'Two down! Two down!', 'Hummer! That is a hummer!',
     'Take your time. Take all day.', 'Right in there!', 'Attaboy!',
-    'He is scared of it!', 'Two more and we are out of here!',
+    '{He} is scared of it!', 'Two more and we are out of here!',
   ],
   /* needling the batter */
   taunt: [
     'Swing, ya bum!', 'Choke up!', 'You could not hit the ash can!',
     'Hold the stick the other way!', 'Move in! Everybody move IN!',
-    'Way in! He cannot reach the curb!', 'Easy out! Easy out!',
-    'He always swings at the first one. Watch.', 'He shuts his eyes! I saw him shut his eyes!',
-    'Whiffed him!', 'Do not hurt yourself.', 'Your mother is at the window!',
+    'Way in! {He} cannot reach the curb!', 'Easy out! Easy out!',
+    '{He} always swings at the first one. Watch.', '{He} shuts {his} eyes! I saw {him} shut {his} eyes!',
+    'Whiffed {him}!', 'Do not hurt yourself.', 'Your mother is at the window!',
     'That is a fine stance. That is a beautiful stance. Now hit something.',
-    'He is going to whiff. I called it. I called it out loud.',
+    '{He} is going to whiff. I called it. I called it out loud.',
   ],
   /* the batter answers, because on this street the batter always answers */
   back: [
@@ -642,7 +642,7 @@ const CHATTER = {
   cheer: [
     'Attaboy!', 'And how!', 'You said it!', 'Some wallop!', 'Oh, you kid!',
     'Hot socks!', 'That\'s the stuff!', 'Nice going!', 'Boy oh boy!', 'Duck soup!',
-    'Atta way!', 'Swell!', 'Two sewers, easy!', 'He\'s a two-sewer man!',
+    'Atta way!', 'Swell!', 'Two sewers, easy!', '{He} is a two-sewer man!',
   ],
   groan: [
     'Aw, nuts.', 'Ah, ya bum.', 'No fair!', 'Oh, come ON.', 'That is the third time.',
@@ -1136,22 +1136,34 @@ class Announcer {
     return pick;
   }
 
-  /* --- token fill -------------------------------------------------------- */
-  fill(text) {
+  /* --- token fill --------------------------------------------------------
+   * Half this block is girls, so there is no such thing as a default 'he' in
+   * this file. Every pronoun in the bank is a token and every token is resolved
+   * off the kid the line is actually about — the batter, or, for the fielding
+   * banks, whoever just touched the ball.
+   */
+  fill(text, subj = 'batter') {
     if (!text || text.indexOf('{') < 0) return text;
     const s = APP.sim?.state || {};
     const b = this.batter, p = this.pitcher;
     const f = kidFromBody(this._lastFielder) || b;
+    const who = subj === 'fielder' ? f : subj === 'pitcher' ? p : b;
+    const g = who && (who.sex === 'g' || who.art?.sex === 'g' || who.spec?.sex === 'g');
     return text
       .replace(/\{B\}/g, nick(b))
       .replace(/\{P\}/g, nick(p))
       .replace(/\{F\}/g, nick(f))
       .replace(/\{S\}/g, ORD[clamp(s.strikes || 1, 1, 3)])
       .replace(/\{N\}/g, ORD[clamp(s.balls || 1, 1, 4)])
-      .replace(/\{O\}/g, ORD[clamp(s.outs || 1, 1, 3)]);
+      .replace(/\{O\}/g, ORD[clamp(s.outs || 1, 1, 3)])
+      .replace(/\{He\}/g, g ? 'She' : 'He')
+      .replace(/\{he\}/g, g ? 'she' : 'he')
+      .replace(/\{him\}/g, g ? 'her' : 'him')
+      .replace(/\{His\}/g, g ? 'Her' : 'His')
+      .replace(/\{his\}/g, g ? 'her' : 'his');
   }
 
-  line(key, bank) { return this.fill(this.lib.pick(key, bank)); }
+  line(key, bank, subj) { return this.fill(this.lib.pick(key, bank), subj); }
 
   /** The self-narrating kid uses his own name, whoever he turns out to be. */
   fillSelf(text, kid) {
@@ -1167,13 +1179,13 @@ class Announcer {
 
   /* --- the two-hander: straight, then strange one beat later ------------- */
   call(key, bank, goochKey, goochBank, o = {}) {
-    const text = this.line(key, bank);
+    const text = this.line(key, bank, o.subj);
     this.dot.interrupt([{ text, kind: o.kind || 'talk', grow: o.grow ?? 1 }]);
     this.quiet = 0;
     if (goochBank && this.rnd.chance(o.chance ?? 0.62)) {
       const gap = speakSeconds(text, 'dot') + (o.beat ?? 0.42);
       this.after(gap, () => {
-        this.gooch.interrupt([{ text: this.line(goochKey, goochBank) }]);
+        this.gooch.interrupt([{ text: this.line(goochKey, goochBank, o.subj) }]);
         this.quiet = 0;
       });
     }
@@ -1216,7 +1228,7 @@ class Announcer {
       if (this.clock - this.lastCallAt < 1.25 && this.rnd.chance(0.55)) {
         this.lastCallAt = -99;
         this.after(0.5, () => {
-          this.dot.interrupt([{ text: this.line('dot:collision', DOT.collision), kind: 'shout' }]);
+          this.dot.interrupt([{ text: this.line('dot:collision', DOT.collision, 'fielder'), kind: 'shout' }]);
           this.after(1.9, () => this.gooch.interrupt([{ text: this.line('gooch:collision', GOOCH.after_collision) }]));
         });
       } else this.lastCallAt = this.clock;
@@ -1447,10 +1459,10 @@ class Announcer {
     bus.on('field:catch', (p) => {
       this._lastFielder = this.fielderBody();
       if (p?.clean === false) {
-        this.call('dot:error', DOT.error, 'gooch:error', GOOCH.after_error, { chance: 0.8 });
+        this.call('dot:error', DOT.error, 'gooch:error', GOOCH.after_error, { chance: 0.8, subj: 'fielder' });
         this.after(1.2, () => this.chatter('groan'));
       } else if (this.rnd.chance(0.30)) {
-        this.call('dot:great', DOT.great, 'gooch:great', GOOCH.after_great, { chance: 0.7 });
+        this.call('dot:great', DOT.great, 'gooch:great', GOOCH.after_great, { chance: 0.7, subj: 'fielder' });
       }
     });
 
@@ -1504,7 +1516,11 @@ class Announcer {
   }
 }
 
+/** The whole bank, exported so a critic (or a test) can read every line of it. */
+export const BANK = { DOT, GOOCH, CHATTER, KID_LINES, GAGS, NARRATOR, ARGUMENTS, TWO_HANDERS, TINY_GAG };
+
 export const announcer = new Announcer();
+announcer.bank = BANK;
 
 /* ============================================================================
    7. The system
@@ -1541,9 +1557,9 @@ function stage(name) {
     // he is strange one beat later, and the kids are talking underneath both
     announcer.dot.say([{ text: 'Strike two, and the stick never moved. He watched it go by like a trolley he did not want.' }]);
     announcer.gooch.say([{ text: 'The Gooch would have swung at that. The Gooch would have missed it.' }]);
-    announcer.chatter('He shuts his eyes! I saw him!', { body: p?.catcher, kind: 'shout' });
+    announcer.chatter('{He} shuts {his} eyes! I saw {him}!', { body: p?.catcher, kind: 'shout' });
     announcer.chatter('Sez who!', { body: p?.batter, kind: 'shout' });
-    const small = [p?.onDeck, p?.stoopKid, p?.catcher].filter(Boolean).find((k) => bubbles.visible(APP, k, 11)) || p?.onDeck;
+    const small = announcer.chatterBody('narrate') || p?.onDeck;
     announcer.chatter('{ME} has a plan. The plan is to swing.', { body: small });
   } else if (name === 'chatter') {
     announcer.chatter('Chuck it here!', { body: p?.catcher, kind: 'shout' });
@@ -1565,8 +1581,10 @@ registerScenario('announcer_climb', {
     APP.clock.advance(0.9);
     bubbles.clear();
     announcer.reset(4242);
+    // aimed deliberately into the top-left, which is exactly where Dot's card
+    // wants to sit — so the still shows the card stepping out of the ball's way
     APP.sim.ball.pos.set(2, 4, T.street.plateZ + 2);
-    APP.sim.ball.vel.set(-5, 52, 66);
+    APP.sim.ball.vel.set(9, 34, 52);
     APP.sim.ball.inFlight = true; APP.sim.ball.live = true;
     APP.sim.state.phase = 'in_play'; APP.sim.playT = 0;
     announcer.startClimb({ power: 108, angleDeg: 34 });

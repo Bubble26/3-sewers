@@ -493,13 +493,23 @@ class Bubbles {
 
   clear() { this.cards.length = 0; }
 
-  update(dt) {
+  /**
+   * Age the cards and solve where they sit. This runs on the SIM tick, not on
+   * the render, because the dodge is damped in real seconds — solving it inside
+   * paint() meant a harness that advances half a second and draws one frame only
+   * ever moved a card 17% of the way, and cards ended up hanging off the frame.
+   */
+  update(dt, app) {
     for (const c of this.cards) {
       c.age += dt;
       c.punch = Math.max(0, c.punch - dt * 7.5);
       c.grow += (c.growGoal - c.grow) * (1 - Math.exp(-dt / 0.10));
     }
     for (let i = this.cards.length - 1; i >= 0; i--) if (this.cards[i].dead) this.cards.splice(i, 1);
+    if (!this.cards.length) return;
+    this.mount(); this.resize();
+    this.survey(app || APP);
+    for (const c of this.cards) { this.layout(c); this.solve(app || APP, c, dt); }
   }
 
   /* --- geometry ---------------------------------------------------------- */
@@ -645,7 +655,7 @@ class Bubbles {
       if (cost < bestCost) { bestCost = cost; best = { x, y }; }
     }
     card.goal = best;
-    if (!card.pos) card.pos = { x: best.x, y: best.y };
+    if (!card.pos || dt <= 0) card.pos = { x: best.x, y: best.y };
     else {
       // damped: a card gets out of the ball's way, it does not teleport
       const k = 1 - Math.exp(-dt / 0.085);
@@ -664,9 +674,12 @@ class Bubbles {
     g.clearRect(0, 0, this.w, this.h);
     if (this.sheet) return this.paintSheet(g, this.sheet);
     if (!this.enabled || !this.cards.length) return;
-    this.survey(app);
-    const dt = 1 / 60;
-    for (const c of this.cards) { this.layout(c); this.solve(app, c, dt); }
+    // a card created since the last tick has never been solved: snap it into
+    // place now rather than drawing it at the origin for one frame
+    if (this.cards.some((c) => !c.pos)) {
+      this.survey(app);
+      for (const c of this.cards) if (!c.pos) { this.layout(c); this.solve(app, c, 0); }
+    }
     // announcers behind, kids in front — a kid yelling wins the frame
     const order = [...this.cards].sort((a, b) => (a.who === 'kid' ? 1 : 0) - (b.who === 'kid' ? 1 : 0));
     for (const c of order) this.draw(g, c);
@@ -1013,7 +1026,7 @@ export default registerSystem({
     if (typeof addEventListener === 'function') addEventListener('resize', () => bubbles.resize());
   },
 
-  lateUpdate(dt) { bubbles.update(dt); },
+  lateUpdate(dt, app) { bubbles.update(dt, app); },
 
   preRender(app) { bubbles.paint(app); },
 
