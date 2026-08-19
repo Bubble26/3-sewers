@@ -1853,6 +1853,32 @@ registerScenario('announcer_climb', {
 });
 
 /**
+ * THE SAME BUILD, FROZEN AT THE TOP. `announcer_climb` opens on rung zero on
+ * purpose — a still of the end of an escalation tells you nothing about an
+ * escalation — so this one holds the identical ball two and a bit seconds later,
+ * with the ladder on its last rung: shouted, on burst-edged paper, and twice the
+ * size of the card in the other still. Read the two side by side and the build
+ * is in the shot set, not only in tools/film.mjs.
+ */
+registerScenario('announcer_build', {
+  seed: 4242,
+  setup: () => {
+    APP.sim.reset(4242);
+    APP.clock.advance(0.9);
+    bubbles.clear();
+    announcer.reset(4242);
+    APP.sim.ball.pos.set(2, 4, T.street.plateZ + 2);
+    APP.sim.ball.vel.set(9, 34, 52);
+    APP.sim.ball.inFlight = true; APP.sim.ball.live = true;
+    APP.sim.state.phase = 'in_play'; APP.sim.playT = 0;
+    announcer.chatterIn = 1e9;
+    announcer.startClimb({ power: 108, angleDeg: 34 });
+    announcer.chatter('Way back! Way back!', { body: APP.get('players')?.catcher, kind: 'shout', hold: 4.0 });
+  },
+  settle: 2.15,
+});
+
+/**
  * THE PAUSE. The best timing idea in this file is the three quarters of a second
  * in which nobody says anything: a bang-bang play at first, two kids already
  * certain, and Dot holding a piece of newspaper with three dots on it while the

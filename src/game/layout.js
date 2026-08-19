@@ -227,16 +227,42 @@ function toScreen(v, x, y, z) {
  * conservative, not wrong: a wrong guess costs a foot of standing room, not a merged pair.
  */
 const TIER_PCT = { subject: 25.0, lead: 19.0, field: 15.5, block: 14.5 };
-// A kid is about 0.30 as wide as he is tall, arms in. `wide` scales it for anybody holding a
-// stick or with both hands out in front.
-const WIDTH_RATIO = 0.30;
+// A kid's HALF width is about 0.26 of his rendered height, measured off sixteen rendered
+// bounding boxes: 0.15 for a beanpole with his arms down, 0.31 for a kid in a ready crouch.
+// `wide` scales it for anybody holding a stick or with both hands out in front. Erring high is
+// free — an over-estimate costs a foot of standing room, an under-estimate costs a merged pair.
+const WIDTH_RATIO = 0.26;
 
+/**
+ * The rectangle a body will occupy, in 1600x900 pixels.
+ *
+ * Both ends of him are projected, not just his feet, and that is not fussiness: the lens is
+ * pitched down, so a vertical body does not project to a vertical rectangle — the head lands
+ * further from the frame's centre than the feet do, by 50-odd pixels at the edge of the shot.
+ * Sizing off the feet alone put a fielder's head 40 px past the right edge of the frame while
+ * this pass reported him comfortably inside it.
+ *
+ * The body's world height is derived from the height it will RENDER at rather than from the
+ * rig, because §17.6's staged scale means those are different numbers and the rendered one is
+ * the one that occupies frame: at view depth d on a lens of half-angle t, a body that reads
+ * `pct` percent of frame height is 2·d·t·pct/100 units tall, whatever the rig thinks.
+ */
 function footprint(v, b) {
-  const s = toScreen(v, b.x, b.y || groundAt(b.x), b.z);
-  if (!s) return null;
-  const h = (TIER_PCT[b.tier] || TIER_PCT.field) / 100 * 900;
-  const hw = h * WIDTH_RATIO * (b.wide || 1) * 0.5;
-  return { cx: s.px, hw, top: s.py - h, bot: s.py, d: s.d };
+  const feet = toScreen(v, b.x, b.y || groundAt(b.x), b.z);
+  if (!feet) return null;
+  const pct = (TIER_PCT[b.tier] || TIER_PCT.field) / 100;
+  const head = toScreen(v, b.x, (b.y || groundAt(b.x)) + 2 * feet.d * v.t * pct, b.z);
+  if (!head) return null;
+  const h = Math.abs(feet.py - head.py);
+  const hw = h * WIDTH_RATIO * (b.wide || 1);
+  return {
+    cx: (feet.px + head.px) * 0.5,
+    edge: Math.max(Math.abs(feet.px - 800), Math.abs(head.px - 800)) * Math.sign(head.px - 800 || 1) + 800,
+    hw,
+    top: Math.min(feet.py, head.py),
+    bot: Math.max(feet.py, head.py),
+    d: feet.d,
+  };
 }
 
 /**
@@ -255,32 +281,65 @@ function footprint(v, b) {
  * Two kids in the same column with clear sky between them are a composition.
  *
  * x is the currency because x is free (see FACT 2 at the top of this file): moving a body
- * sideways changes where he is in the frame and not how big he is. Bodies that cannot pay —
- * the batter, the catcher and the pitcher, who are the axis; the kid standing on a car —
- * carry `pinX` and everybody else moves around them.
+ * sideways changes where he is in the frame and not how big he is. Bodies that cannot pay
+ * much — the catcher and the pitcher, who ARE the axis; the batter, who has a chalk box to
+ * stay inside; the kid standing on a car top four foot ten wide — carry a small `slack` and
+ * the rest of the block moves around them. Nobody is pinned outright: two pinned bodies in
+ * one column stay merged for ever, and the batter and the catcher were exactly that pair.
  */
 function separate(bodies) {
   const views = lockedViews();
-  const movable = bodies.filter((b) => !b.pinX);
-  if (!views.length || !movable.length) return;
-  const GAP = 0.40;                       // §the brief: 40% of the narrower body
-  for (let pass = 0; pass < 90; pass++) {
+  if (!views.length) return;
+  const GAP = 0.40;                       // the brief: 40% of the narrower body
+  const EDGE = 26;                        // px of daylight between a body and the frame edge
+  // Where each body may end up: `slack` is how far in x it may be argued with. The three on
+  // the pitch axis and the kid standing on a car top get almost none; everybody else is free
+  // to the gutter line. Nobody is truly pinned, because a pinned pair is a pair that stays
+  // merged, and round 1's batter and catcher were exactly that.
+  const home = new Map(bodies.map((b) => [b, b.x]));
+  const range = (b) => (b.slack === undefined ? 21 : b.slack);
+  const settle = (b, nx) => {
+    const h = home.get(b), r = range(b);
+    const lim = Math.min(21.0, Math.max(-21.0, Math.min(h + r, Math.max(h - r, nx))));
+    return clamp(lim, b.z, b.y || 0).x;
+  };
+  for (let pass = 0; pass < 140; pass++) {
     let worst = 0;
     const push = new Map(bodies.map((b) => [b, 0]));
     for (const v of views) {
       const fp = new Map();
-      for (const b of bodies) { const f = footprint(v, b); if (f) fp.set(b, f); }
-      // dpx/dx, measured rather than derived, so a yawed camera is handled for free
       const grad = new Map();
       for (const b of bodies) {
+        const f = footprint(v, b);
+        if (!f) continue;
+        fp.set(b, f);
+        // dpx/dx, measured rather than derived, so a yawed camera is handled for free
         const a = toScreen(v, b.x, b.y || groundAt(b.x), b.z);
         const c = toScreen(v, b.x + 1, b.y || groundAt(b.x), b.z);
-        grad.set(b, a && c ? (c.px - a.px) || 1e-3 : 1e-3);
+        grad.set(b, a && c ? ((c.px - a.px) || 1e-3) : 1e-3);
+      }
+      // …and nobody is bisected by the frame edge, which is the one composition fault that
+      // reads as a bug rather than as a choice.
+      for (const [b, f] of fp) {
+        const lo = f.hw + EDGE, hi = 1600 - f.hw - EDGE;
+        const e = f.edge;                       // whichever of head/feet reaches furthest out
+        const off = e < lo ? lo - e : e > hi ? hi - e : 0;
+        if (!off) continue;
+        worst = Math.max(worst, Math.abs(off));
+        // px wanted -> feet wanted. The gradient is SIGNED: which way world +x runs across the
+        // frame depends on which side of the street the camera solved onto, and it has flipped
+        // once already while this file was being written.
+        push.set(b, push.get(b) + off * 0.5 / grad.get(b));
       }
       for (let i = 0; i < bodies.length; i++) {
         for (let j = i + 1; j < bodies.length; j++) {
           const A = bodies[i], B = bodies[j];
-          if (A.pinX && B.pinX) continue;
+          // A body nobody can see cannot be welded to anything. The three curb rigs are the
+          // ones baserunning wears and they are hidden until somebody is on the bases; they
+          // still get placed and edge-checked, because the arbiter and the camera solver both
+          // count them, but they do not get to shove a visible kid out of his spot.
+          if (A.ghost && B.ghost) continue;
+          if (A.ghost || B.ghost) continue;
           const a = fp.get(A), b = fp.get(B);
           if (!a || !b) continue;
           if (a.bot <= b.top || b.bot <= a.top) continue;        // clear sky between them
@@ -289,24 +348,21 @@ function separate(bodies) {
           const over = want - Math.abs(dx);
           if (over <= 0) continue;
           worst = Math.max(worst, over);
-          // The one further from the lens gives way: a near body is the one the eye is on.
           const dir = dx >= 0 ? 1 : -1;
-          const share = [A.pinX ? 0 : 1, B.pinX ? 0 : 1];
-          const tot = share[0] + share[1];
-          if (!tot) continue;
-          const move = over * 0.34;
-          push.set(A, push.get(A) - dir * move * (share[0] / tot) / Math.abs(grad.get(A)));
-          push.set(B, push.get(B) + dir * move * (share[1] / tot) / Math.abs(grad.get(B)));
+          // Each gives way in proportion to how much room it has left to give.
+          const wa = Math.max(0.001, range(A)), wb = Math.max(0.001, range(B));
+          const tot = wa + wb;
+          const move = over * 0.36;
+          push.set(A, push.get(A) - dir * move * (wa / tot) / grad.get(A));
+          push.set(B, push.get(B) + dir * move * (wb / tot) / grad.get(B));
         }
       }
     }
     if (worst < 1.0) break;
-    for (const b of movable) {
+    for (const b of bodies) {
       const d = push.get(b) || 0;
       if (!d) continue;
-      const nx = Math.min(21.0, Math.max(-21.0, b.x + Math.max(-1.2, Math.min(1.2, d))));
-      const clear = clamp(nx, b.z, b.y || 0);
-      b.x = clear.x;
+      b.x = settle(b, b.x + Math.max(-1.2, Math.min(1.2, d)));
     }
   }
   for (const b of bodies) b.slot = +(b.x / (b.z + 83)).toFixed(3);
@@ -389,7 +445,7 @@ export const BASES = [FIRST, SECOND, THIRD];
  * (which runs |x| 1.5…4.8, z −2.6…2.4) and it opens ninety pixels of daylight between the two
  * of them at 1600×900.
  */
-export const PLATE_BOX = { x: 4.6, z: 2.0, kid: 'otto', look: [0.9, 24], slot: 0.034, tier: 'subject', pinX: true, wide: 1.35 };
+export const PLATE_BOX = { x: 4.6, z: 2.0, kid: 'otto', look: [0.9, 24], slot: 0.034, tier: 'subject', slack: 2.4, wide: 1.15 };
 
 /** The pitcher's scratch, kept next to the pitcher so the two can never drift. */
 export const PITCH_SCRATCH = { x: 0.9, z: 24.0 };
@@ -402,8 +458,8 @@ export const PITCH_SCRATCH = { x: 0.9, z: 24.0 };
  */
 export const POSTS = [
   {
-    id: 'catcher', x: 1.3, z: -4.6, kid: 'sal', clip: 'ready', look: [0.9, 24], yawDeg: 40,
-    slot: 0.017, tier: 'lead', accent: 'claret', garment: 'sweater', pinX: true, wide: 1.30,
+    id: 'catcher', x: 0.2, z: -4.6, kid: 'sal', clip: 'ready', look: [0.9, 24], yawDeg: 40,
+    slot: 0.002, tier: 'lead', accent: 'claret', garment: 'sweater', slack: 1.5, wide: 1.50,
     note: 'The Fireplug: barrel torso, no neck, jammed cap. BEHIND THE PLATE, on the pitch '
         + 'axis — pitcher (0.9, 24) → home (0, 0) → here is collinear to 1.42 units, which is '
         + 'the whole point of him. Round 1 parked him at x −7.5, ten units off the axis and '
@@ -420,7 +476,7 @@ export const POSTS = [
   },
   {
     id: 'pitcher', x: 0.9, z: 24.0, kid: 'irving', clip: 'pitch_set', look: [4.6, 0],
-    slot: 0.008, tier: 'lead', accent: 'red', garment: 'sweater', pinX: true,
+    slot: 0.008, tier: 'lead', accent: 'red', garment: 'sweater', slack: 1.0,
     note: 'The Beanpole, all leg. Halfway to second on the scratch — 24, not the old 42. At 42 '
         + 'he is 1.5x the catcher\'s depth and cannot reach 18% of frame at any legal lens; '
         + 'casting the tallest kid here buys back the rest. He is the far point of the axis '
@@ -475,7 +531,7 @@ export const POSTS = [
   },
   {
     id: 'roof', x: 18.4, z: 48.6, y: 6.95, kid: 'eugene', clip: 'idle_slouch', look: [4.6, 0],
-    slot: 0.157, tier: 'field', accent: 'mustard', garment: 'vest', pinX: true,
+    slot: 0.157, tier: 'field', accent: 'mustard', garment: 'vest', slack: 1.8,
     note: 'UP ON THE FORD. src/world/vehicles.js parks a black Model T at (18.4, 50) and its '
         + 'squared-off canvas top is a box(4.85, 0.40, 6.0) centred at local (0, 6.75, −1.35), '
         + 'so the boards are at world y 6.95 and run z 45.7…51.7 — this is the middle of them, '
@@ -501,7 +557,7 @@ export const POSTS = [
  * goes back to z 2.5, level with the plate and twelve units out toward the north gutter, where
  * he still fills the near-left quadrant of the batting frame without competing for it.
  */
-export const ON_DECK = { x: 15.0, z: 2.5, kid: 'bessie', clip: 'bat_wait', look: [4.6, 1.4], slot: 0.153, tier: 'block', wide: 1.30 };
+export const ON_DECK = { x: 15.0, z: 2.5, kid: 'bessie', clip: 'bat_wait', look: [4.6, 1.4], slot: 0.153, tier: 'block', wide: 1.15 };
 
 /**
  * The rest of the batting side. These are the three rigs baserunning wears, so a kid leaves
@@ -516,9 +572,9 @@ export const ON_DECK = { x: 15.0, z: 2.5, kid: 'bessie', clip: 'bat_wait', look:
  * north gutter in the order they bat, well inside the frame's extremes.
  */
 export const BENCH = [
-  { x: 18.6, z: 7.0, kid: 'connie', clip: 'curb_wait', look: [4.6, -0.6], slot: 0.207, tier: 'block' },
-  { x: 19.6, z: 12.5, kid: 'peggy', clip: 'idle_slouch', look: [0.9, 24], slot: 0.206, tier: 'block' },
-  { x: 20.4, z: 18.0, kid: 'gertie', clip: 'idle', look: [0.9, 24], slot: 0.202, tier: 'block' },
+  { x: 18.6, z: 7.0, kid: 'connie', clip: 'curb_wait', look: [4.6, -0.6], slot: 0.207, tier: 'block', ghost: true },
+  { x: 19.8, z: 13.0, kid: 'peggy', clip: 'idle_slouch', look: [0.9, 24], slot: 0.206, tier: 'block', ghost: true },
+  { x: 20.6, z: 19.0, kid: 'gertie', clip: 'idle', look: [0.9, 24], slot: 0.202, tier: 'block', ghost: true },
 ];
 
 /**
@@ -553,7 +609,8 @@ export const SPECTATORS = [
   },
   {
     id: 'watcher', x: 22.6, z: 14.0, y: GROUND.walkTop, kid: 'rose', clip: 'idle_slouch', face: 'squint',
-    look: [4.6, -0.6], slot: 0.269, tier: 'block',
+    look: [4.6, -0.6], slot: 0.269, tier: 'block', slack: 0.6,   // she is ON the bluestone; the
+    // bluestone starts at x 22, so she gets six inches of argument and no more or she floats.
     note: 'standing over him with her arms folded, having opinions. The pair are a CLUSTER '
         + 'rather than a row (§13), and they are both on the north side because the batting '
         + 'framing\'s yaw makes that side of the frame cheap and the other side expensive: a '
@@ -660,8 +717,14 @@ function buildChalk(scene) {
 
   // the batter's box: two brackets round the casting, redrawn every game and
   // therefore the freshest chalk on the block
+  // Two brackets round the casting, one per side, redrawn every game and therefore the freshest
+  // chalk on the block. The occupied side is drawn round wherever the batter actually ended up
+  // standing (separate() may have argued him along the casting), so the box is a box he is in.
+  const bx = Math.max(3.6, Math.abs(PLATE_BOX.x) + 1.3);
+  const sgn = PLATE_BOX.x < 0 ? -1 : 1;
   for (const s of [1, -1]) {
-    line([[s * 1.5, -3.0], [s * 4.8, -3.0], [s * 4.8, 3.8], [s * 1.5, 3.8]], 201 + s, 0.9, W * 1.15);
+    const out = s === sgn ? bx : 4.8;
+    line([[s * 1.5, -3.0], [s * out, -3.0], [s * out, 3.8], [s * 1.5, 3.8]], 201 + s, 0.9, W * 1.15);
   }
   // the pitcher's scratch, halfway to second, with the ball of his foot worn into it
   line([[PITCH_SCRATCH.x - 2.4, PITCH_SCRATCH.z], [PITCH_SCRATCH.x + 2.4, PITCH_SCRATCH.z]], 211, 0.92, W * 1.35);
@@ -800,8 +863,8 @@ export default registerSystem({
 
   init(app) {
     app.layout = LAYOUT;
-    this.chalk = buildChalk(app.scene);
     this.cap = capAtSecond(app.scene);
+    this.chalk = null;
     this.diagram = null;
     this.settled = false;
   },
@@ -824,6 +887,11 @@ export default registerSystem({
       const c = clamp(b.x, b.z, b.y || 0);
       b.x = c.x; b.z = c.z;
     }
+    // The bases do not move, but the batter's box does — separate() may argue him a couple of
+    // feet along the casting to get him out of the catcher's screen column, and a chalk box he
+    // is standing beside instead of inside is worse than no chalk box. So both marks are laid
+    // after the arguing is over.
+    this.chalk = buildChalk(app.scene);
     this.diagram = buildDiagram(app.scene);
     const P = app.get('players');
     if (P && P.homePose) P.homePose();

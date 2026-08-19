@@ -171,8 +171,8 @@ const COMPOSITION = {
     pitch: [0.5, 5.0],
     yaw: [24, 34],       // §17.4 lets BATTING off the axis; this is the half of the cut it owns
     camX: [-42, -16],
-    dist: [56, 86],
-    minKids: 16,
+    dist: [56, 92],
+    minPlay: 10,          // every lead and every fielder, whole, in frame
     centreCast: false,
     sepFrom: 'field',
     sepMin: 30.5,
@@ -190,11 +190,11 @@ const COMPOSITION = {
     feetFloor: -0.93,
     horizonY: [0.18, 0.72],
     topCard: [20, 42],
-    pitch: [6.0, 13.0],
+    pitch: [6.5, 10.5],
     yaw: [0, 0],
     camX: [-6, 8],
-    dist: [56, 86],
-    minKids: 16,
+    dist: [60, 88],
+    minPlay: 10,
     centreCast: true,
     sepFrom: 'batting',  // …and this far off the other framing's axis, in degrees
     sepMin: 30.5,
@@ -570,19 +570,28 @@ const W = {
   key: 70,          // the key subject's height in frame
   pair: 190,        // batter vs pitcher: an over-the-shoulder, not one behind the other
   cheat: 260,       // how hard §17.6's staged scale has to work to fix the perspective
+  subjScale: 2200,   // …and how hard it has to work on the one kid everybody is looking at
   overlap: 150,     // two kids in one screen column is one kid
-  ball: 120,        // the ball's diameter at the far end of the stage
-  dist: 0.22,       // the smallest pull-back that does the job
+  ball: 60,         // the ball's diameter where a hit ball actually lives
+  dist: 0.10,       // the smallest pull-back that does the job
   camX: 22,         // …and stay on your own set
   sep: 260,         // and be a different SHOT from the other framing
+  curb: 260,        // and stand somewhere a camera can actually stand
 };
 const DECK_Z = -104;      // world/surface.js paves back to z = −96; a soft nudge, not a wall
 const _facade = new THREE.Vector3(0, 0, S.backdrop.nearFacade);
-/** Where a hit ball has to still read: infield apex, deep-infield apex, and the far corner. */
+/**
+ * Where a hit ball has to still read. Two probes, both inside the infield, because that is
+ * where the ball spends its life on a 70-deep stage — and because the arbiter's own 9 px floor
+ * is unreachable past that: at fov 20 a 0.18-radius ball is 9 px at a view depth of 102, so a
+ * ball at the far end of the stage needs the camera inside 32 units of the plate, which cannot
+ * hold the cast. src/game/ballphysics.js already answers that with a 17 px screen-space floor
+ * of its own (SP.minPx); this term only keeps the framing from making that floor do all the
+ * work. See report().requests.
+ */
 const BALL_PROBES = [
-  new THREE.Vector3(0, 12, 24),
-  new THREE.Vector3(6, 16, 42),
-  new THREE.Vector3(-8, 6, 60),
+  new THREE.Vector3(0, 9, 18),
+  new THREE.Vector3(4, 14, 32),
 ];
 
 /**
@@ -664,13 +673,25 @@ function score(cast, comp, view, dPlate, pitchDeg, key, rows, sepAxis) {
     _bot.set(k.org.x + s * k.off.cx, k.org.y + s * k.off.minY, k.org.z + s * k.off.cz);
     const yTop = view.ndcY(_top), yBot = view.ndcY(_bot), x = view.ndcX(k.org);
     if (yTop == null || yBot == null || x == null) { cost += BAD; continue; }
-    const inFrame = Math.abs(x) < 1.2 && yTop > -1.3 && yBot < 1.3;
-    if (inFrame) { onStage++; shown.push({ x, yTop, yBot, k }); }
-    cost += W.edge * (straddle(x, 0.82, 1.30) + straddle(yTop, 0.88, 1.34) + straddle(yBot, 0.88, 1.34));
+    // "On screen" means a whole kid, not a kid the frame edge has taken a bite out of. A body
+    // a foot inside tools/measure.mjs's ±1.25 sample window can be entirely outside the
+    // picture — kid:kathleen was, at x = 1.04 — and a cast member the arbiter counts and the
+    // player cannot see is the worst of both.
+    const inFrame = Math.abs(x) < 1.0 && yTop > -1.25 && yBot < 1.25;
+    const bystander = k.role === 'bystander';
+    if (inFrame && !bystander) onStage++;
+    if (inFrame) shown.push({ x, yTop, yBot, k });
+    // A bystander on the frame edge is the foreground element BYB §3.6 asks for; a FIELDER on
+    // the frame edge is a player the arbiter counts and the picture does not contain.
+    cost += W.edge * (bystander ? 0.3 : 1) *
+      (straddle(x, 0.80, 1.45) + straddle(yTop, 0.88, 1.34) + straddle(yBot, 0.88, 1.34));
     // The follow-tilt's budget is whatever room is left under the lowest pair of feet.
     if (inFrame && yBot < comp.feetFloor) cost += W.floor * (comp.feetFloor - yBot);
     if (inFrame && yTop > 0.94) cost += W.floor * (yTop - 0.94);
-    if (k.role === 'subject') batX = x;
+    // Blowing one kid up to make him the subject is the most visible thing §17.6 lets us do,
+    // so the pull-back is chosen partly to keep it small: a shot where the subject has to be
+    // inflated by half is a shot taken from the wrong place.
+    if (k.role === 'subject') { batX = x; cost += W.subjScale * Math.max(0, s - 1.16); }
     const dep = k.depth;
     if (inFrame && dep > deepD) { deepD = dep; deep = yTop; }
     // §17.6 is a cheat and cheats are supposed to be small.
@@ -689,7 +710,7 @@ function score(cast, comp, view, dPlate, pitchDeg, key, rows, sepAxis) {
     }
   }
 
-  if (comp.minKids) cost += Math.max(0, comp.minKids - onStage) * W.crowd;
+  if (comp.minPlay) cost += Math.max(0, comp.minPlay - onStage) * W.crowd;
   cost += Math.abs(deep - comp.deepY) * W.deep;
   if (comp.batterX != null && batX != null) cost += W.pair * Math.abs(batX - comp.batterX);
 
@@ -718,13 +739,23 @@ function score(cast, comp, view, dPlate, pitchDeg, key, rows, sepAxis) {
   // §17.3's last floor: the ball is never scaled, so its size is bought with distance alone.
   for (const p of BALL_PROBES) {
     const px = view.ballPx(p, T.ball.radius);
-    if (px < LIMIT.ballMinPx + 0.6) cost += W.ball * (LIMIT.ballMinPx + 0.6 - px);
+    if (px < LIMIT.ballMinPx + 0.2) cost += W.ball * (LIMIT.ballMinPx + 0.2 - px);
   }
 
   if (sepAxis) {
     const sep = Math.acos(clamp(view.fwd.dot(sepAxis), -1, 1)) / RAD;
     if (sep < comp.sepMin) cost += W.sep * (comp.sepMin - sep);
   }
+
+  // The camera has to stand somewhere real. Inside the roadway it can sit as low as it likes;
+  // past the curb the block is full of awnings, stoops, pushcart canopies and ash cans at
+  // 9–13 ft, and a lens under one of them photographs the underside of a canopy — measured, at
+  // (−43.6, 10.3, −62.7) a striped awning filled the middle third of the frame. So a seat
+  // outside the roadway is a SECOND-STOREY seat: a windowsill across the street, which is
+  // where a block watches a stickball game from anyway (PERIOD §2.4).
+  const overCurb = Math.abs(view.pos.x) - (S.playWidth / 2 + 1);
+  if (overCurb > 0) cost += W.curb * Math.max(0, 15.5 - view.pos.y);
+  if (view.pos.y < 8) cost += W.curb * (8 - view.pos.y);
 
   cost += dPlate * W.dist;
   if (view.pos.x < comp.camX[0]) cost += (comp.camX[0] - view.pos.x) * W.camX;
