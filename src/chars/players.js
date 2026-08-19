@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { registerSystem, app as APP } from '../app.js';
 import { buildKid } from './rig.js';
 import { ROSTER } from './roster.js';
+import { KIDS_BY_ID } from './wardrobe.js';
 import { T } from '../core/tuning.js';
 import { bus } from '../core/bus.js';
 import { RNG } from '../core/rng.js';
@@ -46,6 +47,60 @@ const BAT_YAW = () => YAW(-1, 0);
 // Nine on defence, on the stage, spread ACROSS the frame. See src/game/layout.js.
 const POSTS = LAYOUT.POSTS;
 
+/** A small stable number off a roster id, so casting by name still picks an idle and fidgets. */
+function idSeed(id) {
+  let h = 7;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h % 997;
+}
+
+/**
+ * NINE KIDS, NINE COLOURS — the casting call, in dyed wool.
+ *
+ * A critic put it plainly: "every one of the nine posts wears the same pale beige shirt and
+ * olive shorts with the same green hatband… three fielders side by side are indistinguishable."
+ * He was right, and the cause was in the layout rather than in the wardrobe. src/chars/
+ * wardrobe.js already carries DESIGN-BIBLE §2.9's twelve dyed-wool hues and already puts each
+ * kid's one saturated garment somewhere on him — but seven of our nine happened to be cast as
+ * kids whose garment is a hair ribbon, a bow tie, a cap band or a pair of suspenders, none of
+ * which reaches the 6–12% of silhouette §2.9 asks for and none of which survives being 15% of
+ * frame height. Only the catcher's sweater ever read, which is why the frame carried one red
+ * kid and eight beige ones.
+ *
+ * ADJACENCY IS A LAYOUT PROPERTY, so the fix belongs here: sort the nine by screen slot and
+ * hand each one a hue and a garment that carries it. §2.9 forbids inventing a thirteenth hue
+ * and forbids dyeing the shirt itself (1925 shirts are ecru; the chroma lives in the knitwear),
+ * so the garment is a SWEATER or a VEST — the only two that cover a torso — and the hue is one
+ * of the bible's twelve, mapped onto BYB-REFERENCE §2.1's asked-for accent set:
+ *
+ *   yellow  #E8B33A → mustard    #E3A32B      blue    #2E6DA4 → slate blue #4E8CA8
+ *   orange  #D96A2B → rust       #D4694A      green   #4C8C3F → olive      #8FA23C
+ *   red     #C0392B → red        #C8402F      teal    #2F8C8C → teal       #2E6E6E
+ *   fuchsia #B33A7A → claret     #B03A5E      violet          → periwinkle #5C6BB0
+ *   deep green      → bottle green #2F7F63    purple          → plum       #7B4A8C
+ *
+ * Every named hue in that list is period-legal home-dyed wool and every one is ≥ 20° of hue
+ * from its neighbours in slot order, which is BYB §2.1's own definition of "distinct". The
+ * assignment itself is in src/game/layout.js next to the position it belongs to; this only
+ * spends it.
+ *
+ * WHAT THIS COULD NOT DO: the shirt underneath stays ecru and the trousers stay wool, so a
+ * sweater is roughly 0.3% of frame area at 15% frame height, not BYB's 1–3%. Getting to 1–3%
+ * means dyeing more of the kid, and the kid's geometry and colour are baked per-part in
+ * src/chars/rig.js (`buildKidFromSpec`, the `shirt`/`accent` locals) and src/chars/wardrobe.js
+ * (`FAMILIES`, `ACCENTS`), neither of which this piece owns. Named in the report.
+ */
+function castSpec(h) {
+  const base = typeof h.kid === 'string' ? KIDS_BY_ID.get(h.kid) : null;
+  if (!base || (!h.accent && !h.garment)) return h.kid ?? 0;
+  const spec = { ...base };
+  if (h.accent) spec.accent = h.accent;
+  // 'dress' means the family's own frock already carries the accent — leave the slot alone
+  // rather than knitting a sweater over a girl's one-piece and losing her silhouette.
+  if (h.garment && h.garment !== 'dress') spec.slot = h.garment;
+  return spec;
+}
+
 // ── one kid ─────────────────────────────────────────────────────────────────
 class Kid {
   constructor(scene, index, opts = {}) {
@@ -71,9 +126,23 @@ class Kid {
     this.glide = 0;
     this.state = 'idle';
     this.lock = 0;                       // seconds a one-shot owns the body
-    this.idleClip = IDLES[index % IDLES.length];
+    /**
+     * A NUMBER to draw this kid's idle family and his three fidgets from.
+     *
+     * `index` is whatever src/game/layout.js cast into the slot, and since the layout casts by
+     * name it is a string — or, since round 2, a spec object carrying a dyed-wool colour. Both
+     * of those took `index % IDLES.length` to NaN, `IDLES[NaN]` to undefined, and every one of
+     * the nine posted kids to a body with no idle clip and three undefined fidgets: measured,
+     * `arng.pick(this.fidgets)` returned undefined and `Animator.once(undefined)` returned null
+     * on every tick of every scenario, so nine of the sixteen kids on the block never once
+     * scratched, spat, tugged a stocking or chased a pigeon. That is the cheapest character in
+     * the game and it was switched off by a type. Hash the id instead.
+     */
+    const seed = typeof index === 'number' ? index : idSeed(this.spec.id || this.name || '');
+    this.seed = seed;
+    this.idleClip = IDLES[seed % IDLES.length];
     // three character-specific fidgets per kid, never the same trio twice
-    this.fidgets = [FIDGETS[index % FIDGETS.length], FIDGETS[(index * 3 + 2) % FIDGETS.length], FIDGETS[(index * 5 + 5) % FIDGETS.length]];
+    this.fidgets = [FIDGETS[seed % FIDGETS.length], FIDGETS[(seed * 3 + 2) % FIDGETS.length], FIDGETS[(seed * 5 + 5) % FIDGETS.length]];
     this.fidgetIn = arng.range(0.6, 4.2);
     this.cycle = null; this.cycleT = 0; this.cycleStep = -1;
 
@@ -162,6 +231,12 @@ class Kid {
     this.at(h.x, h.z, undefined, h.y);
     if (h.look) this.lookAt(h.look[0], h.look[1]);
     else this.faceGoal = YAW(0, -1);
+    // A body may be posted facing one way and TURNED off it. The catcher is the reason: he
+    // has to stand on the pitch axis, which means the batting lens sits square behind him, and
+    // a kid seen dead astern is a coloured trapezoid with a cap on it. Three-eighths of a turn
+    // toward first gives the lens a shoulder, a cheek and one raised bare hand instead, and it
+    // costs nothing anywhere else because nothing else uses it.
+    if (h.yawDeg) this.faceGoal += h.yawDeg * Math.PI / 180;
     this.snapFacing();
     return this;
   }
@@ -386,7 +461,7 @@ export default registerSystem({
      */
     let n = 0;
     const post = (h, opts) => {
-      const k = new Kid(app.scene, h.kid ?? n, opts);
+      const k = new Kid(app.scene, castSpec(h), opts);
       n++;
       this.kids.push(k);
       k.home = h;

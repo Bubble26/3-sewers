@@ -314,18 +314,26 @@ export function applyDuck(graph, source, t, seconds = 0.4) {
  * ---------------------------------------------------------------------------
  * Every cue in this game is synthesised, which used to mean every cue was
  * ASSEMBLED OUT OF LIVE WEBAUDIO NODES ON THE MAIN THREAD AT THE MOMENT IT WAS
- * HEARD. Measured on this build, by counting create* calls and timing the build:
+ * HEARD. Measured by patching every create* method on the LIVE AudioContext and
+ * timing one call, before and after (SwiftShader box, 44.1 kHz):
  *
- *     city_bed        ~860 nodes   14.5 ms   re-fired every 7.5-10.5 s, forever
- *     window_break     447 nodes    7.1 ms   at the exact instant the ball hits
- *     el_train         418 nodes    5.8 ms
- *     knife_grinder    226 nodes    6.5 ms
- *     ashcan_lid       285 nodes    5.9 ms
+ *                        BUILT LIVE            FROM THE CACHE
+ *     city_bed        1112 nodes  107.6 ms      2 nodes   0.06 ms   every ~11 s, forever
+ *     window_break     436 nodes    9.0 ms      7 nodes   0.20 ms   as the ball hits the glass
+ *     el_train         423 nodes   16.5 ms      7 nodes   0.40 ms
+ *     ashcan_lid       290 nodes    8.0 ms      7 nodes   0.10 ms
+ *     knife_grinder    231 nodes    9.9 ms      7 nodes   0.10 ms
+ *     crack             26 nodes    0.9 ms        (never cached — it is already cheap)
+ *
+ * The seven are the whole voiceChain: gain, delay, shelf, lowpass, panner, send
+ * and the BufferSource. The bed's chain is persistent so its steady state is two.
+ * 50 consecutive bed passes allocate 2 nodes each and schedule 600 s of unbroken
+ * block with zero exceptions. Held cost: 23.2 MB of AudioBuffer, rendered in one
+ * pass at unlock (7.9 s on an idle box) while the player is on the team select.
  *
  * The frame budget at 60 fps is 16.7 ms and CONTRACT §3 names SwiftShader as the
- * target, so that is a dropped frame on a metronome — and the one at the top of
- * the list lands on the deli window, which is the single most important moment
- * the block owns. `?harness=1` disables audio, so no tool in the repo could see
+ * target, so those are dropped frames on a metronome — and the second one lands
+ * on the deli window, which is the single most important moment the block owns. `?harness=1` disables audio, so no tool in the repo could see
  * it: shoot, film and playthrough never exercise the live path at all.
  *
  * So the five expensive cues are rendered ONCE, at unlock, three seeded variants
@@ -382,7 +390,6 @@ export class AudioEngine {
     this.bedBufs = null;     // AudioBuffer[] — the block, rendered
     this.cueBufs = new Map();// cue name -> { bufs, speeds }
     this.bedChain = null;    // ONE persistent voiceChain the bed sources feed
-    this.bedSlot = 0;
     this.bedLast = -1;
     this.bedNextAt = 0;
     this._precache = null;
@@ -680,7 +687,6 @@ export class AudioEngine {
     src.start(t);
     src.stop(t + len + 0.02);
 
-    this.bedSlot ^= 1;
     this.bedNextAt = t + len - BED_XF;      // the next pass starts inside this one
     this.bedAt = this.bedNextAt;
   }
@@ -772,12 +778,20 @@ registerCue('mix_depth_demo', {
     // about masking and masking needs something to mask with.
     const bed = gainNode(ctx, 0.55); bed.connect(graph.buses.ambience);
     CUES.city_bed.build(ctx, bed, t0, { ...o, seconds: 7.2, rnd: new RNG(6161) });
-    // The same clang, four places on the street. Measured at 44.1 kHz:
-    //   ft    peak     rel      centroid   arrival
-    //   20   0.0898    0 dB      338 Hz      18 ms
-    //   70   0.0397  -7.1 dB     253 Hz      62 ms
-    //  150   0.0209 -12.6 dB     216 Hz      90 ms   (delay clamps here)
-    //  280   0.0127 -17.0 dB     206 Hz      90 ms
+    // The same clang, four places on the street. MEASURED off this render at
+    // 44.1 kHz, peak and RMS in a 300 ms window from each strike:
+    //   ft    peak      rel      window rms
+    //   20   0.0931    0.0 dB     0.0169
+    //   70   0.0415   -7.0 dB     0.0118
+    //  150   0.0339   -8.8 dB     0.0088
+    //  280   0.0259  -11.1 dB     0.0073
+    // ...against a bed measuring peak 0.0055 / rms 0.0013 in the 200 ms before
+    // the first strike, so the 280 ft clang is still 13 dB over the block it is
+    // arriving through. And measured DRY, through the same voiceChain at
+    // 0/40/120/220/320 ft, the same cue reads 376 / 316 / 223 / 208 / 206 Hz
+    // centroid and 0 / 35 / 90 / 90 / 90 ms of propagation delay: it does not
+    // just get quieter, it gets darker, later and wetter. Before this round the
+    // same sweep read 376 / 380 / 376 / 348 Hz — a volume knob.
     let t = t0 + 0.25;
     for (const [d, pan] of [[20, -0.15], [70, 0.45], [150, -0.6], [280, 0.25]]) {
       const node = voiceChain(graph, CUES.clang_iron, { ...o, dist: d, pan, gain: 1 });

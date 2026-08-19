@@ -1198,7 +1198,7 @@ class Announcer {
     this.rnd = new RNG(19250903);
     this.timers = [];
     this.quiet = 0;              // seconds since anybody said anything
-    this.chatterIn = 2.4;
+    this.chatterIn = 0.55;
     this.gag = { apple: 0, ice: 0, grounded: 0, tiny: 0, twoHander: 0, arg: 0 };
     this.climb = null;
     this.lastKid = null;
@@ -1215,7 +1215,8 @@ class Announcer {
     this.lib.reset(seed);
     this.rnd.reset((seed * 2654435761) >>> 0);
     this.timers.length = 0;
-    this.quiet = 0; this.chatterIn = 1.6;
+    // the block is talking before the first pitch, not two seconds after it
+    this.quiet = 0; this.chatterIn = 0.55;
     this.gag = { apple: 0, ice: 0, grounded: 0, tiny: 0, twoHander: 0, arg: 0 };
     this.climb = null;
     this.halves = 0;
@@ -1625,7 +1626,7 @@ class Announcer {
         }
         // the infield always says something when somebody new digs in, and it
         // says it a third of a second after she names him, not on top of her
-        this.after(0.34, () => this.chatter(this.rnd.chance(0.5) ? 'taunt' : 'infield'));
+        this.after(0.30, () => this.chatter(this.rnd.chance(0.5) ? 'taunt' : 'infield'));
         if (this.gag.twoHander === 0 && this.rnd.chance(0.34)) { this.gag.twoHander = 1; this.after(2.6, () => this.twoHander()); }
       }
     });

@@ -679,6 +679,12 @@ class Bubbles {
     const U = this.U, W = this.w, H = this.h;
     const m = INSET * U;
     const cands = [];
+    // A card mid-escalation is drawn scaled about its own centre, so every test
+    // below — the frame edge, the scorebug, the ball — has to be run against the
+    // box that will actually be PAINTED, not the one that was laid out.
+    const g = Math.max(1, card.grow, card.growGoal || 1);
+    const gw = card.rect.w * g, gh = card.rect.h * g;
+    const ox = (gw - card.rect.w) / 2, oy = (gh - card.rect.h) / 2;
     if (card.who === 'kid') {
       const a = this.kidAnchor(app, card.body) || { x: W * 0.5, y: H * 0.55, px: 90 * U };
       card.anchor = a;
@@ -705,21 +711,14 @@ class Bubbles {
       const left = card.who === 'dot';
       const x0 = left ? m : W - m - card.rect.w;
       card.anchor = { x: left ? x0 + 46 * U : x0 + card.rect.w - 46 * U, y: -40 * U, px: 0 };
+      const under = (SCOREBUG_H + 14) * U + oy;     // grown top clears the scorebug
       cands.push({ x: x0, y: m, pri: 0 });
-      cands.push({ x: x0, y: SCOREBUG_H * U + 14 * U, pri: 0.9 });
-      cands.push({ x: x0, y: SCOREBUG_H * U + 14 * U + card.rect.h * 1.15, pri: 1.8 });
+      cands.push({ x: x0, y: under, pri: 0.9 });
+      cands.push({ x: x0, y: under + card.rect.h * 1.15, pri: 1.8 });
     }
 
     const blocked = this.blocked;
     let best = null, bestCost = Infinity;
-    // a card that is mid-escalation is drawn scaled about its own centre, so the
-    // frame it has to fit inside is the grown one, not the laid-out one
-    const g = Math.max(1, card.grow, card.growGoal || 1);
-    const gw = card.rect.w * g, gh = card.rect.h * g;
-    const ox = (gw - card.rect.w) / 2, oy = (gh - card.rect.h) / 2;
-    // a card mid-climb is about to be drawn at twice this size, so the scorebug
-    // test has to be run against the box that will actually be painted
-    if (card.who !== 'kid') cands.push({ x: cands[0].x, y: SCOREBUG_H * U + oy, pri: 0.8 });
     for (const c of cands) {
       const { x, y } = this.confineTo(card, c.x, c.y, ox, oy);
       const bl = card.bleed || 0;
@@ -739,9 +738,11 @@ class Bubbles {
       // STICKINESS. Paper stays where it was put. Re-opening the question of
       // where a card lives every tick is what made the last build's card tour
       // the left half of the frame for four seconds; a move now has to be worth
-      // more than the confusion it causes.
-      if (card.pos) {
-        const d = Math.hypot(x - card.pos.x, y - card.pos.y);
+      // more than the confusion it causes. Measured on the PAINTED corner, not
+      // the stored one, so a card that is merely growing does not read as a
+      // card that has moved.
+      if (card.vis) {
+        const d = Math.hypot(x - ox - card.vis.x, y - oy - card.vis.y);
         cost += Math.min(1, d / (200 * U)) * 14000 * U * U;
       }
       if (cost < bestCost) { bestCost = cost; best = { x, y }; }
@@ -749,7 +750,8 @@ class Bubbles {
     card.goal = best;
     // A card changing SLOT cuts, the way the camera cuts (§17.4). Only a card
     // making a small adjustment inside its own slot slides, and it slides once.
-    const jump = card.pos ? Math.hypot(best.x - card.pos.x, best.y - card.pos.y) > 150 * U : false;
+    const jump = card.vis
+      ? Math.hypot(best.x - ox - card.vis.x, best.y - oy - card.vis.y) > 150 * U : false;
     // the booth CUTS between its three rows and never slides: a banner that
     // slides is a balloon. Only a kid's scrap, which is welded to a face that
     // is itself moving, gets the damped step-aside.
@@ -773,6 +775,9 @@ class Bubbles {
     // last build did.
     this.confine(card);
     card.rect.x = card.pos.x; card.rect.y = card.pos.y;
+    // remembered with the SAME growth the candidates were tested against, or a
+    // card that is only halfway through doubling reads as a card that moved
+    card.vis = { x: card.pos.x - ox, y: card.pos.y - oy };
   }
 
   /** The box a card actually paints into, grown and spiked. */
@@ -1202,15 +1207,18 @@ class Bubbles {
       // the ring opens once, fast, and then stays lit under him for as long as
       // he is talking — so a STILL also tells you which kid is making the noise
       const rx = a.px * (0.34 + t * 0.30);
-      g.globalAlpha = A * (0.24 + 0.46 * k);
-      g.strokeStyle = acc;
-      g.lineWidth = Math.max(2, 5.0 * U * (1 - t * 0.45));
       g.beginPath();
       g.ellipse(a.foot.x, a.foot.y, rx, rx * 0.30, 0, 0, TAU);
-      g.stroke();
-      g.globalAlpha = A * (0.12 + 0.22 * k);
+      // ink underneath, accent on top. A mustard kid standing on warm asphalt
+      // has no accent contrast at all, and the mark exists precisely so that a
+      // still tells you which face the noise is coming out of.
+      g.globalAlpha = A * (0.34 + 0.34 * k);
       g.strokeStyle = C(inkOf(card.accent));
-      g.lineWidth = Math.max(1, 1.8 * U);
+      g.lineWidth = Math.max(3, 8.0 * U * (1 - t * 0.35));
+      g.stroke();
+      g.globalAlpha = A * (0.42 + 0.5 * k);
+      g.strokeStyle = acc;
+      g.lineWidth = Math.max(1.6, 4.0 * U * (1 - t * 0.4));
       g.stroke();
     }
     // the noise coming out of him: two arcs on the side the card is on, and

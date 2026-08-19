@@ -27,49 +27,58 @@
  * MEASURED, NOT CLAIMED  (node tools/audition.mjs <cue> --seconds 3, 44.1 kHz)
  * ---------------------------------------------------------------------------
  * The shape of a sound is checkable, so here is the check. Every number below
- * came out of the tool on THIS build, not out of an intention. Absolute peaks
- * moved down ~5.8 dB this round because engine.js MIX.master went 0.78 -> 0.40
- * to buy back headroom; the RATIOS are what to read.
+ * came out of the tool on THIS build, not out of an intention.
  *
  *   cue              peak    crest   attack  decay   centroid   what it proves
- *   crack            0.382   31.7dB    0ms    35ms    680 Hz    hollow pock, not a baseball crack
- *   crack_weak       0.296   33.3dB    0ms    23ms    366 Hz    dull thock: darker AND shorter
- *   crack_wallop     0.661   27.0dB    0ms   164ms    497 Hz    +4.8 dB and 4.7x the tail of the pock
- *   whiff            0.146   25.0dB   12ms   211ms   2684 Hz    air only, and it peaks AT contact
- *   clang_iron       0.270   24.0dB    0ms   750ms    378 Hz    7 onsets = a staircase you can count
- *   ashcan_lid       0.194   30.3dB    0ms   105ms    734 Hz    9 onsets = the wobble-to-flat
- *   window_flex      0.402   28.6dB    0ms    94ms    116 Hz    a flat boom, then a beat of nothing
- *   window_break     0.359   29.2dB    0ms   258ms   2151 Hz    glass, an octave above everything else
- *   sewer_swallow    0.264   25.8dB    0ms    35ms    882 Hz    plink, slide whistle, gone
- *   city_bed (10 s)  0.138   12.7dB   78ms      -     305 Hz    no transient sharp enough to fight a bounce
- *   mix_headroom     0.678   26.5dB     -        -    583 Hz    the worst real instant, 3.4 dB under full scale
+ *   crack            0.412   32.3dB    0ms    35ms    690 Hz    hollow pock, not a baseball crack
+ *   crack_weak       0.299   33.3dB    0ms    23ms    370 Hz    dull thock: darker AND shorter
+ *   crack_wallop     0.733   27.9dB    0ms   129ms    504 Hz    +5.0 dB and 3.7x the tail of the pock
+ *   whiff            0.152   25.2dB   12ms   199ms   2756 Hz    air only, and it peaks AT contact
+ *   clang_iron       0.277   24.3dB    0ms   750ms    376 Hz    7 onsets = a staircase you can count
+ *   ashcan_lid       0.289   26.8dB    0ms   105ms    713 Hz    14 onsets = the wobble-to-flat
+ *   window_flex      0.414   28.8dB    0ms    94ms    112 Hz    a flat boom, then a beat of nothing
+ *   window_break     0.346   28.0dB    0ms   258ms   2156 Hz    glass, an octave above everything else
+ *   sewer_swallow    0.271   25.9dB    0ms    35ms    865 Hz    plink, slide whistle, gone
+ *   knife_grinder    0.164   24.1dB    0ms   105ms   1406 Hz    a hand bell, twice per swing
+ *   el_train         0.246   17.1dB   35ms      -     308 Hz    21 onsets = rail joints, not a rumble
+ *   city_bed (8 s)   0.156   17.3dB  219ms      -     468 Hz    16 onsets, and nothing sharper than a bounce
+ *   mix_headroom     0.738   27.5dB     -        -    419 Hz    the worst real instant, 2.6 dB under full scale
  *
- * THE THREE BROOMSTICK TIERS separate on every axis: 366 / 680 / 497 Hz centroid
- * and 23 / 35 / 164 ms decay. The thock is the dullest and shortest, the pock is
+ * THE THREE BROOMSTICK TIERS separate on every axis: 370 / 690 / 504 Hz centroid
+ * and 23 / 35 / 129 ms decay. The thock is the dullest and shortest, the pock is
  * the brightest, and the wallop is the pock with a building hung under it — 78 Hz
  * sagging to 46 plus a 39 Hz sub, which is why its centroid drops BELOW the pock's
- * while its peak sits 4.8 dB above it. That inversion is the sound of weight.
+ * while its peak sits 5.0 dB above it. That inversion is the sound of weight.
  *
  * THE TWO STAIRCASES are mirror images, on purpose (§7.4). `ashcan_lid` contacts
- * at 0.29 / 0.45 / 0.57 / 0.68 / 0.77 / 0.86 / 0.93 / 0.98 / 1.04 s — gaps of
- * 152/129/106/93/82/71/58/59 ms, SHRINKING, a lid falling flat like a dropped
- * coin. `clang_iron` contacts at 0.12 / 0.23 / 0.35 / 0.48 / 0.62 / 0.76 / 0.91 s
- * — gaps of 117/118/128/141/141/152 ms, WIDENING, a ball walking DOWN a ladder
- * and taking longer to reach every next bar. Nine accelerating steps against
- * seven decelerating ones: two cartoon lies about two different objects, and the
- * two analysis PNGs are the proof they are not the same sound twice. (Read
- * `clang_iron` at --seconds 1.5 if you want the staircase to fill the frame;
- * at the default 3 s it is squeezed into the left third.)
+ * at 0.31 / 0.45 / 0.57 / 0.68 / 0.77 / 0.86 / 0.93 / 0.98 / 1.04 s — gaps
+ * SHRINKING, a lid falling flat like a dropped coin. `clang_iron` contacts at
+ * 0.12 / 0.23 / 0.35 / 0.48 / 0.62 / 0.76 / 0.91 s — gaps of 117/118/128/141/141/
+ * 152 ms, WIDENING, a ball walking DOWN a ladder and taking longer to reach every
+ * next bar. Two cartoon lies about two different objects, and the two analysis
+ * PNGs are the proof they are not the same sound twice. (Read `clang_iron` at
+ * --seconds 1.5 if you want the staircase to fill the frame.)
  *
- * THE BED IS FOUR LAYERS, NOT EIGHT. §7.5 asks for looping layers plus a sporadic
- * layer every 20-60 s. The bed is now only what is continuously true of this block
- * — the avenue, a horse cart, the cornice pigeons, one radio in one window (§7.1
- * says one radio, one window, and means it). The El, the dog, the knife grinder,
- * the church bells, the klaxon and a mother at a window are EVENTS and live in
- * engine.js SPORADIC_LIST, where the scheduler fires one every 22-55 s and the El
- * at most once every 90 s. Measured over an hour of virtual time: 93 events, gaps
- * 22.3-54.8 s, ten El passes with a minimum spacing of 136 s. Before this round
- * the bed rebuilt a full El pass every 8 seconds.
+ * THE TWO BEST GAGS ARE NOW IN FRONT OF THE BED. Both of them used to be mixed
+ * behind the thing that was supposed to set them up:
+ *   - `ashcan_lid`'s wobble ran through bp(1500 Hz), 1.8 octaves above the lid's
+ *     own 438 Hz fundamental, and measured 11.5 dB under the opening clang —
+ *     level with the city bed's RMS, i.e. gone. The band moved to 620 Hz and the
+ *     wobble came up: the contacts now measure -5.8 dB under the clang, and they
+ *     are visibly half the height of it in the envelope PNG.
+ *   - `window_flex`'s guilty lid (§7.4's ONE small noise after a whole beat of
+ *     silence) peaked at 0.038, which is -28 dBFS against a bed peaking -17 dBFS.
+ *     It is now 0.067 — still 15.8 dB under the boom, which is the joke, but 10 dB
+ *     clear of the block, which is the difference between a joke and a rumour.
+ *
+ * THE BED IS FIVE LAYERS AND ONE OF THEM MOVES. §7.5 asks for looping layers plus
+ * a sporadic layer every 20-60 s. The bed is what is continuously true of this
+ * block — the avenue, a horse cart, the cornice pigeons, one radio in one window
+ * (§7.1 says one radio, one window, and means it) — plus, as of this round, one
+ * Model T pulling away from the kerb, which is the only thing in the bed with a
+ * direction. The El, the dog, the knife grinder, the church bells, the klaxon and
+ * a mother at a window are EVENTS and live in engine.js SPORADIC_LIST, where the
+ * scheduler fires one every 22-55 s and the El at most once every 90 s.
  *
  * ---------------------------------------------------------------------------
  * HOW A CUE WORKS
@@ -1653,9 +1662,19 @@ registerCue('city_bed', {
       away.pan.setValueAtTime(-0.60, tCar);
       away.pan.linearRampToValueAtTime(0.60, tCar + 4.0);
     }
+    // The clutch coming out: one soft thump through the body and a shiver of loose
+    // tin. Four frames long and 25 dB under the pock, but it is what makes the ear
+    // catch the START of the move — a swell with no onset is weather, and weather
+    // is the thing this bed had too much of.
+    partial(ctx, away, tCar + 0.06, { f: 58, g: 0.055, d: 0.16, a: 0.006, phase: 'cos' });
+    burst(ctx, away, tCar + 0.07, { f: 900, q: 1.4, g: 0.030, a: 0.004, d: 0.09, color: 'pink' });
+    // ...and the flivver itself pulls away. It is at the KERB, thirty feet off, not
+    // two blocks over with the avenue, so it is brighter and higher-bodied than the
+    // three motors in city_traffic (132/150/178 Hz) — which is also what keeps it
+    // from disappearing into them at a level this low.
     motorT(ctx, away, tCar, {
       dur: 4.0, rate: 19.5, drift: 24.5 / 19.5, g: M.car,
-      f: 168, lp: 820, offset: r.range(0, 3), a: 0.75, d: 1.05,
+      f: 205, lp: 1150, offset: r.range(0, 3), a: 0.75, d: 1.05,
     });
   },
 });
