@@ -9,6 +9,7 @@ import { registerScenario } from '../core/scenarios.js';
 import { CHALK } from '../render/palette.js';
 import { bindRig, attachStick, Animator, Trail, headingTo } from './anim.js';
 import { CLIPS, FIDGETS, IDLES } from './clips.js';
+import { LAYOUT } from '../game/layout.js';
 
 /**
  * Everybody on the block: where they stand, what they are doing, and why.
@@ -18,18 +19,21 @@ import { CLIPS, FIDGETS, IDLES } from './clips.js';
  * Where a gameplay slot is still empty (fielding and baserunning, at time of writing) the
  * kids fall back to a purely visual reaction so the street is never dead, and the moment a
  * real slot shows up it is preferred: see `fielderTargets()` and `runnerTargets()`.
+ *
+ * WHERE anybody stands is not decided here. Every position in this file is read from
+ * src/game/layout.js, which owns the stage: the plate, the three chalk bases, the pitcher's
+ * scratch, the eight posts, the on-deck kid, the batting side along the gutter and the three
+ * spectators on the curb and the ice truck. Nothing in here may invent a coordinate, and
+ * every target a kid is ever sent to goes through LAYOUT.chase(), which is the only reason a
+ * fielder cannot follow a ball off the end of the stage.
  */
 
 // A private RNG so fidget timers never touch the sim's deterministic draw order.
 const arng = new RNG(4711);
 
-const BASES = [
-  { x: 18, z: T.street.plateZ + 28 },
-  { x: 0, z: T.street.plateZ + 56 },
-  { x: -18, z: T.street.plateZ + 28 },
-];
-const HOME = { x: 0, z: T.street.plateZ };
-const PLATE_BOX = { x: 2.7, z: T.street.plateZ - 0.5 };
+const BASES = LAYOUT.BASES;
+const HOME = LAYOUT.HOME;
+const PLATE_BOX = LAYOUT.PLATE_BOX;
 
 /**
  * Every heading in this file goes through the rig's own detected facing (anim.js `headingTo`)
@@ -39,19 +43,8 @@ const YAW = (dx, dz) => headingTo(dx, dz);
 /** Batting box: face the kid across the plate with the pitcher off to his open side. */
 const BAT_YAW = () => YAW(-1, 0);
 
-// Nine on defence, spread up a street rather than around a diamond.
-const POSTS = [
-  { id: 'catcher', x: 0, z: T.street.plateZ - 5.6, clip: 'crouch' },
-  { id: 'pitcher', x: 0, z: T.street.moundZ, clip: 'pitch_set' },
-  { id: 'first', x: 17, z: 33 },
-  { id: 'short', x: 8, z: 64 },
-  { id: 'third', x: -17, z: 33 },
-  // pulled in from the far block: DESIGN-BIBLE §12 puts a floor of 8% of frame height on
-  // every fielder, and a kid 118 ft up the street is four pixels tall
-  { id: 'left', x: -15, z: 82 },
-  { id: 'center', x: 1, z: 95 },
-  { id: 'right', x: 16, z: 79 },
-];
+// Nine on defence, on the stage, spread ACROSS the frame. See src/game/layout.js.
+const POSTS = LAYOUT.POSTS;
 
 // ── one kid ─────────────────────────────────────────────────────────────────
 class Kid {

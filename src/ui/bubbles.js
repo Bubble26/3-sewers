@@ -51,8 +51,8 @@ import { registerSystem, app as APP } from '../app.js';
 import { registerScenario } from '../core/scenarios.js';
 import { RNG } from '../core/rng.js';
 import {
-  CHALK, INK, CLOTH, ACCENTS, AIR, WOOD, PAVEMENT, FACADE, BALL,
-  mix, hexCSS, soot, atLstar, inkOf,
+  CHALK, INK, CLOTH, ACCENTS, AIR, WOOD, PAVEMENT, FACADE,
+  mix, hexCSS, atLstar, inkOf,
 } from '../render/palette.js';
 import { slab, slabW, wrap, say } from '../chars/portraits.js';
 
@@ -433,7 +433,6 @@ class Card {
    ========================================================================= */
 
 const _v = new THREE.Vector3();
-const _v2 = new THREE.Vector3();
 
 class Bubbles {
   constructor() {

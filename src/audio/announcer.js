@@ -916,7 +916,7 @@ registerCue('gooch_line', {
 });
 
 registerCue('kid_yell', {
-  bus: 'chatter', gain: 2.6, dur: 1.1, send: 0.28,
+  bus: 'chatter', gain: 2.2, dur: 1.1, send: 0.28,
   note: 'One kid, one shout, across sixty feet of street. Pitched off kid.voice.',
   build(ctx, out, t0, o) {
     const air = gain(ctx, 1);
@@ -1112,6 +1112,13 @@ class Announcer {
     if (!f || !f.length) return null;
     return f[this.rnd.int(2, f.length - 1)];
   }
+  /** A specific kid's body, if that kid is actually out there. */
+  bodyOf(id) {
+    const p = this.players;
+    if (!p) return null;
+    return (p.kids || []).find((k) => k?.spec?.id === id) || null;
+  }
+
   /** Anybody on the street who is not the batter, for chatter. */
   chatterBody(kind) {
     const p = this.players;
@@ -1351,8 +1358,11 @@ class Announcer {
       this.chatterIn = this.rnd.range(2.0, 5.0);
       const phase = APP.sim.state.phase;
       const r = this.rnd.next();
-      if (this.gag.tiny < TINY_GAG.length && r < 0.10) {
-        this.chatter(TINY_GAG[this.gag.tiny++], { body: this.chatterBody() });
+      // Tiny's one two-sewer shot, four times an inning — but only out of Tiny.
+      // A running gag attributed to the wrong kid is not a running gag.
+      const tinyBody = this.bodyOf('tiny');
+      if (this.gag.tiny < TINY_GAG.length && r < 0.10 && tinyBody && bubbles.visible(APP, tinyBody, 11)) {
+        this.chatter(TINY_GAG[this.gag.tiny++], { body: tinyBody });
       } else if (r < 0.24) {
         this.chatter(this.lib.pick('narrate', NARRATOR), { body: this.chatterBody('narrate') });
       } else if (phase === 'in_play') {
@@ -1562,10 +1572,14 @@ function stage(name) {
     const small = announcer.chatterBody('narrate') || p?.onDeck;
     announcer.chatter('{ME} has a plan. The plan is to swing.', { body: small });
   } else if (name === 'chatter') {
-    announcer.chatter('Chuck it here!', { body: p?.catcher, kind: 'shout' });
-    announcer.chatter('Swing, ya bum!', { body: p?.onDeck, kind: 'shout' });
-    announcer.chatter('I hit two sewers once. Ask anybody.', { body: p?.batter });
-    announcer.gooch.say([{ text: 'There is a man on Second Avenue selling chestnuts. In September. In SEPTEMBER.' }]);
+    // THE ARGUMENT — setup, beat, loser (§8.1). It is settled by volume, then
+    // seniority, then by whoever owns the ball, and it is the engine the whole
+    // comedy runs on, so it gets the frame to itself.
+    announcer.dot.say([{ text: 'Foul ball. And the argument starts in three, two —' }]);
+    announcer.chatter('It was foul!', { body: p?.catcher, kind: 'shout' });
+    announcer.chatter('It was over!', { body: p?.batter, kind: 'shout' });
+    announcer.chatter('It was foul. I have the ball.', { body: p?.onDeck });
+    announcer.gooch.say([{ text: 'Out. And here comes the arguing, right on schedule, like the El.' }]);
   }
 }
 
