@@ -73,9 +73,17 @@ import { ROSTER } from '../chars/roster.js';
  * at a call site.
  * ======================================================================== */
 const MUSIC_DEFAULTS = {
-  masterGain: 0.62,
+  /**
+   * Gain staging, and it matters more than any note in this file. The band was
+   * summing to ~1.6 before the soft clip, so the clip ran flat out and every
+   * cue rendered as a brick with a 7 dB crest factor. `mixTrim` sets the level
+   * INTO the clip so only real transients touch it; `masterGain` sets the level
+   * out. Read the envelope in tools/audition.mjs after changing either.
+   */
+  mixTrim: 0.36,
+  masterGain: 1.05,
   bedGainDb: -20,          // BYB §6.6 / BIBLE §7.5: the in-play bed sits 20 dB down
-  bedTrimDb: 12.4,         // measured: the bed's thinner arrangement is already 10.8 dB down
+  bedTrimDb: 17.8,         // measured: the bed's thinner arrangement is already 10.8 dB down
   duckAnnouncerDb: -14,    // the announcer always wins
   duckCrackDb: -10,        // the bat always wins
   duckAttack: 0.055,
@@ -494,8 +502,11 @@ const INSTRUMENTS = {
     drive: 0.30, rip: 120,
   },
   tuba: {
-    kind: 'blow', gain: 0.42, pan: 0.02,
-    waves: [{ type: 'sawtooth', gain: 1 }, { type: 'sine', gain: 0.7, detune: -1200 }],
+    kind: 'blow', gain: 0.34, pan: 0.02,
+    // A sine at the FUNDAMENTAL, not an octave below it. The sub-octave was
+    // putting 25-45 Hz into the mix, which BYB §6.5 bans outright and which
+    // read on the spectrum as a wall of mud under everything else.
+    waves: [{ type: 'sawtooth', gain: 1 }, { type: 'sine', gain: 0.55, detune: 0 }],
     filter: { type: 'lowpass', base: 240, track: 0.85, envAmt: 380, q: 1.1 },
     env: { a: 0.030, d: 0.10, s: 0.72, r: 0.09 },
     vib: { rate: 4.2, cents: 4, delay: 0.4 },
@@ -568,7 +579,7 @@ const INSTRUMENTS = {
     hp: 110, drive: 0.06,
   },
   string_bass: {
-    kind: 'pluck', gain: 0.46, pan: 0.0,
+    kind: 'pluck', gain: 0.38, pan: 0.0,
     ks: { damp: 0.9972, tone: 0.42, bright: 0.32, pos: 0.28 }, tail: 1.5,
     body: { type: 'peaking', f: 92, q: 1.0, gain: 6 },
     lp: 1400, drive: 0.10,
@@ -640,7 +651,8 @@ const instName = (n) => (INSTRUMENTS[n] ? n : (INSTRUMENT_ALIAS[n] || 'piano'));
 
 /* ==========================================================================
  * 7. RENDER GRAPH — one class, used identically live and offline
- * buses -> [reverb send] -> musicBus -> DUCK -> soft limiter -> master -> out
+ * buses + reverb -> musicIn -> HP/air EQ -> musicBus -> [radio chain]
+ *   -> DUCK -> soft clip -> master -> out
  * ======================================================================== */
 class Render {
   constructor(ctx, { seed = MT.seed, world = false, gain = 1 } = {}) {
@@ -664,7 +676,23 @@ class Render {
     this._duckUntil = 0;
 
     this.musicBus = ctx.createGain();
-    this.musicBus.gain.value = 1;
+    this.musicBus.gain.value = MT.mixTrim;
+
+    /**
+     * Bus EQ. Two decisions, both from looking at the rendered spectrum:
+     * a 12 dB/oct high-pass at 55 Hz, because nothing in a 1925 band lives below
+     * the tuba's low F and everything down there was mud; and a small air shelf,
+     * because Backyard is BRIGHT and an unshelved acoustic band reads dull.
+     */
+    const hp1 = ctx.createBiquadFilter(); hp1.type = 'highpass'; hp1.frequency.value = 55; hp1.Q.value = 0.7;
+    const hp2 = ctx.createBiquadFilter(); hp2.type = 'highpass'; hp2.frequency.value = 55; hp2.Q.value = 0.7;
+    const air = ctx.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = 3600; air.gain.value = 4;
+    // and a low shelf, which is both Backyard-true (bright, melody forward) and
+    // period-true (a 1925 acoustic horn could not capture much under 150 Hz,
+    // which is exactly why the tuba replaced the string bass in the studio)
+    const lowsh = ctx.createBiquadFilter(); lowsh.type = 'lowshelf'; lowsh.frequency.value = 165; lowsh.gain.value = -3;
+    this.musicIn = ctx.createGain();
+    this.musicIn.connect(hp1); hp1.connect(hp2); hp2.connect(lowsh); lowsh.connect(air); air.connect(this.musicBus);
 
     if (world) {
       // 1925 battery receiver + horn speaker + shellac. BIBLE §7.1's filter boundary.
@@ -696,13 +724,16 @@ class Render {
     const conv = ctx.createConvolver();
     conv.buffer = reverbIR(this.sr, MT.reverbSeconds);
     conv.normalize = true;
-    this.revSend.connect(conv).connect(this.musicBus);
+    this.revSend.connect(conv).connect(this.musicIn);
 
+    // Section balance, set by reading the spectrum: the bass section was carrying
+    // the whole low end and burying the lead.
     this.buses = {};
+    const busGain = { lead: 1.22, comp: 1.0, bass: 0.70, perc: 0.98 };
     for (const b of ['lead', 'comp', 'bass', 'perc']) {
       const g = ctx.createGain();
-      g.gain.value = 1;
-      g.connect(this.musicBus);
+      g.gain.value = busGain[b];
+      g.connect(this.musicIn);
       this.buses[b] = g;
     }
     this.channels = new Map();
@@ -1077,7 +1108,19 @@ function partBanjo(R, P, t0, o = {}) {
         R.note('banjo', voicing[i], t + i * 0.0105, 0.2, 0.62 * acc * g, { damp: (o.ring ?? 0.30) * P.beat, release: 0.045 });
       }
     }
-    if (o.fills !== false && P.rng.chance(0.22)) {
+    // THE PUSH. An up-stroke on the "and of 4" carrying the NEXT bar's chord,
+    // so the harmony arrives an eighth early. This is the single most
+    // characteristic rhythmic gesture in the idiom, and without it a band with
+    // its bass on 1-and-3 and its chunk on 2-and-4 is a march: every event in
+    // the rhythm section lands on a beat and nothing pulls against it.
+    if (o.push && bar < to - 1) {
+      const nc = chordAt(P.bars, bar + 1, 0);
+      const v = voiceLead(voicing, nc, 57, 76, 3);
+      const t = t0 + tAt(P, bar, 7) + human(P, 6);
+      for (let i = 0; i < v.length; i++) {
+        R.note('banjo', v[i], t + i * 0.009, 0.18, 0.58 * accentAt(7) * g, { damp: 0.24 * P.beat, release: 0.04 });
+      }
+    } else if (o.fills !== false && P.rng.chance(0.22)) {
       // a single up-stroke on the "and of 4" — the banjo's own comment
       const c = chordAt(P.bars, bar, 3.5);
       const v = voiceLead(voicing, c, 62, 78, 2);
@@ -1143,8 +1186,12 @@ function partBrushes(R, P, t0, o = {}) {
       R.note('brush_tap', 0, t0 + tAt(P, bar, e) + human(P, 6), 0.06, 0.95 * accentAt(e) * g, {});
     }
     if (o.ticks !== false) {
+      // The swung "and" has to be AUDIBLE or the swing lives only in the melody.
+      const all = o.ticks === 'all';
       for (const e of [1, 3, 5, 7]) {
-        if (P.rng.chance(0.55)) R.note('hi_hat', 0, t0 + tAt(P, bar, e) + human(P, 7), 0.05, 0.34 * accentAt(e) * g, {});
+        if (all || P.rng.chance(0.6)) {
+          R.note('hi_hat', 0, t0 + tAt(P, bar, e) + human(P, 6), 0.05, (all ? 0.48 : 0.38) * accentAt(e) * g, {});
+        }
       }
     }
   }
@@ -1232,8 +1279,11 @@ const TITLE_HOOK = mel(`
   A4:3 C5:1 F5:4 | F#5:3 A5:1 D5:4 |
   G5:2 F5:2 E5:2 D5:2 | C5:4 r:2 C5:1 D5:1
 `);
-const TITLE_INTRO_CHART = 'F6 | D7 | G7 | C7';
-const TITLE_INTRO = mel('r:8 | r:8 | r:4 F5:1 G5:1 A5:1 Bb5:1 | B5:2 C6:2 r:2 C5:1 D5:1');
+// TWO bars, not four. The first draft opened with a 4-bar vamp and the hook did
+// not arrive until 5.2 seconds, which is an eternity on a title screen for a
+// nine-year-old. Now the clarinet climbs for two bars and the tune starts at 2.6.
+const TITLE_INTRO_CHART = 'G7 | C7';
+const TITLE_INTRO = mel('r:4 F5:1 G5:1 A5:1 B5:1 | C6:4 r:2 C5:1 D5:1');
 
 // --- the trio, in the subdominant, as rags do ------------------------------
 const TRIO_CHART =
@@ -1250,11 +1300,14 @@ const TRIO_MEL = mel(`
 
 // --- the vamp under the team select ----------------------------------------
 const VAMP_CHART = 'Bb6 | G7 | C7 | F7 | Bb6 | Bb7 | Eb6 Edim7 | Bb/F F7';
+// Two rhythmic cells, alternating: an off-beat pickup cell and a Charleston
+// cell. Every bar has at least two off-beat attacks in the melody, which is what
+// the first draft of this riff did not have.
 const VAMP_RIFF = mel(`
-  r:2 D5:1 F5:1 Bb5:2 A5:2 | G5:2 F5:2 D5:3 F5:1 |
-  E5:2 G5:2 Bb5:3 A5:1 | A5:2 C6:2 A5:2 F5:2 |
-  r:2 D5:1 F5:1 Bb5:2 A5:2 | G5:2 F5:2 Ab5:3 F5:1 |
-  G5:2 Eb5:2 G5:2 Bb5:2 | F5:3 D5:1 Bb4:2 C5:2
+  r:1 D5:1 F5:2 Bb5:1 A5:1 F5:2 | D5:3 F5:1 G5:2 F5:2 |
+  E5:1 G5:2 Bb5:1 A5:2 G5:2 | A5:3 C6:1 A5:2 F5:2 |
+  r:1 D5:1 F5:2 Bb5:1 A5:1 F5:2 | D5:3 F5:1 Ab5:2 F5:2 |
+  G5:1 Bb5:2 G5:1 Db5:2 Bb5:2 | F5:3 D5:1 A4:2 C5:2
 `);
 
 // --- the bed: the ragtime turnaround, played almost to itself ---------------
@@ -1301,97 +1354,97 @@ const WALKUPS = {
   sal: {
     inst: 'trombone', bpm: 146, chartStr: 'F6 | C7 F6', swing: MT.swingHot,
     mel: 'A4:2 A4:1 G4:1 F4:2 A4:2 | C5:3 A4:1 F4:4/',
-    rhythm: 'strut', taps: 4, glissTo: -7,
+    trim: 0.7, rhythm: 'strut', taps: 4, glissTo: -7,
   },
   // Will not step on a crack: the tune skips the beat where the crack would be.
   kathleen: {
     inst: 'penny_whistle', bpm: 172, chartStr: 'G6 | D7 G6', swing: MT.swingHot,
     mel: 'D5:1 G5:1 B5:1 r:1 B5:1 A5:1 G5:2 | A5:1 B5:1 D6:2 r:2 B5:2',
-    rhythm: 'light',
+    trim: 1.27, rhythm: 'light',
   },
   // Nine years old, four foot nothing, nobody has ever picked second. Fierce.
   filomena: {
     inst: 'mandolin', bpm: 158, chartStr: 'Dm | A7 D6', swing: MT.swingRag,
     mel: 'D5:2 F5:2 A5:3 G5:1 | F5:2 E5:2 F#5:4',
-    rhythm: 'napoli', tremolo: true,
+    trim: 3.78, rhythm: 'napoli', tremolo: true,
   },
   // Sal's brother. Plays Sal's lick, an octave up, a beat late, on a kazoo.
   dom: {
     inst: 'kazoo', bpm: 146, chartStr: 'F6 | C7 F6', swing: MT.swingHot,
     mel: 'r:2 A5:2 A5:1 G5:1 F5:2 | A5:2 C6:3 A5:1 F5:2',
-    rhythm: 'strut', wobble: 22,
+    trim: 1.13, rhythm: 'strut', wobble: 22,
   },
   // Six feet of elbows. Klezmer freygish, and it laughs on the way out.
   irving: {
     inst: 'clarinet', bpm: 152, chartStr: 'Dm | A7 Dm', swing: MT.swingHot,
     mel: 'D5:2 ^Eb5:1 F#5:1 G5:2 A5:2 | Bb5:2 A5:1 G5:1 F#5:2 D5:2/',
-    rhythm: 'klez', glissTo: 7,
+    trim: 0.58, rhythm: 'klez', glissTo: 7,
   },
   // Runs the argument. The wood block interrupts the band and wins.
   bessie: {
     inst: 'wood_block', bpm: 150, chartStr: 'C6 | G7 C6', swing: MT.swingHot,
     mel: 'C6:1 r:1 C6:1 r:1 A5:2 r:2 | C6:1 C6:1 r:2 A5:1 r:1 C6:2!',
-    rhythm: 'argue',
+    trim: 2.16, rhythm: 'argue',
   },
   // Two years of lessons and every hour went into her wrists. Real stride.
   rose: {
     inst: 'piano', bpm: 168, chartStr: 'Eb6 | Bb7 Eb6', swing: MT.swingRag,
     mel: 'Bb4:1 C5:1 Eb5:2 G5:1 F5:1 Eb5:2 | D5:1 Eb5:1 F5:2 Bb5:3 G5:1',
-    rhythm: 'stride',
+    trim: 1.58, rhythm: 'stride',
   },
   // Four bars of harmonica between innings. Only four. Nobody has heard the fifth.
   otto: {
     inst: 'tuba', bpm: 122, chartStr: 'F6 | F6', swing: MT.swing,
     mel: 'F2:2 C3:2 F2:2 C3:2 | r:8',
-    rhythm: 'none', stopGag: true,
+    trim: 0.86, rhythm: 'none', stopGag: true,
   },
   // The best kid on the block for two innings. It wanders off at the end.
   stash: {
     inst: 'accordion', bpm: 140, chartStr: 'Gm | D7 Gm', swing: MT.swing,
     mel: 'G4:2 Bb4:2 D5:3 C5:1 | Bb4:2 A4:2 G4:4',
-    rhythm: 'oompah', drift: 55,
+    trim: 1.07, rhythm: 'oompah', drift: 55,
   },
   // Has a pigeon. The pigeon has opinions.
   eugene: {
     inst: 'cornet_plunger', bpm: 132, chartStr: 'Bb6 | F7 Bb6', swing: MT.swingHot,
     mel: 'F4:3 Bb4:1 D5:2 C5:2 | Bb4:6 r:2',
-    rhythm: 'sparse', pigeon: true,
+    trim: 1.68, rhythm: 'sparse', pigeon: true,
   },
   // Named at six for being the slowest. The name stayed. She is not slow.
   ethel: {
     inst: 'banjo', bpm: 188, chartStr: 'C6 | G7 C6', swing: MT.swingHot,
     mel: 'C5:1 E5:1 G5:1 C6:1 G5:1 E5:1 G5:1 C6:1 | E6:1 C6:1 G5:1 E5:1 C5:2 r:2',
-    rhythm: 'drive',
+    trim: 2.01, rhythm: 'drive',
   },
   // No shoes since June. Claims it is faster. It is faster.
   jesus: {
     inst: 'guiro', bpm: 164, chartStr: 'A7 | D7 A7', swing: MT.swingHot,
     mel: 'A4:1 r:1 A4:1 A4:1 r:2 A4:2 | A4:1 r:1 A4:2 A4:1 r:1 A4:2',
-    rhythm: 'street', whistle: true,
+    trim: 4.77, rhythm: 'street', whistle: true,
   },
   // Plants the crutch, and then the ball is already past you.
   luz: {
     inst: 'cuatro', bpm: 150, chartStr: 'D6 | A7 D6', swing: MT.swingRag,
     mel: 'A4:4 r:4 | A4:0.5 B4:0.5 C#5:0.5 D5:0.5 E5:0.5 F#5:0.5 G5:0.5 A5:0.5 A5:4',
-    rhythm: 'plant',
+    trim: 3.37, rhythm: 'plant',
   },
   // Best pair of hands on the block. Calm, exact, and it glides.
   ling: {
     inst: 'erhu', bpm: 108, chartStr: 'Am | Am', swing: MT.swing,
     mel: 'A4:3 C5:1 D5:4 | E5:3 D5:1 C5:2 A4:2',
-    rhythm: 'none', portamento: true,
+    trim: 0.88, rhythm: 'none', portamento: true,
   },
   // Real Keds. Her father is on the beat, and the music stops when he turns the corner.
   maureen: {
     inst: 'celesta', bpm: 128, chartStr: 'C6 | G7 C6', swing: MT.swingRag,
     mel: 'C6:1 E6:1 G6:2 E6:1 C6:1 G5:2 | A5:1 C6:1 E6:2 D6:1 r:3',
-    rhythm: 'boxy', copGag: true,
+    trim: 2.0, rhythm: 'boxy', copGag: true,
   },
   // Named Tiny at four and has been growing out of it ever since.
   tommy: {
     inst: 'bass_drum', bpm: 104, chartStr: 'F6 | C7 F6', swing: MT.swing,
     mel: 'F2:2 F2:2 F2:2 F2:2 | F2:2 F2:2 F2:4',
-    rhythm: 'onemanband', tinyGag: true,
+    trim: 2.63, rhythm: 'onemanband', tinyGag: true,
   },
 };
 
@@ -1520,27 +1573,27 @@ const CUES = {
    * arrangement has dynamics instead of a level.
    */
   title: {
-    seconds: 28, span: 26.087, loop: false, bus: 'game',
+    seconds: 26, span: 23.478, loop: false, bus: 'game',
     build(R, t0) {
       const I = planOf({ bpm: 184, swing: MT.swing, chartStr: TITLE_INTRO_CHART, seed: MT.seed + 1 });
-      // 4-bar intro: piano alone, banjo on bar 2, the rhythm section on bar 3
-      partStride(R, I, t0, { gain: 0.80 });
-      partBanjo(R, I, t0, { from: 1, gain: 0.62, fills: false });
-      partBass(R, I, t0, { from: 2, inst: 'tuba', gain: 0.80 });
-      partBrushes(R, I, t0, { from: 2, gain: 0.60 });
-      partLead(R, I, t0, TITLE_INTRO, 'clarinet', { gain: 0.75 });
-      R.note('cymbal', 0, t0 + tAt(I, 3, 6), 1.4, 0.62, {});
+      // two bars: piano and banjo, tuba and brushes joining on the second
+      partStride(R, I, t0, { gain: 0.95 });
+      partBanjo(R, I, t0, { gain: 0.85, fills: false });
+      partBass(R, I, t0, { from: 1, inst: 'tuba', gain: 0.95 });
+      partBrushes(R, I, t0, { from: 1, gain: 0.85 });
+      partLead(R, I, t0, TITLE_INTRO, 'clarinet', { gain: 0.95 });
+      R.note('cymbal', 0, t0 + tAt(I, 1, 6), 1.4, 0.66, {});
 
-      const t1 = t0 + barT(I, 4);
+      const t1 = t0 + barT(I, 2);
       const P = planOf({ bpm: 184, swing: MT.swing, chartStr: TITLE_CHART, seed: MT.seed + 2 });
       const BRK = [12, 14];                       // the break: bars 13-14, everybody out
 
       // rhythm section: 0.82 for the first strain, full for the second, silent in the break
-      for (const [from, to, g] of [[0, 8, 0.82], [8, BRK[0], 1.0], [BRK[1], 16, 1.05]]) {
+      for (const [from, to, g, push] of [[0, 8, 0.82, false], [8, BRK[0], 1.0, true], [BRK[1], 16, 1.05, true]]) {
         partStride(R, P, t1, { from, to, gain: g });
-        partBanjo(R, P, t1, { from, to, gain: g });
+        partBanjo(R, P, t1, { from, to, gain: g, push });
         partBass(R, P, t1, { from, to, inst: 'tuba', gain: g });
-        partBrushes(R, P, t1, { from, to, gain: g * 0.95 });
+        partBrushes(R, P, t1, { from, to, gain: g * 0.95, ticks: push ? 'all' : true });
       }
       // in the break only the tuba marks the bar — one note, then air
       for (let bar = BRK[0]; bar < BRK[1]; bar++) {
@@ -1568,9 +1621,9 @@ const CUES = {
     build(R, t0) {
       const P = planOf({ bpm: 168, swing: MT.swingHot, chartStr: VAMP_CHART, seed: MT.seed + 3 });
       partStride(R, P, t0, { gain: 0.75 });
-      partBanjo(R, P, t0, {});
+      partBanjo(R, P, t0, { push: true });
       partBass(R, P, t0, { inst: 'string_bass' });
-      partBrushes(R, P, t0, { gain: 0.9 });
+      partBrushes(R, P, t0, { gain: 0.9, ticks: 'all' });
       partLead(R, P, t0, VAMP_RIFF, 'clarinet', { gain: 0.95 });
       R.note('cornet_plunger', 65, t0 + tAt(P, 3, 6), 0.5, 0.6, { bus: 'lead' });
       R.note('cornet_plunger', 63, t0 + tAt(P, 7, 6), 0.6, 0.6, { bus: 'lead', gliss: -3 });
@@ -1682,9 +1735,9 @@ const CUES = {
       const P = planOf({ bpm: 196, swing: MT.swingRag, chartStr: TRIO_CHART, seed: MT.seed + 9 });
       for (const [from, to, g] of [[0, 7, 0.9], [8, 12, 1.05]]) {
         partStride(R, P, t0, { from, to, gain: g });
-        partBanjo(R, P, t0, { from, to, gain: g });
+        partBanjo(R, P, t0, { from, to, gain: g, push: true });
         partBass(R, P, t0, { from, to, inst: 'tuba', gain: g });
-        partBrushes(R, P, t0, { from, to, gain: g });
+        partBrushes(R, P, t0, { from, to, gain: g, ticks: 'all' });
       }
       // the break on bar 8: one bass note and then the clarinet on its own
       R.note('tuba', 34, t0 + tAt(P, 7, 0), 0.5, 0.95, { bus: 'bass' });
@@ -1697,28 +1750,40 @@ const CUES = {
     },
   },
 
+  /**
+   * WIN. Four bars of band, then a BREAK, then the payoff.
+   * The first version of this cue was a solid block of sound for eight seconds
+   * with a crest factor of 7 dB and no detectable onsets at all — it read as a
+   * held chord, not as winning. A win theme needs the same shape as a joke: a
+   * setup, a beat of nothing, and then the thing you were waiting for.
+   */
   win: {
     seconds: 9, loop: false, bus: 'game',
     build(R, t0) {
       const P = planOf({ bpm: 176, swing: MT.swingHot, chartStr: WIN_CHART, seed: MT.seed + 10 });
+      // --- setup: four bars of band, articulated, four to the bar -----------
       partStride(R, P, t0, { to: 4 });
-      partBanjo(R, P, t0, { to: 4 });
+      partBanjo(R, P, t0, { to: 4, ring: 0.24, push: true });
       partBass(R, P, t0, { inst: 'tuba', four: true, to: 4 });
-      partBrushes(R, P, t0, { to: 4 });
-      partLead(R, P, t0, WIN_MEL, 'cornet', { gain: 1.2 });
-      partHarmony(R, P, t0, WIN_MEL, 'trombone', { below: 7, gain: 0.60 });
-      // clarinet only on the last two bars — a third line over the whole thing is
-      // a wall, and a wall has no crest factor and no joy in it
-      const shout = WIN_MEL.filter((n) => n.e >= 24 && n.e < 32);
-      shout.eighths = WIN_MEL.eighths;
-      partHarmony(R, P, t0, shout, 'clarinet', { below: -12, gain: 0.55 });
-      R.note('cymbal', 0, t0, 1.4, 0.7, {});
-      partShout(R, P, t0, 4, 0, { hold: P.beat * 3.2, gain: 1.0 });
-      partBanjoTremolo(R, P, t0, 4, 4, { rate: 17, gain: 0.45 });
-      R.note('snare_roll', 0, t0 + barT(P, 4), P.beat * 3.0, 0.32, {});
-      // the last bar rings out instead of sustaining: one chord, one crash, done
-      partShout(R, P, t0, 5, 0, { hold: 1.1, gain: 0.9, cymbal: false });
-      R.note('cymbal', 0, t0 + barT(P, 5), 2.2, 0.85, {});
+      partBrushes(R, P, t0, { to: 4, ticks: 'all' });
+      const body = WIN_MEL.filter((n) => n.e < 32);
+      body.eighths = WIN_MEL.eighths;
+      partLead(R, P, t0, body, 'cornet', { gain: 1.2 });
+      partHarmony(R, P, t0, body, 'trombone', { below: 7, gain: 0.60 });
+      R.note('cymbal', 0, t0, 1.4, 0.65, {});
+
+      // --- the beat of nothing: bar 5 is a break. One tuba note, one cornet
+      //     note climbing, and a press roll underneath getting louder ---------
+      const c = chordAt(P.bars, 4, 0);
+      R.note('tuba', nearest(c.bass, 28, 43, 36), t0 + tAt(P, 4, 0), 0.5, 0.95, { bus: 'bass' });
+      partLead(R, P, t0, mel('F5:3 A5:1 C6:4'), 'cornet', { bar: 4, gain: 1.15 });
+      R.note('snare_roll', 0, t0 + tAt(P, 4, 1), P.beat * 3.0, 0.42, {});
+
+      // --- the payoff: everybody, on the one, and then it rings out ----------
+      partShout(R, P, t0, 5, 0, { hold: 1.15, gain: 1.05 });
+      partBanjoTremolo(R, P, t0, 5, 2.6, { rate: 17, gain: 0.45 });
+      R.note('cymbal', 0, t0 + barT(P, 5), 2.4, 0.9, {});
+      R.note('bass_drum', 0, t0 + barT(P, 5), 0.5, 0.7, {});
     },
   },
 
@@ -1756,6 +1821,36 @@ const CUES = {
       partLead(R, P, t0, RADIO_MEL, 'clarinet', { gain: 0.9 });
       partBrushes(R, P, t0, { gain: 0.5, ticks: false });
     },
+  },
+
+  /**
+   * SWING PROBE — a diagnostic, not a tune. One banjo playing continuous eighths
+   * over the bed's turnaround, with the accent pattern on and micro-timing OFF,
+   * so an analyser sees the timing engine and nothing else. Render this and
+   * `swing_probe_straight` (identical, swing = 0.5) and difference the measured
+   * off-beat phase: that difference IS the swing, with no arrangement to hide in.
+   */
+  swing_probe: {
+    seconds: 6.4, span: 6.4, loop: true, bus: 'game',
+    build(R, t0, o = {}) {
+      const P = planOf({
+        bpm: 150, swing: o.straight ? 0.5 : MT.swingHot,
+        chartStr: BED_CHART, seed: MT.seed + 21,
+      });
+      let v = null;
+      for (let bar = 0; bar < 4; bar++) {
+        R.note('wood_block', 72, t0 + tAt(P, bar, 0), 0.1, 0.55, {});
+        R.note('wood_block', 67, t0 + tAt(P, bar, 4), 0.1, 0.45, {});
+        for (let e = 0; e < 8; e++) {
+          v = voiceLead(v, chordAt(P.bars, bar, e / 2), 57, 74, 2);
+          R.note('banjo', v[e % 2], t0 + tAt(P, bar, e), 0.2, 0.9 * accentAt(e), { damp: 0.16, release: 0.03 });
+        }
+      }
+    },
+  },
+  swing_probe_straight: {
+    seconds: 6.4, span: 6.4, loop: true, bus: 'game', seedAs: 'swing_probe',
+    build(R, t0) { CUES.swing_probe.build(R, t0, { straight: true }); },
   },
 
   /**
@@ -1802,18 +1897,23 @@ const CUES = {
 };
 
 // every kid gets a cue, whether or not somebody wrote them a tune
-for (const kid of (ROSTER || [])) {
-  CUES[`walkup_${kid.id}`] = {
+/**
+ * One cue per kid. `trim` is per-sting mix gain, MEASURED not guessed: rendered
+ * flat, the sixteen stings spanned 21 dB because a plucked mandolin is nothing
+ * like a blown clarinet, and a family of stings that jumps 21 dB between kids
+ * reads as sixteen accidents rather than one composer's bank. Each trim lands
+ * its sting near -21 dBFS RMS without pushing its transient into the clip.
+ */
+function addWalkupCue(id) {
+  CUES[`walkup_${id}`] = {
     seconds: 6, loop: false, bus: 'game',
-    build(R, t0) { buildWalkup(R, kid.id, t0 + 0.7); },
+    gain: (WALKUPS[id] && WALKUPS[id].trim) || 1.4,
+    build(R, t0) { buildWalkup(R, id, t0 + 0.7); },
   };
 }
+for (const kid of (ROSTER || [])) addWalkupCue(kid.id);
 // and if the roster ever fails to load, the hand-written ones still exist
-for (const id of Object.keys(WALKUPS)) {
-  if (!CUES[`walkup_${id}`]) {
-    CUES[`walkup_${id}`] = { seconds: 6, loop: false, bus: 'game', build(R, t0) { buildWalkup(R, id, t0 + 0.7); } };
-  }
-}
+for (const id of Object.keys(WALKUPS)) if (!CUES[`walkup_${id}`]) addWalkupCue(id);
 
 /* ==========================================================================
  * 12. THE MUSIC DIRECTOR — the score answers the game
@@ -1972,6 +2072,7 @@ class Music {
       bed_tension: [150, MT.swingHot], bed_rally: [158, MT.swingHot], between_innings: [196, MT.swingRag],
       win: [176, MT.swingHot], loss: [116, MT.swing], world_radio: [132, MT.swingRag],
       duck_proof: [150, MT.swingHot], duck_proof_flat: [150, MT.swingHot],
+      swing_probe: [150, MT.swingHot], swing_probe_straight: [150, 0.5],
       stinger_sewer: [196, MT.swingHot], stinger_hit: [176, MT.swingHot],
     };
     if (t[name]) return { bpm: t[name][0], swing: t[name][1] };

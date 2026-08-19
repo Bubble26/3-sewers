@@ -12,8 +12,8 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, dev
 const logs = [];
 page.on('console', (m) => { if (m.type()==='error'||m.type()==='warning') logs.push(`[${m.type()}] ${m.text()}`); });
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
-await page.goto(`http://127.0.0.1:${port}/index.html?harness=1`, { waitUntil: 'load' });
-await page.waitForFunction(() => globalThis.__SB?.ready, null, { timeout: 30000 });
+await page.goto(`http://127.0.0.1:${port}/index.html?harness=1`, { waitUntil: 'commit', timeout: 180000 });
+await page.waitForFunction(() => globalThis.__SB?.ready, null, { timeout: 240000 });
 await page.evaluate(async (n) => { await globalThis.__SB.scenario(n); }, scen);
 await page.evaluate((c) => {
   const app = globalThis.__SB.app;

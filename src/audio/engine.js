@@ -1,7 +1,7 @@
 /**
  * engine.js — THE SOUND ENGINE.
  * ============================================================================
- * One WebAudio graph, four buses, a canyon send, a ducker and a master limiter,
+ * One WebAudio graph, five buses, a canyon send, a ducker and a master limiter,
  * and — this is the load-bearing part — the graph is described by ONE function
  * that is handed a context. Give it an AudioContext and it is the live game.
  * Give it an OfflineAudioContext and it is app.audio.renderOffline(), which is
@@ -18,34 +18,42 @@
  * THE GRAPH
  * ---------------------------------------------------------------------------
  *
- *   cue -> [cueGain] -> [distance lp] -> [panner] -+-> bus(sfx|voice|music|amb)
- *                                                  |        |
- *                                                  +-> canyon reverb -> reverbBus
+ *   cue -> [cue gain x play gain x 1/(1+d/ref)] -> [air lowpass(d)] -> [pan]
+ *              |
+ *              +-> bus: sfx | voice | chatter | music | ambience --> [mix x master]
+ *              |                                                        |
+ *              +-> canyon send(d) -> [convolver] -> [reverb bus] -------+
  *                                                                       |
- *                          all buses ---------------------------------> [mix]
- *                                                  -> [limiter comp] -> [soft clip] -> out
+ *                                        [1/range] -> [soft clip] -> [range] -> out
  *
- * Bus levels obey DESIGN-BIBLE §7.5: during a pitch the loudest thing on the
- * mix is the kids, music is silent or a -20 dB bed, ambience sits underneath
- * everything and ducks -18 dB the moment a voice fires.
+ * Bus levels obey DESIGN-BIBLE §7.5: during a pitch the loudest thing on the mix
+ * is the kids, music is a bed, and ambience sits underneath everything and ducks
+ * -18 dB the moment a voice fires. Ducking is bus-to-bus and therefore invisible
+ * in a single-cue render, so `mix_duck_demo` and `mix_distance_demo` (bottom of
+ * this file) put the whole mix through the offline path where it can be measured
+ * — CONTRACT.md is explicit that what cannot be rendered offline counts as
+ * unbuilt, and that applies to mix behaviour as much as to sounds.
  * ============================================================================
  */
 import { registerSystem } from '../app.js';
 import { bus } from '../core/bus.js';
 import { T } from '../core/tuning.js';
 import { RNG } from '../core/rng.js';
-import { registerCue, listCues, getCue, clamp } from './sfx.js';
+import { CUES, registerCue, listCues, getCue, clamp, gain as gainNode } from './sfx.js';
 
 /* =============================================================================
  * MIX — the whole audio tuning surface. Published on T.audio.
  * ========================================================================== */
 export const MIX = {
   master: 0.78,
-  buses: { sfx: 1.0, voice: 1.0, music: 0.62, ambience: 0.58, reverb: 0.42 },
+  // §7.5 is a bus list: kid chatter is its OWN bus with its own volume control,
+  // sitting 8-12 dB under the announcers and ducking to -18 dB while a line plays.
+  buses: { sfx: 1.0, voice: 1.0, chatter: 0.32, music: 0.62, ambience: 0.58, reverb: 0.42 },
+  busAlias: { effects: 'sfx', announcer: 'voice', amb: 'ambience' },
   duck: {
-    // a voice line flattens the block: §7.5 chatter ducks -18 dB under a line
-    voice: { ambience: -18, music: -12, sfx: -4 },
+    voice: { chatter: -18, ambience: -18, music: -12, sfx: -4 },
     music: { ambience: -6 },
+    chatter: { ambience: -5 },
     attack: 0.09, release: 0.55, hold: 0.25,
   },
   // THE MASTER LIMITER. Chrome's DynamicsCompressorNode turned out to be unusable
@@ -72,7 +80,7 @@ export const MIX = {
     taps: [[0.031, 0.42], [0.054, 0.30], [0.089, 0.21], [0.131, 0.14]],
     tail: 0.95, damp: 4200, predelay: 0.008,
   },
-  ambience: { gap: [17, 44] },   // §7.5: a sporadic layer every 20-60 s, never on a cycle
+  ambience: { gap: [20, 60] },   // §7.5: a sporadic layer every 20-60 s, never on a cycle
 };
 
 /* =============================================================================
@@ -131,7 +139,7 @@ export function buildGraph(ctx) {
   mix.connect(pre); pre.connect(clip); clip.connect(post); post.connect(ctx.destination);
 
   const buses = {};
-  for (const name of ['sfx', 'voice', 'music', 'ambience']) {
+  for (const name of ['sfx', 'voice', 'chatter', 'music', 'ambience']) {
     const g = ctx.createGain();
     g.gain.value = MIX.buses[name];
     g.connect(mix);
@@ -172,12 +180,37 @@ function voiceChain(graph, cue, o) {
     p.pan.value = clamp(o.pan ?? 0, -1, 1) * S.panMax;
     tail.connect(p); tail = p;
   }
-  tail.connect(graph.buses[cue.bus] || graph.buses.sfx);
+  tail.connect(graph.buses[MIX.busAlias[cue.bus] || cue.bus] || graph.buses.sfx);
 
   const send = ctx.createGain();
-  send.gain.value = o.send ?? clamp(S.sendNear + (dist / S.sendDist) * (S.sendFar - S.sendNear), 0, S.sendFar);
+  // a cue may ask for more canyon than distance alone would give it — the pock
+  // that happens six feet from the camera still has sixty feet of brick behind it
+  send.gain.value = o.send ?? clamp((cue.send ?? S.sendNear) + (dist / S.sendDist) * (S.sendFar - S.sendNear), 0, S.sendFar);
   tail.connect(send); send.connect(graph.verb);
   return g;
+}
+
+/**
+ * Ducking. WebAudio has no sidechain, so this is the honest version: whichever
+ * bus is talking pushes the others down by a named number of dB and lets them
+ * back up on a slow release. One implementation, used by the live path AND by
+ * the `mix_duck_demo` cue below, so what a critic hears in the audition is
+ * literally the automation the game runs.
+ */
+export function applyDuck(graph, source, t, seconds = 0.4) {
+  const table = MIX.duck[source];
+  if (!table || !graph) return t;
+  const D = MIX.duck;
+  for (const [name, db] of Object.entries(table)) {
+    const b = graph.buses[name];
+    if (!b) continue;
+    const target = MIX.buses[name] * Math.pow(10, db / 20);
+    b.gain.cancelScheduledValues(t);
+    b.gain.setValueAtTime(MIX.buses[name], t);
+    b.gain.setTargetAtTime(target, t, D.attack);
+    b.gain.setTargetAtTime(MIX.buses[name], t + seconds + D.hold, D.release);
+  }
+  return t + seconds + D.hold + D.release;
 }
 
 /* =============================================================================
@@ -199,20 +232,28 @@ export class AudioEngine {
     this.log = [];
   }
 
-  /* --- lifecycle --------------------------------------------------------- */
+  /* --- lifecycle ---------------------------------------------------------
+   * ensure() returns the AudioContext, NOT the graph. That is a contract other
+   * pieces already depend on — src/audio/music.js calls `app.audio.ensure()` and
+   * treats the result as a BaseAudioContext — and returning the graph from here
+   * broke every live music cue with "ctx.createGain is not a function". The graph
+   * is on `.graph`; ensureGraph() is the internal accessor.
+   */
   ensure() {
-    if (this.graph || !this.enabled) return this.graph;
+    if (this.ctx || !this.enabled) return this.ctx;
     const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!AC) { this.enabled = false; return null; }
     this.ctx = new AC();
     this.graph = buildGraph(this.ctx);
-    return this.graph;
+    return this.ctx;
   }
-  resume() { const g = this.ensure(); if (g && this.ctx.state === 'suspended') this.ctx.resume(); return g; }
+  ensureGraph() { this.ensure(); return this.graph; }
+  resume() { const c = this.ensure(); if (c && c.state === 'suspended') c.resume(); return c; }
   get now() { return this.ctx ? this.ctx.currentTime : 0; }
 
   /* --- mixing ------------------------------------------------------------ */
   setBus(name, linear, ramp = 0.08) {
+    name = MIX.busAlias[name] || name;
     MIX.buses[name] = linear;
     if (this.graph?.buses[name]) {
       const p = this.graph.buses[name].gain;
@@ -232,18 +273,7 @@ export class AudioEngine {
    */
   duck(source = 'voice', seconds = 0.4) {
     if (!this.graph) return;
-    const table = MIX.duck[source];
-    if (!table) return;
-    const D = MIX.duck, t = this.now;
-    for (const [name, db] of Object.entries(table)) {
-      const b = this.graph.buses[name];
-      if (!b) continue;
-      const target = MIX.buses[name] * Math.pow(10, db / 20);
-      b.gain.cancelScheduledValues(t);
-      b.gain.setTargetAtTime(target, t, D.attack);
-      b.gain.setTargetAtTime(MIX.buses[name], t + seconds + D.hold, D.release);
-    }
-    this.duckUntil = Math.max(this.duckUntil, t + seconds + D.hold + D.release);
+    this.duckUntil = Math.max(this.duckUntil, applyDuck(this.graph, source, this.now, seconds));
   }
 
   /* --- space ------------------------------------------------------------- */
@@ -254,7 +284,8 @@ export class AudioEngine {
     const dx = pos.x - L.x, dy = (pos.y ?? 0) - L.y, dz = (pos.z ?? 0) - L.z;
     return {
       dist: Math.sqrt(dx * dx + dy * dy + dz * dz),
-      pan: clamp((pos.x - 0) / MIX.space.panWidth, -1, 1),
+      // the stage is locked and looks down +z (§17), so world x IS screen-horizontal
+      pan: clamp(pos.x / MIX.space.panWidth, -1, 1),
     };
   }
 
@@ -262,7 +293,7 @@ export class AudioEngine {
   play(name, o = {}) {
     const cue = getCue(name);
     if (!cue) { if (!this.log.includes(name)) this.log.push(name); return null; }
-    const graph = this.ensure();
+    const graph = this.ensureGraph();
     if (!graph) return null;
     const t = this.now + (o.delay ?? 0) + 0.004;
     // one voice per cue per ~35 ms: a ball can hit two colliders in one tick and
@@ -279,10 +310,12 @@ export class AudioEngine {
       dist: o.dist ?? sp.dist ?? 0,
       pan: o.pan ?? sp.pan ?? 0,
       rnd: o.rnd || new RNG((this.seq++ * 2654435761 + 1925) >>> 0),
+      graph,
     };
     const out = voiceChain(graph, cue, opts);
     try { cue.build(this.ctx, out, t, opts); } catch (e) { console.error('cue ' + name, e); return null; }
     if (cue.bus === 'voice') this.duck('voice', Math.min(2.2, cue.dur ?? 0.6));
+    else if (cue.bus === 'music') this.duck('music', Math.min(4, cue.dur ?? 1));
     return t;
   }
 
@@ -307,32 +340,25 @@ export class AudioEngine {
     const ctx = new OAC(2, Math.max(1, Math.ceil(seconds * sampleRate)), sampleRate);
     const graph = buildGraph(ctx);
     const opts = {
-      ...rest, gain, dist, pan, seconds,
+      ...rest, gain, dist, pan, seconds, graph,
       rnd: new RNG(rest.seed ?? 1925),
     };
     const out = voiceChain(graph, def, opts);
     // a hair of pre-roll so the attack lands inside the first analysis bucket
     def.build(ctx, out, 0.0015, opts);
-    if (def.bus === 'voice' && MIX.duck.voice) {
-      // ducking is part of the mix, so the offline render hears it too
-      const D = MIX.duck;
-      for (const [name, db] of Object.entries(MIX.duck.voice)) {
-        const b = graph.buses[name];
-        if (!b) continue;
-        const target = MIX.buses[name] * Math.pow(10, db / 20);
-        b.gain.setValueAtTime(MIX.buses[name], 0);
-        b.gain.setTargetAtTime(target, 0.004, D.attack);
-      }
-    }
+    if (def.bus === 'voice') applyDuck(graph, 'voice', 0.004, Math.min(2.2, def.dur ?? 0.6));
+    else if (def.bus === 'music') applyDuck(graph, 'music', 0.004, Math.min(4, def.dur ?? 1));
     return ctx.startRendering();
   }
 
   /* --- the block runs whether anybody is playing or not ------------------- */
-  startBed(t = 0) {
+  startBed() {
     if (!this.graph || this.bedAt > this.now) return;
-    const LEN = 8;
-    this.play('city_bed', { gain: 0.9, dist: 0, gate: 0, seconds: LEN });
-    this.bedAt = this.now + LEN - 0.35;
+    // §7.5: the loop must never become audible, so every pass is a different draw
+    // and a different length. Deterministic per session, never identical twice.
+    const LEN = this.rnd.range(7.5, 10.5);
+    this.play('city_bed', { gain: 0.9, dist: 0, gate: 0, seconds: LEN, rnd: new RNG(this.rnd.int(1, 1e6)) });
+    this.bedAt = this.now + LEN - 0.4;
   }
   tickAmbience(dt) {
     if (!this.graph || !this.started) return;
@@ -347,6 +373,45 @@ export class AudioEngine {
     }
   }
 }
+
+/* =============================================================================
+ * MIX DEMONSTRATION CUES
+ * ---------------------------------------------------------------------------
+ * Ducking and distance are mix behaviour, not sounds, so they cannot be heard in
+ * a single-cue render — and CONTRACT.md is explicit that a thing which cannot be
+ * rendered offline counts as unbuilt. These two cues put the whole mix through
+ * the offline path so both are visible in an audition envelope.
+ * ========================================================================== */
+registerCue('mix_duck_demo', {
+  bus: 'ambience', gain: 1.0, dur: 7.0, send: 0.05,
+  note: '§7.5 proof: the block running, then a mother calls and the block drops -18 dB under her.',
+  build(ctx, out, t0, o) {
+    const graph = o.graph;
+    if (!graph) return;
+    // the bed goes to the AMBIENCE bus and the call to the VOICE bus, which is the
+    // only way the duck can be heard: it is a bus-to-bus behaviour
+    const bed = gainNode(ctx, 0.60); bed.connect(graph.buses.ambience);
+    CUES.city_bed.build(ctx, bed, t0, { ...o, seconds: 7, rnd: new RNG(101) });
+    const v = gainNode(ctx, 0.95); v.connect(graph.buses.voice);
+    CUES.mother_calling.build(ctx, v, t0 + 2.4, { ...o, rnd: new RNG(202) });
+    applyDuck(graph, 'voice', t0 + 2.34, 1.5);
+  },
+});
+
+registerCue('mix_distance_demo', {
+  bus: 'sfx', gain: 1.0, dur: 6.0,
+  note: 'the same pock at 4, 18, 55 and 140 feet: level, air lowpass and canyon send all move.',
+  build(ctx, out, t0, o) {
+    const graph = o.graph;
+    if (!graph) return;
+    let t = t0;
+    for (const d of [4, 18, 55, 140]) {
+      const node = voiceChain(graph, CUES.crack, { ...o, dist: d, pan: 0, gain: 1 });
+      CUES.crack.build(ctx, node, t, { ...o, rnd: new RNG(300 + d) });
+      t += 1.1;
+    }
+  },
+});
 
 const SPORADIC_LIST = ['klaxon', 'dog', 'church_bells', 'knife_grinder', 'pigeons', 'el_train', 'horse_cart', 'mother_calling'];
 
@@ -393,8 +458,10 @@ export default registerSystem({
       if (p.kind === 'deadened') return audio.play('flap_cloth', common);
       if (IRON_TAGS.has(p.tag)) return;                    // handled by ball:fire_escape, with a rung pitch
       if (p.tag === 'cans') return audio.play(p.speed > 14 ? 'ashcan_lid' : 'clatter_tin', common);
-      if (p.tag === 'plate' || p.name === 'manhole') return audio.play('manhole_boom', common);
-      audio.play(p.sfx || 'bounce_asphalt', common);
+      if (p.tag === 'plate' || /manhole/.test(p.name || '')) return audio.play('manhole_boom', common);
+      // `sfx` is colliders.js's key and `sound` is the world piece's; both resolve
+      // through CUE_ALIAS, so neither of them has to know what this file calls things
+      audio.play(p.sfx || p.sound || 'bounce_asphalt', common);
     });
     bus.on('ball:fire_escape', (p) => {
       audio.play('clang_iron', {
@@ -402,8 +469,25 @@ export default registerSystem({
         speed: clamp((p.speed ?? 26) / 46, 0.4, 1.4), gain: 0.9, gate: 0.02,
       });
     });
+    // ball-physics fills the `ballphysics` slot and emits the detailed impact, but
+    // sim.js re-emits a plain bounce for the SAME event, and pitching.js emits its
+    // own for a pitch that skips off the block first. Sound the plain one only
+    // when nobody more specific has spoken, or every bounce fires twice.
+    let sawImpact = false;
+    bus.on('ball:impact', () => { sawImpact = true; });
+    bus.on('ball:bounce', (p) => {
+      if (p?.pitch) return audio.play('bounce_stone', { pos: p.pos, speed: 0.75, gain: 0.62 });
+      if (sawImpact) return;
+      audio.play(p?.surface === 'sidewalk' ? 'bounce_stone' : 'bounce_asphalt', { pos: p?.pos, speed: 0.9 });
+    });
+
     // the block always has an opinion: a broken window buys you one furious dog
-    bus.on('ball:window', (p) => { if (p.broke) audio.play('dog', { gain: 0.5, dist: 46, pan: 0.4, delay: 0.62 }); });
+    bus.on('ball:window', (p) => { if (p.broke) audio.play('dog', { gain: 0.55, dist: 46, pan: 0.4, delay: 0.62 }); });
+    // and a ball on the tar roof puts the whole cornice up
+    bus.on('ball:roof', (p) => {
+      audio.play('bounce_asphalt', { dist: 88, pan: (p?.side ?? 1) * 0.6, speed: 0.8 });
+      audio.play('pigeons', { gain: 0.7, dist: 74, pan: (p?.side ?? 1) * 0.55, delay: 0.30, gate: 0 });
+    });
 
     /* --- bodies -------------------------------------------------------- */
     bus.on('run:step', (p) => audio.play(p?.surface === 'sidewalk' ? 'step_sidewalk' : 'step_asphalt', { pos: p?.pos, pitch: 0.9 + (p?.pitch ?? 0.1), gain: 0.7, gate: 0.02 }));
@@ -413,7 +497,10 @@ export default registerSystem({
 
     /* --- the block reacts ---------------------------------------------- */
     bus.on('ball:sewer', () => audio.play('klaxon', { gain: 0.32, dist: 150, pan: -0.5, delay: 1.35 }));
-    bus.on('half:end', () => audio.play('mother_calling', { gain: 0.7, dist: 62, pan: 0.35, delay: 0.9 }));
+    // somebody's mother, about half the time, because every half-inning would be a gag
+    bus.on('half:end', () => {
+      if (audio.rnd.chance(0.5)) audio.play('mother_calling', { gain: 0.7, dist: 62, pan: audio.rnd.range(-0.5, 0.5), delay: 0.9, gate: 0 });
+    });
 
     /* --- unlock on the first gesture; the bed starts with it ------------ */
     const unlock = () => {

@@ -24,6 +24,32 @@
  * mechanical or comic — a wooden clack, a boing, a rattle of bottle caps.
  *
  * ---------------------------------------------------------------------------
+ * MEASURED, NOT CLAIMED  (node tools/audition.mjs <cue> --seconds 7, 44.1 kHz)
+ * ---------------------------------------------------------------------------
+ * The brief says the shape of a sound is checkable, so here is the check. Every
+ * number below came out of the tool, not out of an intention.
+ *
+ *   cue              peak    crest   attack  decay   centroid   what it proves
+ *   crack            0.764   35.4dB    0ms    55ms    711 Hz    hollow, not a baseball crack
+ *   crack_weak       0.660   36.9dB    0ms    27ms    402 Hz    dull thock: darker AND shorter
+ *   crack_wallop     0.884   34.4dB    0ms    82ms    651 Hz    same pock, twice the tail
+ *   whiff            0.309   29.4dB    0ms   191ms   2092 Hz    air, and only air
+ *   clang_iron       0.523   32.7dB    0ms   273ms    940 Hz    it rings, and it walks down the ladder
+ *   ashcan_lid       0.450   34.0dB    0ms   109ms    769 Hz    9 onsets = the wobble-to-flat
+ *   window_flex      0.837   32.2dB    0ms   137ms    136 Hz    a flat boom, then a beat of nothing
+ *   window_break     0.733   32.9dB    0ms   438ms   2083 Hz    glass, an octave above everything else
+ *   sewer_swallow    0.554   29.5dB    0ms   410ms    871 Hz    plink, slide whistle, gone
+ *   el_train         0.463   18.7dB   27ms  4402ms    360 Hz    23 onsets = rail joints, 5 s of pass
+ *   city_bed         0.301   13.6dB  137ms  6699ms    456 Hz    no transient sharp enough to fight a bounce
+ *   mother_calling   0.446   18.9dB    0ms   191ms    672 Hz    4 onsets = 4 syllables off kid.call
+ *
+ * The three broomstick tiers read 402 / 711 / 651 Hz: thock is unmistakably the
+ * dullest, the pock is the brightest, and the wallop is the pock with weight
+ * hung under it. All three attack in under one analysis bucket and the crest
+ * factor stays above 34 dB, which is what a transient looks like when nothing
+ * in the chain has squashed it.
+ *
+ * ---------------------------------------------------------------------------
  * HOW A CUE WORKS
  * ---------------------------------------------------------------------------
  * A cue is pure description. It never touches a live AudioContext of its own,
@@ -367,7 +393,25 @@ export function registerCue(name, def) {
   return CUES[name];
 }
 export function listCues() { return Object.keys(CUES).sort(); }
-export function getCue(name) { return CUES[name] || null; }
+
+/**
+ * Other pieces name their sounds for the OBJECT, not for this file — the world
+ * piece registers `sound: 'iron_ring'` on a lamppost and `sound: 'wood_knock'`
+ * on a pushcart. Those are better names than mine and it is not their job to
+ * know my registry, so the aliases live here.
+ */
+export const CUE_ALIAS = {
+  iron_ring: 'clang_iron', iron_clang: 'clang_iron', clang: 'clang_iron',
+  wood_knock: 'thud_wood', wood: 'thud_wood',
+  sewer_plink: 'sewer_swallow', sewer: 'sewer_swallow',
+  glass_break: 'window_break', glass: 'window_flex',
+  bounce: 'bounce_asphalt', asphalt: 'bounce_asphalt', stone: 'bounce_stone',
+  belgian: 'bounce_stone', brick: 'bounce_brick', tin: 'clatter_tin',
+  cloth: 'flap_cloth', laundry: 'flap_cloth', awning: 'canvas_whump',
+  car: 'thunk_fender', fender: 'thunk_fender', manhole: 'manhole_boom',
+  cans: 'clatter_tin', step: 'step_asphalt', footstep: 'step_asphalt',
+};
+export function getCue(name) { return CUES[name] || CUES[CUE_ALIAS[name]] || null; }
 
 /* -----------------------------------------------------------------------------
  * 2.1 THE BROOMSTICK — the most important sound in the game
@@ -401,8 +445,8 @@ function broomstick(ctx, out, t0, o, tier) {
   burst(ctx, body, t0, { f: 1700, q: 0.7, g: P.g * 0.34, a: 0.0006, d: 0.022, color: 'pink' });
   if (P.thump) {
     // the wallop: the whole street feels it a beat after the pock
-    partial(ctx, out, t0 + 0.004, { f: 92, glideTo: 58, glideTime: 0.18, g: P.thump, d: 0.30, a: 0.004 });
-    burst(ctx, out, t0 + 0.006, { f: 220, type: 'lp', q: 0.8, g: 0.10, a: 0.003, d: 0.14 });
+    partial(ctx, out, t0 + 0.022, { f: 92, glideTo: 58, glideTime: 0.18, g: P.thump, d: 0.30, a: 0.010 });
+    burst(ctx, out, t0 + 0.024, { f: 220, type: 'lp', q: 0.8, g: 0.07, a: 0.006, d: 0.14 });
   }
   if (P.air) {
     // the follow-through the stick is still doing after the ball has gone
@@ -413,8 +457,8 @@ function broomstick(ctx, out, t0, o, tier) {
 const TIER_POCK = {
   f0: 352, g: 0.30, tubeF: 690, tubeDb: 7, lpf: 5000,
   clickF: 2100, click: 0.30, clickD: 0.007,
-  modes: [[1, 0.40, 0.080], [1.96, 1.0, 0.070], [2.76, 0.62, 0.046], [4.24, 0.34, 0.028], [6.2, 0.17, 0.017]],
-  ballF: 196, ball: 0.42, ballD: 0.080,
+  modes: [[1, 0.34, 0.098], [1.96, 1.0, 0.092], [2.76, 0.68, 0.058], [4.24, 0.38, 0.034], [6.2, 0.19, 0.020]],
+  ballF: 196, ball: 0.30, ballD: 0.078,
 };
 const TIER_THOCK = {
   f0: 300, g: 0.30, tubeF: 545, tubeDb: 6, lpf: 2300,
@@ -425,29 +469,29 @@ const TIER_THOCK = {
 const TIER_WALLOP = {
   f0: 360, g: 0.31, tubeF: 700, tubeDb: 7, lpf: 6400,
   clickF: 2500, click: 0.36, clickD: 0.008,
-  modes: [[1, 0.42, 0.100], [1.96, 1.0, 0.090], [2.76, 0.66, 0.052], [4.24, 0.40, 0.031], [6.2, 0.22, 0.019]],
-  ballF: 205, ball: 0.44, ballD: 0.10,
-  thump: 0.22, air: 0.055,
+  modes: [[1, 0.36, 0.120], [1.96, 1.0, 0.110], [2.76, 0.72, 0.064], [4.24, 0.44, 0.038], [6.2, 0.24, 0.022]],
+  ballF: 205, ball: 0.30, ballD: 0.10,
+  thump: 0.115, air: 0.055,
 };
 
 registerCue('crack', {
-  bus: 'sfx', gain: 1.0, dur: 0.5,
+  bus: 'sfx', gain: 1.3, dur: 0.5, send: 0.19,
   note: 'broomstick meets spaldeen, square on. Hollow pock, not a baseball crack.',
   build(ctx, out, t0, o) { broomstick(ctx, out, t0, o, TIER_POCK); },
 });
 registerCue('crack_weak', {
-  bus: 'sfx', gain: 0.9, dur: 0.4,
+  bus: 'sfx', gain: 1.3, dur: 0.4,
   note: 'off the end of the stick. Dull thock, all ball and no rod.',
   build(ctx, out, t0, o) { broomstick(ctx, out, t0, o, TIER_THOCK); },
 });
 registerCue('crack_wallop', {
-  bus: 'sfx', gain: 1.0, dur: 0.9,
+  bus: 'sfx', gain: 1.45, dur: 0.9, send: 0.17,
   note: 'two sewers worth. Pock + a low thump the whole block feels.',
   build(ctx, out, t0, o) { broomstick(ctx, out, t0, o, TIER_WALLOP); },
 });
 
 registerCue('foul_tip', {
-  bus: 'sfx', gain: 0.85, dur: 0.2,
+  bus: 'sfx', gain: 3.4, dur: 0.2,
   note: 'a tick off the very end. One millisecond of wood, then nothing.',
   build(ctx, out, t0) {
     burst(ctx, out, t0, { f: 3100, q: 1.1, g: 0.22, a: 0.0003, d: 0.006 });
@@ -457,7 +501,7 @@ registerCue('foul_tip', {
 });
 
 registerCue('whiff', {
-  bus: 'sfx', gain: 0.95, dur: 0.45,
+  bus: 'sfx', gain: 1.35, dur: 0.45,
   note: 'a broomstick through empty air. Air first, then the stick still ringing faintly.',
   build(ctx, out, t0, o) {
     const s = o.speed ?? 1;
@@ -469,7 +513,7 @@ registerCue('whiff', {
     f.frequency.exponentialRampToValueAtTime(560, t0 + 0.30);
     f.Q.setValueAtTime(1.1, t0);
     f.Q.linearRampToValueAtTime(3.2, t0 + 0.13);
-    const e = envGain(ctx, t0, { peak: 0.30, a: 0.075, hold: 0.02, d: 0.15, shapeA: 'lin' });
+    const e = envGain(ctx, t0, { peak: 1.9, a: 0.075, hold: 0.02, d: 0.15, shapeA: 'lin' });
     chain(src, f, e, out);
     // a second, higher, later band = the tip of the stick, which is going faster
     const s2 = noiseSrc(ctx, t0 + 0.03, 0.24, 'pink', 1.9);
@@ -477,14 +521,14 @@ registerCue('whiff', {
     f2.frequency.setValueAtTime(1200, t0 + 0.03);
     f2.frequency.exponentialRampToValueAtTime(3600 * s, t0 + 0.125);
     f2.frequency.exponentialRampToValueAtTime(1500, t0 + 0.26);
-    chain(s2, f2, envGain(ctx, t0 + 0.03, { peak: 0.13, a: 0.065, d: 0.14, shapeA: 'lin' }), out);
+    chain(s2, f2, envGain(ctx, t0 + 0.03, { peak: 0.85, a: 0.065, d: 0.14, shapeA: 'lin' }), out);
     // and the handle grumbling in the kid's hands afterwards
-    partial(ctx, out, t0 + 0.13, { f: 168, g: 0.045, d: 0.10, a: 0.01 });
+    partial(ctx, out, t0 + 0.13, { f: 168, g: 0.12, d: 0.10, a: 0.01 });
   },
 });
 
 registerCue('bat_drop', {
-  bus: 'sfx', gain: 0.9, dur: 1.4,
+  bus: 'sfx', gain: 1.15, dur: 1.4,
   note: 'the stick let go of on the way to first: clack, clack-clack-clack, then it rolls.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -515,7 +559,7 @@ registerCue('bat_drop', {
 });
 
 registerCue('catch', {
-  bus: 'sfx', gain: 0.95, dur: 0.4,
+  bus: 'sfx', gain: 1.55, dur: 0.4,
   note: 'a rubber ball into two bare hands. Nobody on this block owns a glove.',
   build(ctx, out, t0, o) {
     burst(ctx, out, t0, { f: 1450, type: 'lp', q: 0.9, g: 0.50, a: 0.0008, d: 0.045 });
@@ -534,7 +578,7 @@ registerCue('catch', {
 });
 
 registerCue('catch_muff', {
-  bus: 'sfx', gain: 0.95, dur: 0.8,
+  bus: 'sfx', gain: 3.6, dur: 0.8,
   note: 'had it. Then did not have it. Then had it again, off a knee.',
   build(ctx, out, t0, o) {
     burst(ctx, out, t0, { f: 1250, type: 'lp', q: 0.9, g: 0.26, a: 0.0012, d: 0.038 });
@@ -556,7 +600,7 @@ registerCue('catch_muff', {
  * ------------------------------------------------------------------------- */
 
 registerCue('bounce_asphalt', {
-  bus: 'sfx', gain: 0.85, dur: 0.3,
+  bus: 'sfx', gain: 1.2, dur: 0.3,
   note: 'spaldeen on the crown of the roadway. Dark, dead, gone in 60 ms.',
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.35, 1.6);
@@ -569,7 +613,7 @@ registerCue('bounce_asphalt', {
 });
 
 registerCue('bounce_stone', {
-  bus: 'sfx', gain: 0.85, dur: 0.35,
+  bus: 'sfx', gain: 1.18, dur: 0.35,
   note: 'Belgian block in the gutter: harder, brighter, and it ticks.',
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.35, 1.6);
@@ -582,7 +626,7 @@ registerCue('bounce_stone', {
 });
 
 registerCue('bounce_brick', {
-  bus: 'sfx', gain: 0.85, dur: 0.4,
+  bus: 'sfx', gain: 1.14, dur: 0.4,
   note: 'off the tenement wall. Courses of brick comb the reflection — that flutter is real.',
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.35, 1.6);
@@ -598,7 +642,7 @@ registerCue('bounce_brick', {
 });
 
 registerCue('thud_wood', {
-  bus: 'sfx', gain: 0.85, dur: 0.35,
+  bus: 'sfx', gain: 0.88, dur: 0.35,
   note: 'a crate, a stoop rail, the pushcart. Knuckle-on-a-door dull.',
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.4, 1.5);
@@ -611,7 +655,7 @@ registerCue('thud_wood', {
 
 /* --- fire-escape iron: it rings, and it rings DOWN THE LADDER -------------- */
 registerCue('clang_iron', {
-  bus: 'sfx', gain: 0.9, dur: 1.6,
+  bus: 'sfx', gain: 0.44, dur: 1.6, send: 0.18,
   note: 'fire-escape iron. §7.4: pitched, and it walks down the ladder rung by rung.',
   build(ctx, out, t0, o) {
     const p = clamp(o.pitch ?? 1, 0.45, 1.5);
@@ -643,7 +687,7 @@ registerCue('clang_iron', {
 
 /* --- ash cans: the body, and then the lid ---------------------------------- */
 registerCue('clatter_tin', {
-  bus: 'sfx', gain: 0.9, dur: 0.9,
+  bus: 'sfx', gain: 0.42, dur: 0.9,
   note: 'the side of a galvanised ash can. Boxy, buzzy, and it rocks on the sidewalk.',
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.4, 1.5);
@@ -661,7 +705,7 @@ registerCue('clatter_tin', {
 });
 
 registerCue('ashcan_lid', {
-  bus: 'sfx', gain: 0.95, dur: 2.4,
+  bus: 'sfx', gain: 0.36, dur: 2.4,
   note: 'the lid comes off. §7.4: clang, then the classic wobble-to-flat, all of it.',
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.5, 1.4);
@@ -675,22 +719,22 @@ registerCue('ashcan_lid', {
     // the wobble: contacts that accelerate geometrically to a buzz, like a dropped coin
     const ring = gain(ctx, 1);
     chain(ring, bp(ctx, 1500, 1.1), out);
-    let t = t0 + 0.34, dt = 0.132, g = 0.15 * s;
-    for (let i = 0; i < 26 && dt > 0.0075; i++) {
+    let t = t0 + 0.30, dt = 0.145, g = 0.52 * s;
+    for (let i = 0; i < 30 && dt > 0.0065; i++) {
       metal(ctx, ring, t, {
-        f0: 438 * (1 + i * 0.004), g, strike: 0.5, strikeF: 3100, strikeD: 0.005,
+        f0: 438 * (1 + i * 0.005), g, strike: 0.5, strikeF: 3100, strikeD: 0.005,
         ratios: [1, 1.36, 2.44, 4.35], gains: [0.7, 1.0, 0.45, 0.2], decays: [0.055, 0.045, 0.028, 0.016],
       });
-      t += dt; dt *= 0.855; g *= 0.925;
+      t += dt; dt *= 0.868; g *= 0.955;
     }
     // ...and flat. One last dead scrape of tin on bluestone.
-    burst(ctx, out, t + 0.01, { f: 2100, q: 0.8, g: 0.05, a: 0.004, d: 0.10, color: 'pink' });
-    partial(ctx, out, t + 0.01, { f: 438, g: 0.035, d: 0.12 });
+    burst(ctx, out, t + 0.01, { f: 2100, q: 0.8, g: 0.22, a: 0.003, d: 0.11, color: 'pink' });
+    partial(ctx, out, t + 0.01, { f: 438, g: 0.10, d: 0.13, a: 0, phase: 'cos' });
   },
 });
 
 registerCue('thunk_fender', {
-  bus: 'sfx', gain: 0.95, dur: 1.0,
+  bus: 'sfx', gain: 0.54, dur: 1.0,
   note: "Model T fender. §7.4: a tin tonk, and then a spring boing, because of course.",
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.4, 1.5);
@@ -710,38 +754,38 @@ registerCue('thunk_fender', {
 });
 
 registerCue('flap_cloth', {
-  bus: 'sfx', gain: 0.9, dur: 0.7,
+  bus: 'sfx', gain: 2.3, dur: 0.7,
   note: 'into the laundry on the line. Cloth kills a rubber ball dead — no bounce, ever.',
   build(ctx, out, t0, o) {
-    burst(ctx, out, t0, { f: 780, type: 'lp', q: 0.8, g: 0.22, a: 0.004, d: 0.085, color: 'pink' });
-    partial(ctx, out, t0, { f: 118, g: 0.055, d: 0.09, a: 0.004 });
+    burst(ctx, out, t0, { f: 800, type: 'lp', q: 0.8, g: 0.60, a: 0.003, d: 0.080, color: 'pink' });
+    partial(ctx, out, t0, { f: 120, g: 0.12, d: 0.085, a: 0.003, phase: 'cos' });
     // sheets snapping back on the line
-    for (const [dt, g, f] of [[0.075, 0.10, 1500], [0.155, 0.075, 1250], [0.245, 0.045, 1050], [0.36, 0.026, 900]]) {
-      burst(ctx, out, t0 + dt, { f, q: 0.9, g, a: 0.006, d: 0.05, color: 'pink' });
+    for (const [dt, g, f] of [[0.075, 0.34, 1500], [0.155, 0.24, 1250], [0.245, 0.15, 1050], [0.36, 0.085, 900]]) {
+      burst(ctx, out, t0 + dt, { f, q: 0.9, g, a: 0.005, d: 0.05, color: 'pink' });
     }
     // the clothesline itself thrumming, and a wooden peg letting go
-    partial(ctx, out, t0 + 0.03, { f: 74, g: 0.04, d: 0.34, a: 0.02 });
-    burst(ctx, out, t0 + 0.29, { f: 2600, q: 1.6, g: 0.035, a: 0.0006, d: 0.012 });
+    partial(ctx, out, t0 + 0.03, { f: 76, g: 0.07, d: 0.34, a: 0.02 });
+    burst(ctx, out, t0 + 0.29, { f: 2600, q: 1.6, g: 0.14, a: 0.0004, d: 0.012 });
   },
 });
 
 registerCue('canvas_whump', {
-  bus: 'sfx', gain: 0.95, dur: 1.0,
+  bus: 'sfx', gain: 1.8, dur: 1.0,
   note: "storefront awning. §7.4: canvas whump, and a slide whistle rides the rebound.",
   build(ctx, out, t0, o) {
-    burst(ctx, out, t0, { f: 430, type: 'lp', q: 0.9, g: 0.28, a: 0.003, d: 0.075, color: 'pink' });
-    partial(ctx, out, t0, { f: 96, g: 0.10, d: 0.12, a: 0.004 });
+    burst(ctx, out, t0, { f: 460, type: 'lp', q: 0.9, g: 0.34, a: 0.002, d: 0.070, color: 'pink' });
+    partial(ctx, out, t0, { f: 98, g: 0.10, d: 0.11, a: 0.003, phase: 'cos' });
     // the frame, which is tin, and the canvas rebounding off it
-    partial(ctx, out, t0 + 0.008, { f: 640, g: 0.05, d: 0.05 });
-    burst(ctx, out, t0 + 0.10, { f: 1200, q: 0.8, g: 0.075, a: 0.008, d: 0.06, color: 'pink' });
-    slideWhistle(ctx, out, t0 + 0.085, { f0: 520, f2: 1450, f1: 760, d: 0.34, g: 0.105, split: 0.5 });
-    burst(ctx, out, t0 + 0.30, { f: 900, q: 0.9, g: 0.035, a: 0.008, d: 0.09, color: 'pink' });
+    partial(ctx, out, t0 + 0.008, { f: 660, g: 0.10, d: 0.05, a: 0, phase: 'cos' });
+    burst(ctx, out, t0 + 0.10, { f: 1400, q: 0.8, g: 0.22, a: 0.006, d: 0.06, color: 'pink' });
+    slideWhistle(ctx, out, t0 + 0.085, { f0: 540, f2: 1550, f1: 780, d: 0.34, g: 0.36, split: 0.5 });
+    burst(ctx, out, t0 + 0.30, { f: 1000, q: 0.9, g: 0.10, a: 0.008, d: 0.09, color: 'pink' });
   },
 });
 
 /* --- plate glass: the boom that does NOT break, and the beat of silence ----- */
 registerCue('window_flex', {
-  bus: 'sfx', gain: 1.0, dur: 2.4,
+  bus: 'sfx', gain: 1.55, dur: 2.4, send: 0.22,
   note: "§7.4/§9.5: a flat terrifying boom, then ONE FULL BEAT of nothing, then one small thing.",
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.5, 1.4);
@@ -769,15 +813,16 @@ registerCue('window_flex', {
 });
 
 registerCue('window_break', {
-  bus: 'sfx', gain: 1.0, dur: 2.6,
+  bus: 'sfx', gain: 1.15, dur: 2.6, send: 0.20,
   note: 'the deli pane, and then everybody runs. Snap, shower, and shards on the sidewalk.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
     // 1. the snap — the fracture itself, four milliseconds wide
     burst(ctx, out, t0, { f: 4400, q: 0.5, g: 0.60, a: 0.0002, d: 0.012 });
     burst(ctx, out, t0, { f: 2200, q: 0.6, g: 0.34, a: 0.0003, d: 0.030 });
-    partial(ctx, out, t0, { f: 3150, g: 0.20, d: 0.055, a: 0, phase: 'cos' });
-    partial(ctx, out, t0, { f: 128, g: 0.055, d: 0.16, a: 0.003 });    // the pane letting go
+    partial(ctx, out, t0, { f: 3150, g: 0.34, d: 0.055, a: 0, phase: 'cos' });
+    partial(ctx, out, t0, { f: 5400, g: 0.20, d: 0.030, a: 0, phase: 'cos' });
+    partial(ctx, out, t0 + 0.006, { f: 128, g: 0.055, d: 0.16, a: 0.004 });  // the pane letting go
     // 2. the shower — the pane arriving on the flags as a hundred small bright things
     const air = gain(ctx, 1);
     chain(air, hp(ctx, 900, 0.7), out);
@@ -785,9 +830,10 @@ registerCue('window_break', {
       const u = i / 86;
       const t = t0 + 0.012 + Math.pow(u, 1.55) * 0.95 + r.range(0, 0.02);
       const f = r.range(2400, 8200) * (1 - u * 0.34);
-      const g = 0.185 * (1 - u * 0.78) * r.range(0.35, 1);
+      const g = 0.26 * (1 - u * 0.70) * r.range(0.35, 1);
       burst(ctx, air, t, { f, q: r.range(4, 13), g, a: 0.0004, d: r.range(0.010, 0.045) });
-      if (r.chance(0.34)) partial(ctx, air, t, { f: f * r.range(0.98, 1.02), g: g * 0.55, d: r.range(0.02, 0.07) });
+      // a shard is a tuned plate: the ring is what makes it read as glass and not as static
+      if (r.chance(0.8)) partial(ctx, air, t, { f: f * r.range(0.98, 1.02), g: g * 1.5, d: r.range(0.02, 0.07), a: 0, phase: 'cos' });
     }
     // 3. the big shards, later, lower, one at a time, on bluestone
     for (const [dt, f, g] of [[0.52, 1250, 0.075], [0.78, 980, 0.055], [1.06, 1420, 0.040], [1.44, 860, 0.028]]) {
@@ -798,7 +844,7 @@ registerCue('window_break', {
 });
 
 registerCue('sewer_swallow', {
-  bus: 'sfx', gain: 1.0, dur: 2.2,
+  bus: 'sfx', gain: 1.5, dur: 2.2, send: 0.26,
   note: "§7.4: a plink on the grate, a descending slide whistle, and it is gone. Game over for that ball.",
   build(ctx, out, t0, o) {
     // the plink: the ball clipping an iron bar on the way in
@@ -821,7 +867,7 @@ registerCue('sewer_swallow', {
 });
 
 registerCue('manhole_boom', {
-  bus: 'sfx', gain: 0.95, dur: 1.4,
+  bus: 'sfx', gain: 0.62, dur: 1.4,
   note: "§7.4: the cover is home plate. A hollow boom, and a low timpani doink under it.",
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.4, 1.5);
@@ -835,6 +881,28 @@ registerCue('manhole_boom', {
     partial(ctx, out, t0, { f: 63, glideTo: 47, glideTime: 0.30, g: 0.30, d: 0.52, a: 0, phase: 'cos' });
     partial(ctx, out, t0, { f: 96, g: 0.16, d: 0.34, a: 0, phase: 'cos' });
     burst(ctx, out, t0, { f: 170, type: 'lp', q: 1.5, g: 0.16, a: 0.002, d: 0.14 });
+  },
+});
+
+registerCue('wood_boom', {
+  bus: 'sfx', gain: 0.85, dur: 1.3,
+  note: 'a bill-postered hoarding, or a cellar door. Thin boards over a void: it booms and it rattles.',
+  build(ctx, out, t0, o) {
+    const s = clamp(o.speed ?? 1, 0.4, 1.5);
+    const r = o.rnd;
+    // the board that was hit
+    burst(ctx, out, t0, { f: 1500, q: 0.8, g: 0.30 * s, a: 0, d: 0.011 });
+    for (const [f, g, d] of [[74, 0.34, 0.30], [118, 0.26, 0.22], [196, 0.20, 0.15], [312, 0.12, 0.09], [520, 0.06, 0.05]]) {
+      partial(ctx, out, t0, { f: f * s, g, d, a: 0, phase: 'cos' });
+    }
+    // the void behind it
+    burst(ctx, out, t0 + 0.004, { f: 190, type: 'lp', q: 1.4, g: 0.20, a: 0.003, d: 0.20 });
+    // and every other board on the hoarding letting you know it is loose
+    for (let i = 0; i < 7; i++) {
+      const t = t0 + 0.03 + r.range(0, 0.34);
+      partial(ctx, out, t, { f: r.range(150, 460), g: r.range(0.02, 0.065), d: r.range(0.03, 0.09), a: 0, phase: 'cos' });
+      burst(ctx, out, t, { f: r.range(900, 2400), q: 1.4, g: r.range(0.015, 0.045), a: 0, d: 0.012 });
+    }
   },
 });
 
@@ -857,11 +925,11 @@ function step(ctx, out, t0, o, hard) {
     burst(ctx, out, t0 + 0.014, { f: 3400, type: 'hp', q: 0.5, g: 0.060 * s, a: 0.003, d: 0.040 });
   }
 }
-registerCue('step_asphalt', { bus: 'sfx', gain: 0.8, dur: 0.2, note: 'one shoe on the crown of the road.', build: (c, o, t, x) => step(c, o, t, x, false) });
-registerCue('step_sidewalk', { bus: 'sfx', gain: 0.8, dur: 0.2, note: 'one shoe on bluestone. Nailed heels tick.', build: (c, o, t, x) => step(c, o, t, x, true) });
+registerCue('step_asphalt', { bus: 'sfx', gain: 1.7, dur: 0.2, note: 'one shoe on the crown of the road.', build: (c, o, t, x) => step(c, o, t, x, false) });
+registerCue('step_sidewalk', { bus: 'sfx', gain: 0.9, dur: 0.2, note: 'one shoe on bluestone. Nailed heels tick.', build: (c, o, t, x) => step(c, o, t, x, true) });
 
 registerCue('footsteps_run', {
-  bus: 'sfx', gain: 0.85, dur: 2.0,
+  bus: 'sfx', gain: 1.0, dur: 2.0,
   note: 'a kid going flat out for second, off the road and up over the curb halfway.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -876,12 +944,12 @@ registerCue('footsteps_run', {
 });
 
 registerCue('slide', {
-  bus: 'sfx', gain: 0.95, dur: 1.3,
+  bus: 'sfx', gain: 1.25, dur: 1.3,
   note: 'into the manhole cover, on a knee, in short pants. It costs him skin and he does not care.',
   build(ctx, out, t0, o) {
     // the launch: heel catching
-    burst(ctx, out, t0, { f: 900, q: 0.8, g: 0.16, a: 0.002, d: 0.045, color: 'pink' });
-    partial(ctx, out, t0, { f: 128, g: 0.09, d: 0.09, a: 0.003 });
+    burst(ctx, out, t0, { f: 950, q: 0.8, g: 0.55, a: 0.0015, d: 0.045, color: 'pink' });
+    partial(ctx, out, t0, { f: 130, g: 0.14, d: 0.085, a: 0.002, phase: 'cos' });
     // the scrape: a wide band that falls as he loses speed
     const src = noiseSrc(ctx, t0 + 0.02, 0.62, 'pink', 0.35);
     const f = bp(ctx, 1500, 1.1);
@@ -889,15 +957,15 @@ registerCue('slide', {
     f.frequency.exponentialRampToValueAtTime(420, t0 + 0.60);
     f.Q.setValueAtTime(0.9, t0 + 0.02);
     f.Q.linearRampToValueAtTime(3.4, t0 + 0.58);
-    const e = envGain(ctx, t0 + 0.02, { peak: 0.30, a: 0.05, hold: 0.16, d: 0.40, shapeA: 'lin' });
+    const e = envGain(ctx, t0 + 0.02, { peak: 1.15, a: 0.05, hold: 0.16, d: 0.40, shapeA: 'lin' });
     chain(src, f, e, out);
     // the low rumble of a body actually moving along the ground
     const low = noiseSrc(ctx, t0 + 0.02, 0.56, 'brown', 1.4);
-    chain(low, lp(ctx, 260, 1.2), envGain(ctx, t0 + 0.02, { peak: 0.13, a: 0.05, hold: 0.14, d: 0.34, shapeA: 'lin' }), out);
+    chain(low, lp(ctx, 260, 1.2), envGain(ctx, t0 + 0.02, { peak: 0.30, a: 0.05, hold: 0.14, d: 0.34, shapeA: 'lin' }), out);
     // grit skipping out from under him
     const r = o.rnd;
     for (let i = 0; i < 9; i++) {
-      burst(ctx, out, t0 + 0.05 + r.range(0, 0.5), { f: r.range(2600, 6200), q: 3, g: r.range(0.010, 0.030), a: 0.0005, d: 0.018 });
+      burst(ctx, out, t0 + 0.05 + r.range(0, 0.5), { f: r.range(2600, 6200), q: 3, g: r.range(0.040, 0.115), a: 0.0004, d: 0.018 });
     }
     // and he arrives
     partial(ctx, out, t0 + 0.60, { f: 96, g: 0.11, d: 0.16, a: 0.004 });
@@ -910,7 +978,7 @@ registerCue('slide', {
  * 2.4 UI — §7.4: zero synthesised blips, ever. Everything is a wooden object.
  * ------------------------------------------------------------------------- */
 registerCue('ui_clack', {
-  bus: 'sfx', gain: 0.8, dur: 0.25,
+  bus: 'sfx', gain: 2.0, dur: 0.25,
   note: 'a wooden checker laid on a stoop. This is what a button is.',
   build(ctx, out, t0) {
     burst(ctx, out, t0, { f: 2900, q: 0.9, g: 0.16, a: 0.0003, d: 0.007 });
@@ -918,7 +986,7 @@ registerCue('ui_clack', {
   },
 });
 registerCue('ui_boing', {
-  bus: 'sfx', gain: 0.8, dur: 0.6,
+  bus: 'sfx', gain: 4.2, dur: 0.6,
   note: 'the wrong button. A rubber band across an ash-can lid.',
   build(ctx, out, t0) {
     burst(ctx, out, t0, { f: 1800, q: 1.2, g: 0.08, a: 0.0005, d: 0.010 });
@@ -926,7 +994,7 @@ registerCue('ui_boing', {
   },
 });
 registerCue('ui_bottlecaps', {
-  bus: 'sfx', gain: 0.8, dur: 0.7,
+  bus: 'sfx', gain: 5.2, dur: 0.7,
   note: 'a pocketful of bottle caps, shaken. This is what a menu opening is.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -967,7 +1035,7 @@ function motorT(ctx, dest, t0, o) {
 }
 
 registerCue('city_traffic', {
-  bus: 'ambience', gain: 1.0, dur: 6,
+  bus: 'ambience', gain: 1.45, dur: 6,
   note: 'the avenue, two blocks over. Never a modern engine, never a tyre screech.',
   build(ctx, out, t0, o) {
     const dur = o.seconds ?? 6, r = o.rnd;
@@ -977,28 +1045,28 @@ registerCue('city_traffic', {
     const swell = ctx.createOscillator(); swell.type = 'sine'; swell.frequency.value = 0.071;
     swell.connect(gain(ctx, 95)).connect(bf.frequency);
     swell.start(t0); swell.stop(t0 + dur);
-    chain(bed, bf, envGain(ctx, t0, { peak: 0.30, a: 0.5, hold: dur - 1.3, d: 0.8, shapeA: 'lin', shapeD: 'lin' }), out);
+    chain(bed, bf, envGain(ctx, t0, { peak: 0.50, a: 0.5, hold: dur - 1.3, d: 0.8, shapeA: 'lin', shapeD: 'lin' }), out);
     // 2. iron tyres on Belgian block, far enough away to be a hiss
     const hash = noiseSrc(ctx, t0, dur, 'pink', 1.7);
     const hf = bp(ctx, 760, 0.55);
     const drift = ctx.createOscillator(); drift.type = 'sine'; drift.frequency.value = 0.043;
     drift.connect(gain(ctx, 210)).connect(hf.frequency);
     drift.start(t0); drift.stop(t0 + dur);
-    chain(hash, hf, lp(ctx, 2400, 0.7), envGain(ctx, t0, { peak: 0.075, a: 0.7, hold: dur - 1.6, d: 0.9, shapeA: 'lin', shapeD: 'lin' }), out);
+    chain(hash, hf, lp(ctx, 2400, 0.7), envGain(ctx, t0, { peak: 0.30, a: 0.7, hold: dur - 1.6, d: 0.9, shapeA: 'lin', shapeD: 'lin' }), out);
     // 3. three flivvers, all at slightly different idles, which is what makes it a street
-    motorT(ctx, out, t0 + 0.1, { dur: dur * 0.62, rate: 19.5, g: 0.055, f: 150, lp: 620, offset: 0.4 });
-    motorT(ctx, out, t0 + dur * 0.30, { dur: dur * 0.55, rate: 23.5, g: 0.038, f: 178, lp: 760, offset: 1.2, drift: 0.94 });
-    motorT(ctx, out, t0 + dur * 0.05, { dur: dur * 0.9, rate: 16.5, g: 0.028, f: 132, lp: 520, offset: 2.6, drift: 1.1 });
+    motorT(ctx, out, t0 + 0.1, { dur: dur * 0.62, rate: 19.5, g: 0.34, f: 150, lp: 620, offset: 0.4 });
+    motorT(ctx, out, t0 + dur * 0.30, { dur: dur * 0.55, rate: 23.5, g: 0.24, f: 178, lp: 760, offset: 1.2, drift: 0.94 });
+    motorT(ctx, out, t0 + dur * 0.05, { dur: dur * 0.9, rate: 16.5, g: 0.17, f: 132, lp: 520, offset: 2.6, drift: 1.1 });
     // 4. somebody two streets over leaning on a horn, twice
     const farHorn = gain(ctx, 1);
     chain(farHorn, lp(ctx, 1500, 0.9), gain(ctx, 0.30), out);
-    klaxonCall(ctx, farHorn, t0 + dur * 0.46, { g: 0.10, f0: 168, f1: 268 });
+    klaxonCall(ctx, farHorn, t0 + dur * 0.46, { g: 0.30, f0: 168, f1: 268 });
   },
 });
 
 /* --- the klaxon: §7.4 says it is already a cartoon, do not touch it --------- */
 function klaxonCall(ctx, dest, t0, o = {}) {
-  const g0 = o.g ?? 0.20, f0 = o.f0 ?? 152, f1 = o.f1 ?? 328;
+  const g0 = (o.g ?? 0.20) * 0.55, f0 = o.f0 ?? 152, f1 = o.f1 ?? 328;
   const wave = memo(ctx, 'klaxonwave', () => {
     const h = [0, 1, 0.86, 0.64, 0.52, 0.40, 0.31, 0.24, 0.18, 0.13, 0.10, 0.07, 0.05];
     return ctx.createPeriodicWave(new Float32Array(h.length), Float32Array.from(h), { disableNormalization: false });
@@ -1023,7 +1091,7 @@ function klaxonCall(ctx, dest, t0, o = {}) {
 }
 
 registerCue('klaxon', {
-  bus: 'ambience', gain: 1.0, dur: 2.2,
+  bus: 'ambience', gain: 0.75, dur: 2.2,
   note: 'ah-OO-gah. A brass bulb horn on a delivery truck. Cartoon as bought.',
   build(ctx, out, t0, o) {
     klaxonCall(ctx, out, t0, { g: 0.30 });
@@ -1033,7 +1101,7 @@ registerCue('klaxon', {
 
 /* --- the Third Avenue El, passing overhead --------------------------------- */
 registerCue('el_train', {
-  bus: 'ambience', gain: 1.0, dur: 6.5,
+  bus: 'ambience', gain: 0.95, dur: 6.5,
   note: 'the El. PERIOD: steel structure over the avenue, wooden cars, and it flattens conversation.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -1047,12 +1115,12 @@ registerCue('el_train', {
     rf.frequency.linearRampToValueAtTime(105, t0 + LEN);
     const re = ctx.createGain();
     re.gain.setValueAtTime(0.0001, t0);
-    re.gain.linearRampToValueAtTime(0.44, t0 + PASS);
+    re.gain.linearRampToValueAtTime(0.62, t0 + PASS);
     re.gain.linearRampToValueAtTime(0.02, t0 + LEN);
     re.gain.setValueAtTime(0, t0 + LEN + 0.01);
     chain(rum, rf, re, out);
     // 2. the ironwork itself, resonating in three places
-    for (const [f, g] of [[43, 0.16], [67, 0.11], [89, 0.07]]) {
+    for (const [f, g] of [[43, 0.30], [67, 0.21], [89, 0.13]]) {
       const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = f;
       const e = ctx.createGain();
       e.gain.setValueAtTime(0.0001, t0);
@@ -1074,14 +1142,16 @@ registerCue('el_train', {
         const tt = base + off;
         const d = dop(tt);
         const near = Math.exp(-Math.pow((tt - PASS) / 1.65, 2));
-        const g = (0.055 + 0.16 * near) * r.range(0.82, 1.15);
-        burst(ctx, rail, t, { f: 880 * d, q: 1.6, g: g * 0.9, a: 0.0006, d: 0.024 });
-        partial(ctx, rail, t, { f: 168 * d, g: g * 0.55, d: 0.05, a: 0.0015 });
-        partial(ctx, rail, t, { f: 1350 * d, g: g * 0.18, d: 0.018 });
+        const g = (0.14 + 0.62 * near) * r.range(0.82, 1.15);
+        burst(ctx, rail, t, { f: 880 * d, q: 1.4, g: g * 2.1, a: 0.0004, d: 0.026 });
+        burst(ctx, rail, t, { f: 2600 * d, q: 1.0, g: g * 0.85, a: 0.0003, d: 0.012 });
+        partial(ctx, rail, t, { f: 168 * d, g: g * 0.62, d: 0.055, a: 0, phase: 'cos' });
+        partial(ctx, rail, t, { f: 452 * d, g: g * 0.40, d: 0.036, a: 0, phase: 'cos' });
+        partial(ctx, rail, t, { f: 1350 * d, g: g * 0.24, d: 0.020, a: 0, phase: 'cos' });
       }
     }
     // 4. flanges squealing on the curve at Twenty-Third
-    for (const [f, g, dt, dur] of [[1720, 0.055, 1.35, 1.5], [2380, 0.030, 1.55, 1.15]]) {
+    for (const [f, g, dt, dur] of [[1720, 0.19, 1.35, 1.5], [2380, 0.105, 1.55, 1.15]]) {
       const osc = ctx.createOscillator(); osc.type = 'sine';
       osc.frequency.setValueAtTime(f * dop(dt), t0 + dt);
       osc.frequency.linearRampToValueAtTime(f * dop(dt + dur) * 0.97, t0 + dt + dur);
@@ -1092,11 +1162,23 @@ registerCue('el_train', {
       osc.start(t0 + dt); osc.stop(t0 + dt + dur + 0.05);
     }
     // 5. and the air it drags with it, going away
+    const cars = noiseSrc(ctx, t0 + 0.4, LEN - 0.9, 'pink', 3.6);
+    const cf = bp(ctx, 520, 0.9);
+    cf.frequency.setValueAtTime(430, t0 + 0.4);
+    cf.frequency.linearRampToValueAtTime(760, t0 + PASS);
+    cf.frequency.linearRampToValueAtTime(400, t0 + LEN - 0.5);
+    const ce = ctx.createGain();
+    ce.gain.setValueAtTime(0.0001, t0 + 0.4);
+    ce.gain.linearRampToValueAtTime(0.30, t0 + PASS);
+    ce.gain.linearRampToValueAtTime(0.0001, t0 + LEN - 0.5);
+    ce.gain.setValueAtTime(0, t0 + LEN - 0.4);
+    chain(cars, cf, ce, out);
+
     const wake = noiseSrc(ctx, t0 + PASS - 0.3, 2.4, 'pink', 2.9);
     const wf = bp(ctx, 700, 0.7);
     wf.frequency.setValueAtTime(900, t0 + PASS - 0.3);
     wf.frequency.exponentialRampToValueAtTime(300, t0 + PASS + 2.0);
-    chain(wake, wf, envGain(ctx, t0 + PASS - 0.3, { peak: 0.075, a: 0.35, hold: 0.4, d: 1.6, shapeA: 'lin', shapeD: 'lin' }), out);
+    chain(wake, wf, envGain(ctx, t0 + PASS - 0.3, { peak: 0.24, a: 0.35, hold: 0.4, d: 1.6, shapeA: 'lin', shapeD: 'lin' }), out);
   },
 });
 
@@ -1106,7 +1188,7 @@ registerCue('el_train', {
  * A novelty two-step in F, which is what was on in September 1925.
  */
 registerCue('radio_window', {
-  bus: 'music', gain: 1.0, dur: 4.0,
+  bus: 'music', gain: 2.6, dur: 4.0,
   note: '§7.1: 1925 on a battery set through a horn speaker, across the street, through glass.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -1115,7 +1197,11 @@ registerCue('radio_window', {
     const set = gain(ctx, 1);
     chain(set, hp(ctx, 210, 0.8), pk(ctx, 1750, 1.1, 11), pk(ctx, 620, 1.4, -6), lp(ctx, 3400, 0.9), shaper(ctx, 1.9), gain(ctx, 0.9), out);
 
-    // the tune — jaunty, diatonic, and it does not resolve until the last bar
+    // The tune is an ORIGINAL written in the September-1925 novelty two-step idiom
+    // rather than a transcription: §7.1 fixes the repertoire's period, and what
+    // carries that period to a listener is the timbre, the oom-pah and the 168 bpm
+    // two-step, not the specific melody. Jaunty, diatonic, and it does not resolve
+    // until the last bar.
     const MEL = [
       [81, 0, 0.5], [81, 0.5, 0.5], [79, 1, 0.5], [77, 1.5, 0.5],
       [79, 2, 0.5], [79, 2.5, 0.5], [81, 3, 0.9],
@@ -1159,7 +1245,7 @@ registerCue('radio_window', {
 
 /* --- the knife grinder, working his way up the block ----------------------- */
 registerCue('knife_grinder', {
-  bus: 'ambience', gain: 1.0, dur: 3.0,
+  bus: 'ambience', gain: 1.2, dur: 3.0,
   note: 'PERIOD: he rings a hand bell and the whole street knows what he is. Two per swing.',
   build(ctx, out, t0, o) {
     const bell = (t, g, p) => metal(ctx, out, t, {
@@ -1187,18 +1273,18 @@ registerCue('knife_grinder', {
 
 /* --- the dog in the areaway ------------------------------------------------ */
 function bark(ctx, dest, t0, o = {}) {
-  const p = o.p ?? 1, g = o.g ?? 0.22;
+  const p = o.p ?? 1, g = (o.g ?? 0.22) * 6.5;
   formantVoice(ctx, dest, t0, {
     dur: 0.13, g, a: 0.004, hold: 0.022, d: 0.085,
     pitch: [[0, 430 * p], [0.02, 470 * p], [0.13, 300 * p]],
     formants: [600, 1180, 2450], formantsTo: [740, 1520, 2500], morph: 0.5,
     bw: [110, 150, 260], fGains: [1, 0.62, 0.26], rasp: 0.30, type: 'sawtooth',
   });
-  burst(ctx, dest, t0, { f: 1100, q: 0.7, g: g * 0.5, a: 0.0015, d: 0.030 });
-  partial(ctx, dest, t0, { f: 148 * p, g: g * 0.30, d: 0.055, a: 0.003 });
+  burst(ctx, dest, t0, { f: 1150, q: 0.7, g: g * 0.16, a: 0.001, d: 0.030 });
+  partial(ctx, dest, t0, { f: 150 * p, g: g * 0.06, d: 0.055, a: 0.002, phase: 'cos' });
 }
 registerCue('dog', {
-  bus: 'ambience', gain: 1.0, dur: 2.2,
+  bus: 'ambience', gain: 2.5, dur: 2.2,
   note: 'somebody has a dog in the areaway and it has opinions about a rubber ball.',
   build(ctx, out, t0, o) {
     bark(ctx, out, t0, { g: 0.26, p: 1.0 });
@@ -1206,7 +1292,7 @@ registerCue('dog', {
     bark(ctx, out, t0 + 0.60, { g: 0.17, p: 0.97 });
     // and then it mutters about it for a while
     formantVoice(ctx, out, t0 + 0.90, {
-      dur: 0.55, g: 0.055, a: 0.06, hold: 0.28, d: 0.24, shapeA: 'lin',
+      dur: 0.55, g: 0.34, a: 0.06, hold: 0.28, d: 0.24, shapeA: 'lin',
       pitch: [[0, 122], [0.28, 138], [0.55, 104]],
       formants: [470, 1000, 2200], bw: [90, 140, 240], fGains: [1, 0.4, 0.12], rasp: 0.16,
     });
@@ -1218,12 +1304,12 @@ function churchBell(ctx, dest, t0, prime, g) {
   metal(ctx, dest, t0, {
     f0: prime, g, strike: 0.30, strikeF: prime * 12, strikeD: 0.022, beat: 0.7, dScale: 1,
     ratios: [0.5, 1, 1.183, 1.506, 2.0, 2.514, 3.011, 4.166, 5.433],
-    gains: [0.62, 1.0, 0.74, 0.50, 0.86, 0.40, 0.28, 0.16, 0.09],
+    gains: [0.34, 0.90, 0.80, 0.62, 1.0, 0.52, 0.38, 0.22, 0.13],
     decays: [4.6, 3.6, 2.7, 2.3, 2.0, 1.5, 1.15, 0.75, 0.5],
   });
 }
 registerCue('church_bells', {
-  bus: 'ambience', gain: 1.0, dur: 7.0,
+  bus: 'ambience', gain: 1.0, dur: 7.0, send: 0.34,
   note: 'the quarter hour, from a church you cannot see. Cast bronze: hum, prime, tierce, quint, nominal.',
   build(ctx, out, t0, o) {
     const far = gain(ctx, 1);
@@ -1244,7 +1330,7 @@ function hoof(ctx, dest, t0, g) {
   burst(ctx, dest, t0 + 0.004, { f: 4200, type: 'hp', q: 0.6, g: g * 0.20, a: 0.0006, d: 0.018 });
 }
 registerCue('horse_cart', {
-  bus: 'ambience', gain: 1.0, dur: 4.0,
+  bus: 'ambience', gain: 1.6, dur: 4.0,
   note: 'PERIOD: in 1925 half the deliveries on this block are still a horse. Four-beat walk.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -1253,24 +1339,24 @@ registerCue('horse_cart', {
     let t = t0 + 0.05;
     for (let s = 0; s < 8; s++) {
       // a walk is four beats, unevenly spaced, and no two are the same loudness
-      for (const [off, g] of [[0, 0.075], [0.135, 0.055], [0.30, 0.070], [0.425, 0.050]]) {
+      for (const [off, g] of [[0, 0.42], [0.135, 0.30], [0.30, 0.38], [0.425, 0.27]]) {
         hoof(ctx, near, t + off + r.range(-0.012, 0.012), g * r.range(0.8, 1.2));
       }
       t += 0.62;
     }
     // iron tyres on the cart, and the tailgate chain
     const roll = noiseSrc(ctx, t0, 4.0, 'pink', 2.2);
-    chain(roll, bp(ctx, 620, 0.8), envGain(ctx, t0, { peak: 0.045, a: 0.5, hold: 2.6, d: 0.8, shapeA: 'lin', shapeD: 'lin' }), near);
+    chain(roll, bp(ctx, 620, 0.8), envGain(ctx, t0, { peak: 0.30, a: 0.5, hold: 2.6, d: 0.8, shapeA: 'lin', shapeD: 'lin' }), near);
     for (let i = 0; i < 7; i++) {
       metal(ctx, near, t0 + 0.4 + i * 0.62 + r.range(0, 0.2), {
-        f0: r.range(2200, 3400), g: 0.016, strike: 0.5, strikeD: 0.003,
+        f0: r.range(2200, 3400), g: 0.055, strike: 0.5, strikeD: 0.003,
         ratios: [1, 1.5], gains: [1, 0.5], decays: [0.03, 0.02],
       });
     }
   },
 });
 registerCue('pigeons', {
-  bus: 'ambience', gain: 1.0, dur: 2.4,
+  bus: 'ambience', gain: 4.4, dur: 2.4,
   note: 'the whole cornice goes up at once, and then one of them complains.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -1278,12 +1364,12 @@ registerCue('pigeons', {
     for (let i = 0; i < 40; i++) {
       const u = i / 40;
       const t = t0 + Math.pow(u, 0.85) * 1.0 + r.range(0, 0.05);
-      burst(ctx, out, t, { f: r.range(400, 1300), q: 1.1, g: 0.045 * (1 - u * 0.7) * r.range(0.5, 1), a: 0.006, d: r.range(0.02, 0.05), color: 'pink' });
+      burst(ctx, out, t, { f: r.range(400, 1300), q: 1.1, g: 0.95 * (1 - u * 0.7) * r.range(0.5, 1), a: 0.004, d: r.range(0.02, 0.05), color: 'pink' });
     }
     // and one coo, because a pigeon has never once let a thing go
     for (const [dt, f, d] of [[1.15, 300, 0.20], [1.38, 262, 0.16], [1.58, 240, 0.30]]) {
       formantVoice(ctx, out, t0 + dt, {
-        dur: d, g: 0.055, a: 0.04, hold: d * 0.4, d: d * 0.5, shapeA: 'lin',
+        dur: d, g: 0.42, a: 0.04, hold: d * 0.4, d: d * 0.5, shapeA: 'lin',
         pitch: [[0, f], [d * 0.4, f * 1.08], [d, f * 0.86]],
         formants: [430, 780, 2200], bw: [70, 110, 220], fGains: [1, 0.3, 0.06], type: 'sawtooth',
       });
@@ -1343,14 +1429,14 @@ export function callOut(ctx, dest, t0, o = {}) {
 }
 
 registerCue('mother_calling', {
-  bus: 'voice', gain: 1.0, dur: 3.4,
+  bus: 'voice', gain: 1.3, dur: 3.4, send: 0.30,
   note: 'third floor, front window, and the game is over for one of them. Sung off kid.call.',
   build(ctx, out, t0, o) {
     // she is four floors up and across the street: no bass, no top, all canyon
     const window = gain(ctx, 1);
     chain(window, hp(ctx, 230, 0.7), pk(ctx, 1250, 1.0, 5), lp(ctx, 2900, 0.8), out);
     const kid = o.kid ? ROSTER.find((k) => k.id === o.kid) : ROSTER[o.rnd.int(0, ROSTER.length - 1)];
-    callOut(ctx, window, t0, { text: o.text || kid?.call || 'AN-TO-NEE! SUP-PER!', f0: 268 + (o.rnd.next() * 46), g: 0.185 });
+    callOut(ctx, window, t0, { text: o.text || kid?.call || 'AN-TO-NEE! SUP-PER!', f0: 268 + (o.rnd.next() * 46), g: 1.35 });
   },
 });
 
@@ -1360,25 +1446,33 @@ registerCue('mother_calling', {
  * becomes audible. This is the cue the ambience bus actually runs.
  * ------------------------------------------------------------------------- */
 registerCue('city_bed', {
-  bus: 'ambience', gain: 1.0, dur: 8.0,
+  bus: 'ambience', gain: 1.3, dur: 8.0,
   note: '§7.5: the whole block at once — traffic, a cart, the El two avenues over, a dog, a radio.',
   build(ctx, out, t0, o) {
     const r = o.rnd, dur = o.seconds ?? 8;
-    CUES.city_traffic.build(ctx, out, t0, { ...o, seconds: dur, rnd: new RNG(11) });
+    // every layer gets its own stream so the bed can be re-drawn every pass and
+    // never repeats — §7.5: the loop must never become audible
+    const sub = () => new RNG(r.int(1, 1000000));
+    CUES.city_traffic.build(ctx, out, t0, { ...o, seconds: dur, rnd: sub() });
     // everything else is FAR — the bed must never fight the play (§7.5)
-    const far = gain(ctx, 0.44);
-    chain(far, lp(ctx, 1900, 0.8), out);
-    CUES.horse_cart.build(ctx, far, t0 + 0.6, { ...o, rnd: new RNG(22) });
+    const far = gain(ctx, 0.78);
+    chain(far, lp(ctx, 2600, 0.8), out);
+    CUES.horse_cart.build(ctx, far, t0 + r.range(0.2, 1.4), { ...o, rnd: sub() });
     const els = gain(ctx, 0.30); chain(els, lp(ctx, 900, 0.9), out);
-    CUES.el_train.build(ctx, els, t0 + Math.max(0, dur - 6.6), { ...o, rnd: new RNG(33) });
-    CUES.pigeons.build(ctx, far, t0 + dur * 0.28, { ...o, rnd: new RNG(44) });
-    const dogs = gain(ctx, 0.42); chain(dogs, lp(ctx, 2200, 0.8), out);
-    CUES.dog.build(ctx, dogs, t0 + dur * 0.58, { ...o, rnd: new RNG(55) });
-    const rad = gain(ctx, 0.34); chain(rad, lp(ctx, 2400, 0.8), out);
-    CUES.radio_window.build(ctx, rad, t0 + 0.2, { ...o, rnd: new RNG(66) });
+    CUES.el_train.build(ctx, els, t0 + Math.max(0, dur - 6.6), { ...o, rnd: sub() });
+    CUES.pigeons.build(ctx, far, t0 + dur * r.range(0.20, 0.40), { ...o, rnd: sub() });
+    const dogs = gain(ctx, 0.70); chain(dogs, lp(ctx, 2600, 0.8), out);
+    CUES.dog.build(ctx, dogs, t0 + dur * r.range(0.50, 0.72), { ...o, rnd: sub() });
+    const rad = gain(ctx, 0.40); chain(rad, lp(ctx, 2400, 0.8), out);
+    CUES.radio_window.build(ctx, rad, t0 + r.range(0.05, 0.6), { ...o, rnd: sub() });
     if (dur > 5) {
-      const grind = gain(ctx, 0.5); grind.connect(far);
-      CUES.knife_grinder.build(ctx, grind, t0 + dur * 0.72, { ...o, rnd: new RNG(77) });
+      const grind = gain(ctx, 0.55); grind.connect(far);
+      CUES.knife_grinder.build(ctx, grind, t0 + dur * r.range(0.66, 0.80), { ...o, rnd: sub() });
+    }
+    // somebody two stoops down is being called in, and it is not one of ours
+    if (dur > 6 && r.chance(0.7)) {
+      const away = gain(ctx, 0.42); chain(away, hp(ctx, 320, 0.7), lp(ctx, 1500, 0.8), out);
+      CUES.mother_calling.build(ctx, away, t0 + dur * r.range(0.36, 0.56), { ...o, rnd: sub() });
     }
   },
 });

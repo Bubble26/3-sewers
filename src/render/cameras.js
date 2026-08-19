@@ -79,23 +79,30 @@ const LIMIT = {
 /** How the two framings want to be composed. Direction + anchor come from T.stage.framings. */
 const COMPOSITION = {
   batting: {
-    // Plate in the lower third (§17.4), pushed a touch right of centre so the batter's body
-    // sits off the pitcher rather than in front of him.
-    target: 'plate',
-    ndc: [0.12, -0.40],
+    // Plate down on the floor of the frame (§17.4 "plate in the lower third"), the cast
+    // centred across it, and a small bias left so the batter's body sits off the pitcher
+    // rather than in front of him.
+    plateY: -0.76,
+    biasX: 0.05,
+    // Where the back of the stage lands. This is what actually chooses the elevation: on a
+    // long lens the cast's vertical spread is proportional to tan(pitch), so asking for the
+    // deepest kid's head at a particular height IS asking for a camera height — and it stays
+    // true when the field-layout piece moves somebody.
+    deepY: 0.62,
     // Nobody may tower: this is a shot of a batter, not a shot of an on-deck kid's elbow.
-    softMaxPct: 29,
+    softMaxPct: 27,
     fovBias: 0.55,
-    pitchUp: 26,        // may steepen this far past the contract angle, at a cost
-    pitchBias: 0.9,
+    pitchBias: 0.15,
   },
   field: {
-    target: 'cast',
-    ndc: [0.0, -0.05],
-    softMaxPct: 29,
-    fovBias: 0.40,
-    pitchUp: 24,
-    pitchBias: 0.7,
+    // The wide one: a steeper seat in the same theatre. Plate on the floor, the whole stage
+    // stacked above it, and enough elevation that the fielders separate instead of stacking.
+    plateY: -0.84,
+    biasX: 0.0,
+    deepY: 0.78,
+    softMaxPct: 27,
+    fovBias: 0.35,
+    pitchBias: 0.10,
   },
 };
 
@@ -112,16 +119,16 @@ const MOTION = {
 };
 
 /* ============================================================================
-   MEASUREMENT — deliberately identical to tools/measure.mjs
+   MEASUREMENT — the same number tools/measure.mjs will print, computed in closed form
    ========================================================================= */
 
 const _box = new THREE.Box3();
 const _v = new THREE.Vector3();
-const _fwd = new THREE.Vector3();
-const _right = new THREE.Vector3();
-const _up = new THREE.Vector3();
-const _q = new THREE.Quaternion();
+const _dv = new THREE.Vector3();
+const _m4 = new THREE.Matrix4();
+const _look = new THREE.Vector3();
 const _qy = new THREE.Quaternion();
+const _fwd = new THREE.Vector3();
 const _YAXIS = new THREE.Vector3(0, 1, 0);
 
 const isKidNode = (o) =>
@@ -129,7 +136,7 @@ const isKidNode = (o) =>
 
 /**
  * Every kid in the scene, as the arbiter sees them: one entry per top-level kid node, with the
- * exact pair of points tools/measure.mjs projects to get a screen height.
+ * pair of points tools/measure.mjs projects to get a screen height.
  */
 function surveyCast(app) {
   const cast = [];
@@ -147,7 +154,7 @@ function surveyCast(app) {
     // The box at boot is the BIND pose, and a kid holding a broomstick straight up measures
     // 6.6 units there against 5.1–5.6 in every real gameplay pose. Solving against the bind
     // pose would pull the camera 30 units further back than the game ever needs. The rig
-    // publishes each kid's standing height, so the survey height is the box, clamped to a
+    // publishes each kid's standing height, so the survey height is the box clamped to a
     // plausible multiple of it: the batter loses his flagpole, everybody else is untouched.
     const tall = o.userData?.metrics?.tall || 0;
     const raw = _box.max.y - _box.min.y;
@@ -170,109 +177,126 @@ function tagLeads(app, cast) {
   const P = app.get('players');
   const mark = (kid) => {
     if (!kid || !kid.group) return null;
-    const e = cast.find((c) => c.obj === kid.group || c.obj.parent === kid.group || kid.group === c.obj.parent);
+    const e = cast.find((c) => c.obj === kid.group);
     if (e) e.lead = true;
     return e;
   };
   return { batter: mark(P?.batter), pitcher: mark(P?.pitcher), catcher: mark(P?.catcher) };
 }
 
-/** A scratch camera so nothing the solver does is ever visible on screen. */
-const probe = new THREE.PerspectiveCamera(20, SOLVE_ASPECT, 0.5, 2400);
-
-function setProbe(pos, quat, fov) {
-  probe.position.copy(pos);
-  probe.quaternion.copy(quat);
-  probe.fov = fov;
-  probe.aspect = SOLVE_ASPECT;
-  probe.updateMatrixWorld(true);
-  probe.updateProjectionMatrix();
+/**
+ * A candidate view, held as a position and an orthonormal basis rather than as a camera.
+ *
+ * Three.js projects a symmetric frustum, so for any world point p
+ *
+ *     ndcX = (p−eye)·right / ((p−eye)·fwd · t · aspect)
+ *     ndcY = (p−eye)·up    / ((p−eye)·fwd · t)          t = tan(fov/2)
+ *
+ * which is the same answer `Vector3.project(camera)` gives and about twenty times cheaper.
+ * The solver evaluates a few thousand candidates at boot, so that difference is the
+ * difference between a camera that solves itself and a page that never finishes loading.
+ */
+class View {
+  constructor() {
+    this.pos = new THREE.Vector3();
+    this.right = new THREE.Vector3();
+    this.up = new THREE.Vector3();
+    this.fwd = new THREE.Vector3();
+    this.quat = new THREE.Quaternion();
+    this.t = 0.1;
+  }
+  setDirection(yaw, pitchDeg) {
+    const cp = Math.cos(pitchDeg * RAD), sp = Math.sin(pitchDeg * RAD);
+    this.fwd.set(Math.sin(yaw) * cp, -sp, Math.cos(yaw) * cp);
+    _look.copy(this.pos).add(this.fwd);
+    _m4.lookAt(this.pos, _look, _YAXIS);
+    this.quat.setFromRotationMatrix(_m4);
+    this.right.set(1, 0, 0).applyQuaternion(this.quat);
+    this.up.set(0, 1, 0).applyQuaternion(this.quat);
+    return this;
+  }
+  ndcY(p) {
+    _dv.copy(p).sub(this.pos);
+    const d = _dv.dot(this.fwd);
+    return d <= 0.05 ? null : _dv.dot(this.up) / (d * this.t);
+  }
+  ndcX(p) {
+    _dv.copy(p).sub(this.pos);
+    const d = _dv.dot(this.fwd);
+    return d <= 0.05 ? null : _dv.dot(this.right) / (d * this.t * SOLVE_ASPECT);
+  }
+  depth(p) { return _dv.copy(p).sub(this.pos).dot(this.fwd); }
 }
 
 /** Screen height as a percentage of frame height, plus where the kid sits in NDC. */
-function measureKid(k) {
-  const t = _v.copy(k.top).project(probe);
-  const ty = t.y, tz = t.z, tx = t.x;
-  const b = _v.copy(k.bot).project(probe);
-  if (Math.abs(tz) > 1 && Math.abs(b.z) > 1) return null;
-  return {
-    pct: Math.abs((ty - b.y) / 2) * 100,
-    x: (tx + b.x) / 2,
-    yTop: ty,
-    yBot: b.y,
-    behind: tz > 1,
-  };
+function measureKid(k, view, out) {
+  _dv.copy(k.top).sub(view.pos);
+  const dTop = _dv.dot(view.fwd);
+  const yTop = _dv.dot(view.up), xTop = _dv.dot(view.right);
+  _dv.copy(k.bot).sub(view.pos);
+  const dBot = _dv.dot(view.fwd);
+  const yBot = _dv.dot(view.up), xBot = _dv.dot(view.right);
+  if (dTop <= 0.05 || dBot <= 0.05) return null;
+  const it = 1 / view.t;
+  out.yTop = yTop / dTop * it;
+  out.yBot = yBot / dBot * it;
+  out.x = (xTop / dTop + xBot / dBot) * 0.5 * it / SOLVE_ASPECT;
+  out.pct = Math.abs(out.yTop - out.yBot) * 50;
+  return out;
 }
 
 /* ============================================================================
    THE SOLVER
    ========================================================================= */
 
-/**
- * Place the camera `dist` back along `fwd` from `anchor`, then slide the whole rig sideways
- * and vertically until `targetPoint` lands on the composition mark. Sliding the camera rather
- * than turning it keeps the framing's direction — and therefore its relationship with the
- * backdrop cards — exactly as the contract wrote it.
- */
-const _m4 = new THREE.Matrix4();
-const _look = new THREE.Vector3();
-const _dv = new THREE.Vector3();
-
-function place(anchor, fwd, dist, fov, targetPoint, ndcTarget, out, iters) {
-  const pos = out.pos.copy(anchor).addScaledVector(fwd, -dist);
-  const quat = out.quat;
-  _m4.lookAt(pos, _look.copy(anchor), _YAXIS);
-  quat.setFromRotationMatrix(_m4);
-
-  _right.set(1, 0, 0).applyQuaternion(quat);
-  _up.set(0, 1, 0).applyQuaternion(quat);
-  _fwd.set(0, 0, -1).applyQuaternion(quat);
-  const t = Math.tan(fov * RAD / 2);
-
-  for (let i = 0; i < (iters || 4); i++) {
-    setProbe(pos, quat, fov);
-    const p = _v.copy(targetPoint).project(probe);
-    const depth = Math.max(1, _dv.copy(targetPoint).sub(pos).dot(_fwd));
-    const dx = (p.x - ndcTarget[0]) * depth * t * SOLVE_ASPECT;
-    const dy = (p.y - ndcTarget[1]) * depth * t;
-    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) break;
-    pos.addScaledVector(_right, dx).addScaledVector(_up, dy);
-  }
-  out.fov = fov;
-  out.dist = dist;
-  out.fwd.copy(_fwd);
-  return out;
-}
-
-function blankSolution() {
-  return { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), fwd: new THREE.Vector3(), fov: 20, dist: 60 };
-}
-
-/**
- * Cost of a candidate framing. Lower is better; anything above BAD is illegal under §17.3.
- * The weights say, in order: never break the floor, keep the frame full of the cast, get the
- * three leads into their band, then — and only then — be as close to the contract lens and as
- * close to the stage as possible.
- */
 const BAD = 1000;
-const DECK_Z = -88;      // world/surface.js paves back to z = -96; keep a little margin
+const DECK_Z = -104;     // world/surface.js paves back to z = -96; a soft nudge, not a wall
+const _m = { pct: 0, x: 0, yTop: 0, yBot: 0 };
+
+/**
+ * Slide the rig — never turn it — until the plate sits where the composition wants it and the
+ * cast is centred across the frame. Sliding keeps the framing's direction, and therefore its
+ * relationship with the backdrop cards, exactly as the contract wrote it.
+ */
+function compose(view, plate, cast, comp, iters) {
+  for (let i = 0; i < iters; i++) {
+    _dv.copy(plate).sub(view.pos);
+    const dPlate = Math.max(1, _dv.dot(view.fwd));
+    const dy = (_dv.dot(view.up) / (dPlate * view.t) - comp.plateY) * dPlate * view.t;
+    let lo = 9, hi = -9, dSum = 0;
+    for (const k of cast) {
+      _dv.copy(k.mid).sub(view.pos);
+      const d = Math.max(1, _dv.dot(view.fwd));
+      const x = _dv.dot(view.right) / (d * view.t * SOLVE_ASPECT);
+      if (x < lo) lo = x;
+      if (x > hi) hi = x;
+      dSum += d;
+    }
+    const dCast = cast.length ? dSum / cast.length : dPlate;
+    const dx = cast.length ? ((lo + hi) / 2 - comp.biasX) * dCast * view.t * SOLVE_ASPECT : 0;
+    if (Math.abs(dx) < 0.02 && Math.abs(dy) < 0.02) break;
+    view.pos.addScaledVector(view.right, dx).addScaledVector(view.up, dy);
+  }
+  return view;
+}
 
 /**
  * Cost of a candidate framing. Lower is better; the BAD-weighted terms are the ones §17.3
  * calls law, and no amount of good composition is allowed to buy its way past them.
  */
-function score(cast, comp, fov, dist, pitchDeg, pos, detail) {
+function score(cast, comp, view, fov, dist, pitchDeg, detail) {
   let cost = 0;
+  let deep = -2;
   for (const k of cast) {
-    const m = measureKid(k);
-    if (!m || m.behind) { cost += BAD; continue; }
+    const m = measureKid(k, view, _m);
+    if (!m) { cost += BAD; continue; }
     // §17.4 asks for a stage with the whole cast on it, so leaving somebody out of frame is a
     // failure of the framing, not a clever way to dodge the size floor.
-    const outX = Math.max(0, Math.abs(m.x) - 0.93);
-    const outY = Math.max(0, m.yTop - 0.96, -0.98 - m.yBot);
-    if (outX > 0 || outY > 0) cost += BAD * 0.45 * (outX + outY);
+    const outX = Math.max(0, Math.abs(m.x) - 0.92);
+    const outY = Math.max(0, m.yTop - 0.96, -0.97 - m.yBot);
+    if (outX > 0 || outY > 0) cost += BAD * 0.9 * (outX + outY);
     if (m.pct < LIMIT.kidMin) cost += BAD * (LIMIT.kidMin - m.pct);
-    if (m.pct > comp.softMaxPct) cost += 30 * (m.pct - comp.softMaxPct);
+    if (m.pct > comp.softMaxPct) cost += 40 * (m.pct - comp.softMaxPct);
     if (k.lead) {
       if (m.pct > LIMIT.leadMax) cost += BAD * 0.5 * (m.pct - LIMIT.leadMax);
       // The lower half of the band is SATURATED on purpose. With a 42 ft mound the pitcher
@@ -282,14 +306,16 @@ function score(cast, comp, fov, dist, pitchDeg, pos, detail) {
       // stops arguing and lets composition win.
       cost += 46 * Math.min(Math.max(0, LIMIT.leadMin - m.pct), 2.5);
     }
+    if (m.yTop > deep) deep = m.yTop;
     if (detail) detail.push({ name: k.name, pct: +m.pct.toFixed(1), x: +m.x.toFixed(2), y: +((m.yTop + m.yBot) / 2).toFixed(2), lead: k.lead });
   }
+  cost += Math.abs(deep - comp.deepY) * 150;             // how much stage stands above the plate
   cost += Math.abs(fov - S.lens.fov) * comp.fovBias;
   cost += Math.abs(pitchDeg - comp.basePitch) * comp.pitchBias;
   cost += dist * 0.30;                                   // the smallest pull-back that is legal
   // world/surface.js paves the roadway back to z = -96. Stand off the end of your own set and
-  // the frame starts showing the back of the block, so the camera is asked to stay on the deck.
-  if (pos && pos.z < DECK_Z) cost += (DECK_Z - pos.z) * 34;
+  // the frame starts showing the back of the block, so the camera is nudged to stay on it.
+  if (view.pos.z < DECK_Z) cost += (DECK_Z - view.pos.z) * 8;
   if (fov > LIMIT.fovMax) cost += BAD * (fov - LIMIT.fovMax);
   return cost;
 }
@@ -301,17 +327,18 @@ function score(cast, comp, fov, dist, pitchDeg, pos, detail) {
  * looks along the street, and what it is pointed at. This solves the three that are arithmetic:
  * how far back, how long a lens, and how far above.
  *
- * Elevation is in the search because of a small piece of geometry worth knowing. Put the camera
- * at height Y = (g+C)·tanθ, aimed at the ground g units up-street from the plate, and a kid at
- * street position z measures
+ * Elevation is in the search because of a piece of geometry worth knowing. Put the camera at
+ * height Y = (g+C)·tanθ, aimed at the ground g units up-street from the plate, and a kid
+ * standing at street position z measures
  *
  *       pct = 50 · h / (t · (z + K))        K = C + (g + C)·tan²θ,  t = tan(fov/2)
  *
  * — so the ONLY thing that flattens near against far is K, and raising the camera raises K
- * exactly as effectively as walking backwards does. A 34° camera 83 units back is the same
- * flattening as an 11° camera 124 units back, and only one of those is still standing on the
- * paved street we modelled. So the solver is allowed to buy flatness with elevation when
- * distance would take it off the end of the set, and it pays a stated price for the deviation.
+ * exactly as effectively as walking backwards does. A 14° camera 90 units back flattens the
+ * street as hard as an 8° camera 130 units back, and only one of those is still standing on
+ * the paved street we modelled. The lens then sets the absolute size, and the pitch sets how
+ * much of the frame the cast stacks up through — which is why `deepY` is the knob that
+ * actually chooses the elevation.
  */
 function solveFraming(key, cast, plate) {
   const F = S.framings[key];
@@ -322,34 +349,21 @@ function solveFraming(key, cast, plate) {
   const basePitch = Math.asin(-base.y) / RAD;
   comp.basePitch = basePitch;
 
-  let target;
-  if (comp.target === 'plate') target = plate.clone();
-  else {
-    target = new THREE.Vector3();
-    for (const k of cast) target.add(k.mid);
-    if (cast.length) target.multiplyScalar(1 / cast.length); else target.copy(anchor);
-  }
-
-  const fwd = new THREE.Vector3();
-  const dirFor = (pitchDeg) => {
-    const cp = Math.cos(pitchDeg * RAD);
-    return fwd.set(Math.sin(baseYaw) * cp, -Math.sin(pitchDeg * RAD), Math.cos(baseYaw) * cp);
-  };
-
-  const cand = blankSolution();
+  const view = new View();
   let best = null;
 
   const sweep = (pitches, fovs, dists, iters) => {
     for (const pitchDeg of pitches) {
-      const d = dirFor(pitchDeg);
+      view.pos.set(0, 0, 0);
+      view.setDirection(baseYaw, pitchDeg);
       for (const fov of fovs) {
+        view.t = Math.tan(fov * RAD / 2);
         for (const dist of dists) {
-          place(anchor, d, dist, fov, target, comp.ndc, cand, iters);
-          setProbe(cand.pos, cand.quat, fov);
-          const c = score(cast, comp, fov, dist, pitchDeg, cand.pos, null);
+          view.pos.copy(anchor).addScaledVector(view.fwd, -dist);
+          compose(view, plate, cast, comp, iters);
+          const c = score(cast, comp, view, fov, dist, pitchDeg, null);
           if (!best || c < best.cost) {
-            best = { cost: c, fov, dist, pitchDeg,
-              pos: cand.pos.clone(), quat: cand.quat.clone(), fwd: cand.fwd.clone() };
+            best = { cost: c, fov, dist, pitchDeg, pos: view.pos.clone(), quat: view.quat.clone(), fwd: view.fwd.clone() };
           }
         }
       }
@@ -357,20 +371,18 @@ function solveFraming(key, cast, plate) {
   };
 
   const range = (a, b, step) => { const o = []; for (let v = a; v <= b + 1e-6; v += step) o.push(+v.toFixed(4)); return o; };
+  const pLo = Math.max(5, basePitch - 4), pHi = Math.min(30, basePitch + 15);
 
-  sweep(range(basePitch, basePitch + comp.pitchUp, 3.5),
-        range(LIMIT.fovMin, LIMIT.fovMax, 1.5),
-        range(38, 230, 8), 3);
+  sweep(range(pLo, pHi, 2.5), range(LIMIT.fovMin, LIMIT.fovMax, 1.5), range(38, 236, 9), 3);
   const p0 = best.pitchDeg, f0 = best.fov, d0 = best.dist;
-  sweep(range(Math.max(basePitch, p0 - 3.5), p0 + 3.5, 0.7),
+  sweep(range(Math.max(pLo, p0 - 2.5), Math.min(pHi, p0 + 2.5), 0.5),
         range(Math.max(LIMIT.fovMin, f0 - 1.6), Math.min(LIMIT.fovMax, f0 + 1.6), 0.2),
-        range(Math.max(26, d0 - 10), d0 + 10, 1.5), 4);
+        range(Math.max(26, d0 - 10), d0 + 10, 1.5), 5);
 
-  const out = blankSolution();
-  out.pos.copy(best.pos); out.quat.copy(best.quat); out.fwd.copy(best.fwd);
-  out.fov = best.fov; out.dist = best.dist; out.pitch = best.pitchDeg; out.cost = best.cost;
-  out.anchor = anchor;
-  return out;
+  return {
+    pos: best.pos, quat: best.quat, fwd: best.fwd,
+    fov: best.fov, dist: best.dist, pitch: best.pitchDeg, cost: best.cost, anchor,
+  };
 }
 
 /* ============================================================================
@@ -403,6 +415,7 @@ export default registerSystem({
     this.cutIn = -1; this.cutTo = null;
     this.wasPhase = '';
     this.solutions = null;
+    this.panView = new View();
 
     this.resolve(app);
     this.cut('batting', true);
@@ -514,15 +527,19 @@ export default registerSystem({
       this.panGoal = 0;
     } else {
       const f = this.solutions[this.framing];
-      setProbe(f.pos, f.quat, f.fov);
+      const view = this.panView;
+      view.pos.copy(f.pos);
+      view.quat.copy(f.quat);
       _qy.setFromAxisAngle(_YAXIS, this.pan);
-      probe.quaternion.premultiply(_qy);
-      probe.updateMatrixWorld(true);
-      const p = _v.copy(sim.ball.pos).project(probe);
-      const t = Math.tan(f.fov * RAD / 2) * SOLVE_ASPECT;
-      if (Math.abs(p.x) > MOTION.panDead && p.z < 1) {
-        const want = MOTION.panPark * Math.sign(p.x);
-        this.panGoal = this.pan + Math.atan((p.x - want) * t);
+      view.quat.premultiply(_qy);
+      view.right.set(1, 0, 0).applyQuaternion(view.quat);
+      view.up.set(0, 1, 0).applyQuaternion(view.quat);
+      view.fwd.set(0, 0, -1).applyQuaternion(view.quat);
+      view.t = Math.tan(f.fov * RAD / 2);
+      const x = view.ndcX(sim.ball.pos);
+      if (x != null && Math.abs(x) > MOTION.panDead) {
+        const want = MOTION.panPark * Math.sign(x);
+        this.panGoal = this.pan + Math.atan((x - want) * view.t * SOLVE_ASPECT);
       }
     }
     const lim = MOTION.panMaxDeg * RAD;
@@ -565,9 +582,15 @@ export default registerSystem({
     const key = which || this.framing;
     const f = this.solutions?.[key];
     if (!f) return null;
-    setProbe(f.pos, f.quat, f.fov);
+    const view = new View();
+    view.pos.copy(f.pos);
+    view.quat.copy(f.quat);
+    view.fwd.copy(f.fwd);
+    view.right.set(1, 0, 0).applyQuaternion(f.quat);
+    view.up.set(0, 1, 0).applyQuaternion(f.quat);
+    view.t = Math.tan(f.fov * RAD / 2);
     const rows = [];
-    score(this.cast, COMPOSITION[key], f.fov, f.dist, f.pitch, f.pos, rows);
+    score(this.cast, COMPOSITION[key], view, f.fov, f.dist, f.pitch, rows);
     rows.sort((a, b) => a.pct - b.pct);
     return {
       framing: key, fov: +f.fov.toFixed(2), dist: +f.dist.toFixed(1), pitch: +f.pitch.toFixed(1),
