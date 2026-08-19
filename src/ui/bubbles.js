@@ -83,7 +83,7 @@ export const STOCK = {
     ink: INK,
   },
   ice: {
-    paper: atLstar(mix(CHALK, AIR.skyLower, 0.34), 89),  // the card in the window
+    paper: atLstar(mix(CHALK, AIR.skyLower, 0.46), 86),  // the card in the window
     edge: mix(AIR.skyFill, INK, 0.34),
     rule: mix(INK, AIR.skyFill, 0.20),
     tint: mix(AIR.skyFill, CLOTH[0], 0.45),
@@ -242,62 +242,66 @@ function headCanvas(who, size) {
   };
 
   if (who === 'dot') {
-    /* Third floor front, leaning over the rail, paper rolled into a cone.
-       She is drawn mid-shout because she is always mid-shout. */
+    /* Third floor front, leaning over the rail, the afternoon paper rolled into
+       a cone. She is drawn mid-shout because she is always mid-shout. */
     // the fire-escape rail she is leaning on, behind her
-    g.strokeStyle = C(FACADE.iron[0]); g.lineWidth = 4.2 * S; g.lineCap = 'round';
-    for (const yy of [66, 78]) { g.beginPath(); g.moveTo(0, yy * S); g.lineTo(size, yy * S); g.stroke(); }
-    for (const xx of [12, 34, 56, 78]) { g.beginPath(); g.moveTo(xx * S, 62 * S); g.lineTo(xx * S, 92 * S); g.stroke(); }
+    g.strokeStyle = C(mix(FACADE.iron[0], CHALK, 0.10)); g.lineWidth = 4.6 * S; g.lineCap = 'round';
+    for (const yy of [83, 95]) { g.beginPath(); g.moveTo(0, yy * S); g.lineTo(size, yy * S); g.stroke(); }
+    for (const xx of [8, 30, 52, 74, 96]) { g.beginPath(); g.moveTo(xx * S, 78 * S); g.lineTo(xx * S, 100 * S); g.stroke(); }
 
-    // hair: a bob, claret ribbon
-    blob(mix(0x3a2318, INK, 0.10), () => {
+    const HAIR = mix(0x3a2318, INK, 0.18);
+    // the bob, back mass
+    blob(HAIR, () => {
       g.beginPath();
-      g.moveTo(24 * S, 62 * S); g.quadraticCurveTo(16 * S, 22 * S, 50 * S, 16 * S);
-      g.quadraticCurveTo(85 * S, 21 * S, 78 * S, 62 * S);
-      g.quadraticCurveTo(66 * S, 52 * S, 50 * S, 54 * S);
-      g.quadraticCurveTo(34 * S, 52 * S, 24 * S, 62 * S);
+      g.moveTo(17 * S, 66 * S);
+      g.quadraticCurveTo(9 * S, 22 * S, 47 * S, 12 * S);
+      g.quadraticCurveTo(86 * S, 18 * S, 79 * S, 64 * S);
+      g.quadraticCurveTo(64 * S, 52 * S, 47 * S, 54 * S);
+      g.quadraticCurveTo(28 * S, 54 * S, 17 * S, 66 * S);
       g.closePath();
-    });
+    }, 3.8);
     // face
-    blob(0xefc199, () => {
-      g.beginPath(); g.ellipse(50 * S, 47 * S, 25 * S, 27 * S, 0, 0, TAU);
-    });
-    // hair front, over the face
-    blob(mix(0x3a2318, INK, 0.10), () => {
+    blob(0xefc199, () => { g.beginPath(); g.ellipse(47 * S, 46 * S, 27 * S, 29 * S, 0, 0, TAU); }, 3.8);
+    // the fringe, cut straight across, over the face
+    blob(HAIR, () => {
       g.beginPath();
-      g.moveTo(25 * S, 44 * S); g.quadraticCurveTo(22 * S, 17 * S, 51 * S, 15 * S);
-      g.quadraticCurveTo(84 * S, 19 * S, 76 * S, 40 * S);
-      g.quadraticCurveTo(64 * S, 27 * S, 46 * S, 31 * S);
-      g.quadraticCurveTo(32 * S, 33 * S, 25 * S, 44 * S);
+      g.moveTo(19 * S, 44 * S);
+      g.quadraticCurveTo(14 * S, 13 * S, 48 * S, 10 * S);
+      g.quadraticCurveTo(84 * S, 15 * S, 76 * S, 40 * S);
+      g.quadraticCurveTo(62 * S, 24 * S, 42 * S, 28 * S);
+      g.quadraticCurveTo(26 * S, 31 * S, 19 * S, 44 * S);
       g.closePath();
-    });
+    }, 3.4);
     // the ribbon
     blob(ACCENTS.claret, () => {
       g.beginPath();
-      g.moveTo(70 * S, 25 * S); g.lineTo(88 * S, 14 * S); g.lineTo(90 * S, 30 * S);
-      g.lineTo(78 * S, 33 * S); g.closePath();
-    }, 2.6);
-    // eyes — one wide, one squeezed shut, because she is shouting
-    blob(CHALK, () => { g.beginPath(); g.ellipse(41 * S, 46 * S, 6.6 * S, 7.4 * S, 0, 0, TAU); }, 2.4);
-    g.fillStyle = ink;
-    g.beginPath(); g.arc(42 * S, 47 * S, 3.4 * S, 0, TAU); g.fill();
-    line(() => { g.beginPath(); g.moveTo(56 * S, 46 * S); g.quadraticCurveTo(62 * S, 42 * S, 68 * S, 47 * S); }, 3.2);
-    // brows, up
-    line(() => { g.beginPath(); g.moveTo(34 * S, 34 * S); g.quadraticCurveTo(41 * S, 29 * S, 48 * S, 33 * S); }, 3.4);
-    line(() => { g.beginPath(); g.moveTo(56 * S, 33 * S); g.quadraticCurveTo(63 * S, 29 * S, 70 * S, 35 * S); }, 3.4);
-    // freckles
-    g.fillStyle = C(mix(0xefc199, INK, 0.34));
-    for (const [fx, fy] of [[36, 56], [42, 58], [60, 57], [66, 55], [39, 62]]) {
-      g.beginPath(); g.arc(fx * S, fy * S, 1.5 * S, 0, TAU); g.fill();
-    }
-    // the rolled newspaper, cone to the mouth
-    blob(mix(STOCK.news.paper, CLOTH[3], 0.25), () => {
-      g.beginPath();
-      g.moveTo(48 * S, 60 * S); g.lineTo(58 * S, 63 * S);
-      g.lineTo(100 * S, 86 * S); g.lineTo(96 * S, 100 * S); g.lineTo(46 * S, 70 * S);
-      g.closePath();
+      g.moveTo(70 * S, 20 * S); g.lineTo(94 * S, 6 * S); g.lineTo(97 * S, 27 * S);
+      g.lineTo(79 * S, 30 * S); g.closePath();
     }, 3.0);
-    line(() => { g.beginPath(); g.moveTo(64 * S, 68 * S); g.lineTo(88 * S, 82 * S); }, 1.8);
+    // brows, up and out of the way
+    line(() => { g.beginPath(); g.moveTo(27 * S, 33 * S); g.quadraticCurveTo(35 * S, 26 * S, 43 * S, 32 * S); }, 4.0);
+    line(() => { g.beginPath(); g.moveTo(53 * S, 31 * S); g.quadraticCurveTo(62 * S, 26 * S, 70 * S, 34 * S); }, 4.0);
+    // eyes: one wide open, one squeezed shut — she is shouting
+    blob(CHALK, () => { g.beginPath(); g.ellipse(35 * S, 46 * S, 8.4 * S, 9.6 * S, 0, 0, TAU); }, 3.0);
+    g.fillStyle = ink;
+    g.beginPath(); g.arc(36.5 * S, 47 * S, 4.4 * S, 0, TAU); g.fill();
+    line(() => { g.beginPath(); g.moveTo(56 * S, 45 * S); g.quadraticCurveTo(63 * S, 39 * S, 70 * S, 46 * S); }, 4.0);
+    // freckles
+    g.fillStyle = C(mix(0xefc199, INK, 0.36));
+    for (const [fx, fy] of [[27, 57], [33, 60], [59, 57], [65, 54], [30, 65]]) {
+      g.beginPath(); g.arc(fx * S, fy * S, 1.9 * S, 0, TAU); g.fill();
+    }
+    // the shout
+    blob(mix(0x7a2f2a, INK, 0.35), () => { g.beginPath(); g.ellipse(48 * S, 66 * S, 9 * S, 7 * S, 0.16, 0, TAU); }, 2.6);
+    // the rolled newspaper, cone to the mouth
+    blob(mix(STOCK.news.paper, CHALK, 0.35), () => {
+      g.beginPath();
+      g.moveTo(44 * S, 58 * S); g.lineTo(58 * S, 62 * S);
+      g.lineTo(104 * S, 78 * S); g.lineTo(102 * S, 104 * S); g.lineTo(44 * S, 76 * S);
+      g.closePath();
+    }, 3.6);
+    line(() => { g.beginPath(); g.moveTo(66 * S, 70 * S); g.lineTo(97 * S, 82 * S); }, 2.0);
+    line(() => { g.beginPath(); g.moveTo(64 * S, 76 * S); g.lineTo(96 * S, 90 * S); }, 1.6);
   } else {
     /* The Gooch. Iceman, on his break, tongs still in the hand. The cap is the
        silhouette, the moustache is the punchline, and he has not moved. */
@@ -579,7 +583,7 @@ class Bubbles {
     const lines = wrap(card.text, size, maxW, opt);
     let wid = 0;
     for (const l of lines) wid = Math.max(wid, slabW(l, size, opt));
-    const badge = isKid ? 0 : 72 * U;
+    const badge = isKid ? 0 : 86 * U;
     const w = wid + P.x * 2 * U + badge;
     const h = lines.length * size * TYPE.lead + (P.top + P.bottom) * U;
     card.lines = lines; card.size = size; card.badge = badge; card.pad = P;
@@ -928,13 +932,11 @@ class Bubbles {
       g.strokeRect(r.x + 7 * U, r.y + 7 * U, r.w - 14 * U, r.h - 14 * U);
       g.lineWidth = Math.max(1, 1.2 * U);
       g.strokeRect(r.x + 12 * U, r.y + 12 * U, r.w - 24 * U, r.h - 24 * U);
-      g.globalAlpha = 0.15;
-      slab(g, '25', r.x + r.w - 24 * U, r.y + r.h - 15 * U, 48 * U,
+      g.globalAlpha = 0.16;
+      slab(g, '25', r.x + r.w - 26 * U, r.y + r.h - 22 * U, 48 * U,
         { align: 'right', color: C(st.accent), weight: 0.26, tracking: 0.04 });
-      g.save();
-      g.translate(r.x + 26 * U, r.y + 17 * U); g.rotate(Math.PI);
-      slab(g, '50', 0, 0, 30 * U, { align: 'center', color: C(st.accent), weight: 0.26, tracking: 0.04 });
-      g.restore();
+      slab(g, 'LBS', r.x + r.w - 27 * U, r.y + r.h - 13 * U, 11 * U,
+        { align: 'right', color: C(st.accent), weight: 0.24, tracking: 0.10 });
       g.globalAlpha = 1;
     }
     // the face — the only attribution either of them gets, so it has to read

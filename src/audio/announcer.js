@@ -682,21 +682,21 @@ const ARGUMENTS = [
  * having the best afternoon of anybody on this street (§8.3: never pathos).
  */
 const NARRATOR = [
-  'Dominick Marino steps in.',
-  'He is looking for the fast one.',
-  'Here is the pitch to Dominick Marino.',
-  'He fouled that off. He meant to do that.',
+  '{ME} steps in.',
+  '{ME} is looking for the fast one.',
+  'Here is the pitch to {ME}.',
+  '{HE} fouled that off. {HE} meant to do that.',
   'The crowd is going wild. The crowd is me.',
   'Strike one. That was a bad call.',
-  'Ball two! Dominick Marino has a good eye!',
-  'He digs in. He digs in a lot.',
-  'Dominick Marino has a plan. The plan is to swing.',
-  'He has never been tagged out. Nobody knows that.',
-  'He is going to hit this one two sewers.',
+  'Ball two! {ME} has a good eye!',
+  '{HE} digs in. {HE} digs in a lot.',
+  '{ME} has a plan. The plan is to swing.',
+  '{ME} has never been tagged out. Nobody knows that.',
+  '{HE} is going to hit this one two sewers.',
   'That is a ball. I am taking my base.',
-  'He is the fastest kid on this block. It is a fact and nobody has looked into it.',
+  '{ME} is the fastest kid on this block. It is a fact and nobody has looked into it.',
   'And the little kid comes through. The little kid always comes through.',
-  'Dominick Marino is not going in for supper. Dominick Marino has not been called.',
+  '{ME} is not going in for supper. {ME} has not been called.',
 ];
 
 /* Tiny mentions his one two-sewer shot about four times an inning. This is one. */
@@ -1080,6 +1080,8 @@ class Announcer {
     this.lastKid = null;
     this.halves = 0;
     this.introduced = new Set();
+    this.clock = 0;
+    this.lastCallAt = -99;
   }
 
   reset(seed = 1925) {
@@ -1093,6 +1095,8 @@ class Announcer {
     this.climb = null;
     this.halves = 0;
     this.introduced = new Set();
+    this.clock = 0;
+    this.lastCallAt = -99;
     TTS.stop();
   }
 
@@ -1149,6 +1153,18 @@ class Announcer {
 
   line(key, bank) { return this.fill(this.lib.pick(key, bank)); }
 
+  /** The self-narrating kid uses his own name, whoever he turns out to be. */
+  fillSelf(text, kid) {
+    if (!text || text.indexOf('{') < 0) return text;
+    const he = (kid && (kid.sex === 'g' || kid.art?.sex === 'g' || kid.spec?.sex === 'g')) ? 'she' : 'he';
+    const cap = he === 'she' ? 'She' : 'He';
+    return text
+      .replace(/\{ME\}/g, kid?.name || nick(kid))
+      .replace(/\{MY\}/g, nick(kid))
+      .replace(/\{HE\}/g, cap)
+      .replace(/\{he\}/g, he);
+  }
+
   /* --- the two-hander: straight, then strange one beat later ------------- */
   call(key, bank, goochKey, goochBank, o = {}) {
     const text = this.line(key, bank);
@@ -1179,7 +1195,7 @@ class Announcer {
     const isKey = typeof kindOrText === 'string' && CHATTER[kindOrText];
     const body = o.body || this.chatterBody(isKey ? kindOrText : o.kind);
     const kid = kidFromBody(body);
-    const text = isKey ? this.lib.pick('ch:' + kindOrText, CHATTER[kindOrText]) : kindOrText;
+    const text = this.fillSelf(this.fill(isKey ? this.lib.pick('ch:' + kindOrText, CHATTER[kindOrText]) : kindOrText), kid);
     const beat = {
       text, kind: o.kind === 'shout' || /!$/.test(text) ? 'shout' : 'talk',
       body, accent: ACCENTS[kid?.accent] ?? undefined,
@@ -1192,6 +1208,19 @@ class Announcer {
     });
     voice('kid', beat);
     this.quiet = Math.min(this.quiet, 1.2);
+    // §8.2: a gag the player can cause on purpose. Two kids call for the same
+    // ball inside a second and a bit, and they run into each other. The setup
+    // frame is the second MINE, the payoff is the pile-up, and it is about a
+    // second apart.
+    if (isKey && kindOrText === 'call') {
+      if (this.clock - this.lastCallAt < 1.25 && this.rnd.chance(0.55)) {
+        this.lastCallAt = -99;
+        this.after(0.5, () => {
+          this.dot.interrupt([{ text: this.line('dot:collision', DOT.collision), kind: 'shout' }]);
+          this.after(1.9, () => this.gooch.interrupt([{ text: this.line('gooch:collision', GOOCH.after_collision) }]));
+        });
+      } else this.lastCallAt = this.clock;
+    }
     return beat;
   }
 
@@ -1291,6 +1320,7 @@ class Announcer {
 
   /* --- tick --------------------------------------------------------------- */
   update(dt) {
+    this.clock += dt;
     for (let i = this.timers.length - 1; i >= 0; i--) {
       const t = this.timers[i];
       t.t -= dt;
@@ -1312,7 +1342,7 @@ class Announcer {
       if (this.gag.tiny < TINY_GAG.length && r < 0.10) {
         this.chatter(TINY_GAG[this.gag.tiny++], { body: this.chatterBody() });
       } else if (r < 0.24) {
-        this.chatter(NARRATOR[this.rnd.int(0, NARRATOR.length - 1)], { body: this.chatterBody('narrate') });
+        this.chatter(this.lib.pick('narrate', NARRATOR), { body: this.chatterBody('narrate') });
       } else if (phase === 'in_play') {
         this.chatter('call');
       } else if (r < 0.58) {
@@ -1409,6 +1439,9 @@ class Announcer {
 
     bus.on('run', () => {
       this.after(0.35, () => { this.dot.interrupt([{ text: this.line('dot:run', DOT.run), kind: 'shout' }]); this.quiet = 0; });
+      // she keeps the line score in chalk on her own sill, and she will stop a
+      // call dead to go and write on it
+      if (this.rnd.chance(0.3)) this.after(2.5, () => this.dot.interrupt([{ text: this.line('dot:sill', DOT.sill) }]));
     });
 
     bus.on('field:catch', (p) => {
@@ -1435,6 +1468,7 @@ class Announcer {
       // §8.2: at least one announcer non sequitur per half-inning. Guaranteed.
       this.after(2.4, () => this.runGag());
       this.after(5.0, () => this.gooch.interrupt([{ text: this.line('gooch:between', GOOCH.between) }]));
+      if (this.rnd.chance(0.34)) this.after(8.2, () => this.twoHander());
     });
 
     bus.on('game:over', () => {
@@ -1509,7 +1543,8 @@ function stage(name) {
     announcer.gooch.say([{ text: 'The Gooch would have swung at that. The Gooch would have missed it.' }]);
     announcer.chatter('He shuts his eyes! I saw him!', { body: p?.catcher, kind: 'shout' });
     announcer.chatter('Sez who!', { body: p?.batter, kind: 'shout' });
-    announcer.chatter('Dominick Marino has a plan. The plan is to swing.', { body: p?.stoopKid });
+    const small = [p?.onDeck, p?.stoopKid, p?.catcher].filter(Boolean).find((k) => bubbles.visible(APP, k, 11)) || p?.onDeck;
+    announcer.chatter('{ME} has a plan. The plan is to swing.', { body: small });
   } else if (name === 'chatter') {
     announcer.chatter('Chuck it here!', { body: p?.catcher, kind: 'shout' });
     announcer.chatter('Swing, ya bum!', { body: p?.onDeck, kind: 'shout' });
