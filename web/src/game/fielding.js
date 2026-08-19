@@ -1930,11 +1930,10 @@ class Overlay {
        */
       const dxb = bag.x - k.pos.x, dzb = bag.z - k.pos.y;
       const mb = Math.max(1e-3, Math.hypot(dxb, dzb));
-      const bowX = (dzb / mb) * 3.2, bowZ = -(dxb / mb) * 3.2;
-      const at = (u) => {
-        const sag = Math.sin(clamp(u / 0.42, 0, 1) * Math.PI);
-        const x = k.pos.x + dxb * u + bowX * sag;
-        const z = k.pos.y + dzb * u + bowZ * sag;
+      const bowX = dzb / mb, bowZ = -dxb / mb;
+      const at = (u, bow) => {
+        const x = k.pos.x + dxb * u + bowX * (bow || 0);
+        const z = k.pos.y + dzb * u + bowZ * (bow || 0);
         return this.project(app, x, LAYOUT.groundAt(x) + 0.05, z);
       };
       /**
@@ -1963,31 +1962,52 @@ class Overlay {
        * round it, a bit of string up to a torn paper tag, and the kid who is
        * standing on it named on the tag. All the line has to say is WHICH WAY,
        * and which way is a gesture: a short bowed swipe of chalk leaving the
-       * thrower's own feet with an arrow-head on the end of it, ten feet long
-       * and gone. Three of them, one per live bag, make a starburst round the
-       * boy who has to choose — which is the read the whole prompt is about, and
-       * it cannot be mistaken for a girder because it is nowhere near straight
-       * and nowhere near long enough.
+       * thrown side-on with an arrow-head driving into the ring on the bag —
+       * the last quarter of the journey and no more of it. It lands in the same
+       * cluster as the ring, the string and the paper tag, so each live choice
+       * is ONE thing to look at instead of four, and it cannot be mistaken for a
+       * girder because it is nowhere near straight and nowhere near long
+       * enough. The gap in the middle is not a compromise; it is the point.
+       */
+      /**
+       * ... and it is a HOOK, not a dash.
+       *
+       * A straight stroke was tried at three lengths in this round alone — the
+       * full run, sixty per cent of it, the last quarter — and every one of them
+       * photographed as a stick lying in the gutter, because the fault is not
+       * length, it is STRAIGHTNESS: nothing else on this street is a smooth
+       * white line except ironwork, so a smooth white line is ironwork. Five
+       * feet of lateral bow over ten feet of stroke is a comma, and there is no
+       * comma-shaped scaffolding in New York. It swings out to the side and
+       * comes back in with the arrow-head on it, driving into the chalk ring on
+       * the bag — the same cluster as the ring, the string and the paper tag, so
+       * each live choice is one thing to look at instead of four.
        */
       const flick = [];
-      for (let i = 0; i <= 7; i++) {
-        const sp = at(0.09 + (i / 7) * 0.21);
+      const N = 8, U0 = 0.64, U1 = 0.93, BOW = lit ? 5.2 : 3.6;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const sp = at(U0 + t * (U1 - U0), Math.sin(t * Math.PI) * BOW);
         if (sp) flick.push([sp.x, sp.y]);
       }
-      if (flick.length > 2) {
-        chalkMark(g, flick, (lit ? 7.0 : 2.6) * U, 37 + card.bag.length, al * (lit ? 1 : 0.8));
-        if (lit) chalkMark(g, flick, 3.0 * U, 43 + card.bag.length, al * 0.55);
+      // AND IT IS BROKEN. A curve is most of the answer; a curve with the chalk
+      // lifted once in the middle of it is all of it, because ironwork does not
+      // come in two pieces with a hand's width of road between them.
+      if (flick.length > 6) {
+        const head = flick.slice(0, 4), tail = flick.slice(5);
+        chalkMark(g, head, (lit ? 5.2 : 2.0) * U, 37 + card.bag.length, al * (lit ? 0.88 : 0.7));
+        chalkMark(g, tail, (lit ? 6.8 : 2.6) * U, 41 + card.bag.length, al * (lit ? 1 : 0.85));
+        if (lit) chalkMark(g, tail, 2.6 * U, 43 + card.bag.length, al * 0.5);
       }
-      // and the head on the end of the swipe, pointing up the street at the bag
-      const a1 = at(0.335), a0 = at(0.27);
+      const a1 = flick[flick.length - 1], a0 = flick[flick.length - 3];
       if (a1 && a0) {
-        const ang = Math.atan2(a1.y - a0.y, a1.x - a0.x);
-        const L = (lit ? 30 : 14) * U;
+        const ang = Math.atan2(a1[1] - a0[1], a1[0] - a0[0]);
+        const L = (lit ? 32 : 14) * U;
         chalkMark(g, [
-          [a1.x - Math.cos(ang + 0.62) * L, a1.y - Math.sin(ang + 0.62) * L],
-          [a1.x, a1.y],
-          [a1.x - Math.cos(ang - 0.62) * L, a1.y - Math.sin(ang - 0.62) * L],
-        ], (lit ? 8.0 : 3.2) * U, 63 + card.bag.length, al);
+          [a1[0] - Math.cos(ang + 0.66) * L, a1[1] - Math.sin(ang + 0.66) * L],
+          [a1[0], a1[1]],
+          [a1[0] - Math.cos(ang - 0.66) * L, a1[1] - Math.sin(ang - 0.66) * L],
+        ], (lit ? 8.6 : 3.2) * U, 63 + card.bag.length, al);
       }
 
       // THE RING. On the good one it is drawn twice, fast, the way a kid rings
@@ -2022,6 +2042,7 @@ class Overlay {
     //    `roadTop` is where the street stops and the shopfronts start, measured
     //    off the locked field framing: nothing chalked or torn goes above it.
     const roadTop = this.h * 0.27;
+    const said = this.saidRects();
     const boxes = [];
     for (const card of pr.cards) {
       const bag = BAG[card.bag];
@@ -2065,6 +2086,15 @@ class Overlay {
       if (bp && bp.x > b.x - 40 * U && bp.x < b.x + b.w + 40 * U
           && bp.y > b.y - 26 * U && bp.y < b.y + b.h + 26 * U) {
         b.y = clamp(bp.y - b.h - 48 * U, roadTop, this.h - b.h - 96 * U);
+      }
+      // clear of anything the booth is about to say
+      for (const r of said) {
+        if (b.x < r.x + r.w + 6 * U && b.x + b.w + 6 * U > r.x
+            && b.y < r.y + r.h + 6 * U && b.y + b.h + 6 * U > r.y) {
+          const up = r.y - b.h - 12 * U, down = r.y + r.h + 12 * U;
+          b.y = (b.y - up < down - b.y && up > roadTop) ? up : down;
+          b.y = clamp(b.y, roadTop, this.h - b.h - 96 * U);
+        }
       }
       // clear of each other
       for (let j = 0; j < i; j++) {
@@ -2293,6 +2323,9 @@ class Overlay {
         if (bl) avoid.push({ x: bl.x, y: bl.y, r: (near ? 46 : 38) * U, w: near ? 3.0 : 1.2 });
       }
     }
+    for (const r of this.saidRects()) {
+      avoid.push({ x: r.x + r.w / 2, y: r.y + r.h / 2, r: Math.max(r.w, r.h) * 0.46, w: 2.2 });
+    }
     const rw = wpx * 0.5 + 20 * U, rh = size * 0.52;
     const seats = [];
     for (let ring = 0; ring < 3; ring++) {
@@ -2319,7 +2352,13 @@ class Overlay {
     for (const c of seats) {
       const X = clamp(c.x, rw + 64 * U, this.w - rw - 64 * U);
       const Y = clamp(c.y, rh + 84 * U, this.h - rh - 44 * U);
-      let sc2 = -Math.hypot(X - want.x, Y - want.y) * 0.62;
+      // ... and it stays on the ROAD. A call is chalked on asphalt by a kid with
+      // a stub of chalk; the same word floating over a lunchroom awning is a HUD
+      // element, which §11 does not allow to exist. Measured on `field_fly`, the
+      // clearest seat round a catch made at the top of the play area is up among
+      // the storefronts, so the storefronts have to cost something.
+      let sc2 = -Math.hypot(X - want.x, Y - want.y) * 0.80
+              - Math.max(0, this.h * 0.37 - Y) * 1.4;
       for (const a of avoid) {
         const dx = Math.max(0, Math.abs(X - a.x) - rw);
         const dy = Math.max(0, Math.abs(Y - a.y) - rh);
@@ -2366,6 +2405,27 @@ class Overlay {
     slab(g, p.callWord, 0, 0, size, { ...opt, color: C(mix(CHALK, col, 0.18)), weight: 0.32 });
     slab(g, p.callWord, 0, 0, size, { ...opt, color: C(col), weight: 0.205 });
     g.restore();
+  }
+
+    /**
+   * WHAT SOMEBODY ELSE IS ABOUT TO DRAW ON TOP OF THIS.
+   *
+   * src/ui/bubbles.js paints at order 320, one layer above this one, so a torn
+   * paper tag solved into the same hundred pixels as a kraft speech bubble is a
+   * tag the player never sees — measured on `throw_prompt`, the HOME tag spent
+   * the whole prompt underneath 'LET ME HAVE IT!'. That file publishes its
+   * solved rectangles and this one reads them; nothing here writes to it.
+   */
+  saidRects() {
+    const out = [];
+    const cards = bubbles && bubbles.cards;
+    if (!cards) return out;
+    const k = this.h / 900 / Math.max(1e-3, bubbles.U || 1);
+    for (const c of cards) {
+      if (!c || !c.pos || !c.rect || !c.rect.w) continue;
+      out.push({ x: c.pos.x * k, y: c.pos.y * k, w: c.rect.w * k, h: c.rect.h * k });
+    }
+    return out;
   }
 
   /** Screen hit-test for mouse and touch. */

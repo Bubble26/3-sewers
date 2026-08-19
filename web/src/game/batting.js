@@ -1023,6 +1023,14 @@ const system = registerSystem({
     // scenario, so no other piece's shot ever loses its writing.
     const quiet = name === 'hop_read' || name === 'swing_timing';
     if (app.bubbles) { app.bubbles.enabled = !quiet; if (quiet) app.bubbles.clear?.(); }
+    // Clearing the cards empties their canvas but does not always retire the layer the
+    // browser has already composited, so the sheet ends up read through yesterday's
+    // speech. Hiding the layer outright is the only thing that reliably takes, and it is
+    // put straight back for every other scenario.
+    if (typeof document !== 'undefined') {
+      const layer = document.getElementById('sb-bubbles');
+      if (layer) layer.style.visibility = quiet ? 'hidden' : '';
+    }
     app.sim.windupRate = 1;
     app.sim.releaseAt = contact ? 0.70 : null;
     app.sim.autoPress = contact ? 0 : null;
@@ -1198,7 +1206,7 @@ function drawHopBoard(g, R, S, H) {
     chalkPath(g, [[x, base + H * 0.010], [x + W * 0.010, base + H * 0.026]], R, { width: H * 0.005, alpha: 0.35 });
   }
   chalkPath(g, [[X(0), base + H * 0.03], [X(0), top - H * 0.03]], R, { width: H * 0.007, alpha: 0.4, dash: H * 0.020 });
-  word(g, 'THE STONE', X(0) - W * 0.008, top + H * 0.010, H * 0.038, { align: 'right', alpha: 0.75 });
+  word(g, 'THE STONE', X(0) - W * 0.008, top + H * 0.038, H * 0.038, { align: 'right', alpha: 0.75 });
 
   // the ruler along the bottom
   for (let ms = 0; ms <= 600; ms += 100) {
@@ -1244,22 +1252,36 @@ function drawHopBoard(g, R, S, H) {
     }
   });
 
+  // The gaps, bracketed on the ruler between the three press arrows. Written out along
+  // the bottom of the sheet they fell across whichever kid was standing in front of it;
+  // drawn where the presses are, they are the same fact and it cannot be misread.
+  for (const [a, b, lab] of [[250, 370, '120 MS'], [370, 530, '160 MS']]) {
+    const x0 = X(a), x1 = X(b), y = base - H * 0.088;
+    chalkPath(g, [[x0, y], [x1, y]], R, { width: H * 0.006, alpha: 0.62 });
+    for (const x of [x0, x1]) chalkPath(g, [[x, y - H * 0.014], [x, y + H * 0.014]], R, { width: H * 0.006, alpha: 0.62 });
+    word(g, lab, (x0 + x1) / 2, y - H * 0.022, H * 0.028, { align: 'center', alpha: 0.72 });
+  }
+
   // the caliper on the worst pair, measured where the source measured it
   const [pf, ps] = plans;
   const cx = X(100);
   const ya = Y(hopY(pf, pf.tBounce + 0.100)), yb = Y(hopY(ps, ps.tBounce + 0.100));
-  const off = W * 0.042;
+  const off = W * 0.030;
   chalkPath(g, [[cx - off, ya], [cx - off, yb]], R, { width: H * 0.008, alpha: 0.9 });
-  chalkPath(g, [[cx - off * 1.6, ya], [cx - off * 0.15, ya]], R, { width: H * 0.007, alpha: 0.9 });
-  chalkPath(g, [[cx - off * 1.6, yb], [cx - off * 0.15, yb]], R, { width: H * 0.007, alpha: 0.9 });
-  word(g, `${sep.at100.worst.toFixed(2)} BALL APART AT 100 MS`, cx - off * 2.0, (ya + yb) / 2 + H * 0.012, H * 0.036,
-    { align: 'right', alpha: 0.92 });
+  chalkPath(g, [[cx - off * 1.5, ya], [cx - off * 0.15, ya]], R, { width: H * 0.007, alpha: 0.9 });
+  chalkPath(g, [[cx - off * 1.5, yb], [cx - off * 0.15, yb]], R, { width: H * 0.007, alpha: 0.9 });
+  // ...and its reading. The number rides in the headline block, which is the only place on
+  // a sheet this crowded that is guaranteed clear paper at any tuning; the caliper itself
+  // carries just the figure, small, so the drawing and the claim cannot come apart.
+  word(g, sep.at100.worst.toFixed(2), cx - off * 1.7, (ya + yb) / 2 + H * 0.012, H * 0.028,
+    { align: 'right', alpha: 0.85 });
 
   // the headline
   word(g, 'EVERY PITCH BOUNCES ONCE', W * 0.055, H * 0.115, H * 0.082, { seed: 11 });
   word(g, 'AND THE HOP IS THE TELL', W * 0.055, H * 0.192, H * 0.055, { alpha: 0.72, seed: 13 });
-  word(g, 'THE THREE PRESSES ARE 120 AND 160 MS APART. NO ONE RHYTHM FITS TWO.',
-    W * 0.055, H * 0.985, H * 0.031, { alpha: 0.58, seed: 17 });
+  word(g, `WORST PAIR ${sep.at100.worst.toFixed(2)} BALLS APART 100 MS OFF THE STONE`,
+    W * 0.055, H * 0.250, H * 0.030, { alpha: 0.60, seed: 15 });
+  word(g, 'NO ONE RHYTHM FITS TWO', W * 0.955, H * 0.955, H * 0.031, { align: 'right', alpha: 0.55, seed: 17 });
 }
 
 function buildHopChart(app) {
@@ -1333,7 +1355,7 @@ function drawWindowBoard(type) {
     const L = W * 0.070, Rt = W * 0.955;
     const MS0 = -40, MS1 = 700;
     const X = (ms) => L + (Rt - L) * clamp((ms - MS0) / (MS1 - MS0), 0, 1);
-    const axis = H * 0.415;
+    const axis = H * 0.375;
 
     chalkPath(g, [[X(MS0), axis], [X(MS1), axis]], R, { width: H * 0.011, alpha: 0.85 });
     for (let ms = 0; ms <= 700; ms += 50) {
@@ -1345,60 +1367,55 @@ function drawWindowBoard(type) {
     // what each press CLAIMS. Half the gap, no further: the spans tile the line and never
     // overlap, which is why one fixed delay cannot be right about two pitches.
     const spans = claimSpans();
-    const cy = axis + H * 0.115;
+    const cy = axis + H * 0.150;
     spans.forEach((sp, i) => {
       const x0 = X(Math.max(MS0 + 8, sp.lo)), x1 = X(Math.min(MS1 - 8, sp.hi));
       const live = sp.type === type;
       chalkPath(g, [[x0, cy], [x1, cy]], R, { width: H * 0.009, alpha: live ? 0.9 : 0.4 });
       for (const x of [x0, x1]) chalkPath(g, [[x, cy - H * 0.026], [x, cy + H * 0.026]], R,
         { width: H * 0.009, alpha: live ? 0.9 : 0.4 });
-      if (i === 1) word(g, 'WHAT EACH PRESS CLAIMS', (x0 + x1) / 2, cy + H * 0.075, H * 0.038,
-        { align: 'center', alpha: 0.6 });
+      if (i === 1) word(g, 'WHAT EACH PRESS CLAIMS - 120 AND 160 MS APART, SO NO TWO OVERLAP',
+        (x0 + x1) / 2, cy + H * 0.070, H * 0.038, { align: 'center', alpha: 0.6 });
     });
 
     // the three ideal presses
     for (const k of PITCH_TYPES) {
       const x = X(IDEAL_AFTER[k]);
       const live = k === type;
-      chalkPath(g, [[x, axis - H * (live ? 0.115 : 0.070)], [x, cy + H * 0.026]], R,
+      chalkPath(g, [[x, axis - H * (live ? 0.068 : 0.048)], [x, cy + H * 0.026]], R,
         { width: H * (live ? 0.017 : 0.009), alpha: live ? 1 : 0.45 });
       word(g, NAMES[k], x, axis - H * 0.135, H * 0.052, { align: 'center', alpha: live ? 1 : 0.55 });
-      word(g, `${Math.round(IDEAL_AFTER[k])} MS`, x, axis + H * 0.072, H * 0.040,
+      word(g, `${Math.round(IDEAL_AFTER[k])} MS`, x, axis - H * 0.078, H * 0.038,
         { align: 'center', alpha: live ? 0.9 : 0.5 });
     }
 
-    // the gaps, which are the whole guarantee
-    for (const [a, b, lab] of [[IDEAL_AFTER.fast, IDEAL_AFTER.spinner, '120 MS'],
-      [IDEAL_AFTER.spinner, IDEAL_AFTER.drop, '160 MS']]) {
-      const x0 = X(a), x1 = X(b), y = axis - H * 0.215;
-      chalkPath(g, [[x0, y], [x1, y]], R, { width: H * 0.007, alpha: 0.7 });
-      for (const x of [x0, x1]) chalkPath(g, [[x, y - H * 0.018], [x, y + H * 0.018]], R, { width: H * 0.007, alpha: 0.7 });
-      word(g, lab, (x0 + x1) / 2, y - H * 0.026, H * 0.042, { align: 'center', alpha: 0.85 });
-    }
-
+    // The gaps are not bracketed separately here: the claim row IS the gaps, halved, and a
+    // second set of brackets above the presses ran straight through the sheet's title.
     // the window that is actually live, for the pitch in the air
     const open = X(IDEAL_AFTER[type] - P.swingEarly * 1000);
     const close = X(IDEAL_AFTER[type] + P.swingLate * 1000);
     g.save();
     g.globalAlpha = 0.16;
     g.fillStyle = INK_CSS;
-    g.fillRect(open, axis - H * 0.052, close - open, H * 0.104);
+    g.fillRect(open, axis - H * 0.042, close - open, H * 0.084);
     g.restore();
-    chalkPath(g, [[open, axis - H * 0.052], [close, axis - H * 0.052]], R, { width: H * 0.008, alpha: 0.8 });
-    chalkPath(g, [[open, axis + H * 0.052], [close, axis + H * 0.052]], R, { width: H * 0.008, alpha: 0.8 });
-    word(g, `${NAMES[type]} SWING WINDOW 310 MS`, (open + close) / 2, axis - H * 0.070, H * 0.038,
+    chalkPath(g, [[open, axis - H * 0.042], [close, axis - H * 0.042]], R, { width: H * 0.008, alpha: 0.8 });
+    chalkPath(g, [[open, axis + H * 0.042], [close, axis + H * 0.042]], R, { width: H * 0.008, alpha: 0.8 });
+    word(g, `${NAMES[type]} SWING WINDOW 310 MS`, (open + close) / 2, axis + H * 0.098, H * 0.038,
       { align: 'center', alpha: 0.85 });
 
     // THE BLIND RHYTHM, where the search actually put it, drawn falling through one press
     const blind = pr.after.rows.find((r) => r.name === pr.sharp.name) || pr.after.rows[0];
     const bx = X(blind.bestBlindDelay);
-    chalkPath(g, [[bx, H * 0.055], [bx, cy + H * 0.055]], R, { width: H * 0.008, alpha: 0.55, dash: H * 0.020 });
+    chalkPath(g, [[bx, H * 0.150], [bx, cy + H * 0.055]], R, { width: H * 0.008, alpha: 0.55, dash: H * 0.020 });
     chalkDot(g, bx, cy + H * 0.055, H * 0.017, { fill: '#f2828a' });
-    word(g, `BEST BLIND RHYTHM ${blind.bestBlindDelay} MS`, bx + W * 0.010, H * 0.075, H * 0.040, { alpha: 0.8 });
-    word(g, 'FITS ONE. ONLY ONE.', bx + W * 0.010, H * 0.118, H * 0.036, { alpha: 0.6 });
+    // right-hand shoulder of the sheet, where the title cannot reach it
+    chalkPath(g, [[Rt - W * 0.265, H * 0.105], [bx + W * 0.006, H * 0.150]], R, { width: H * 0.005, alpha: 0.4 });
+    word(g, `BEST BLIND RHYTHM ${blind.bestBlindDelay} MS`, Rt, H * 0.085, H * 0.040, { align: 'right', alpha: 0.8 });
+    word(g, 'FITS ONE. ONLY ONE.', Rt, H * 0.135, H * 0.036, { align: 'right', alpha: 0.6 });
 
     /* ---- the measurement ------------------------------------------------- */
-    const ty = H * 0.700;
+    const ty = H * 0.690;
     chalkPath(g, [[L, ty - H * 0.055], [Rt, ty - H * 0.055]], R, { width: H * 0.006, alpha: 0.45 });
     word(g, `THE RHYTHM TEST - ALL ${pr.kids} KIDS, EVERY FIXED DELAY FROM 120 TO 700 MS`,
       L, ty, H * 0.045, { alpha: 0.7 });
@@ -1426,8 +1443,10 @@ function drawWindowBoard(type) {
 function buildTimingChart(app) {
   const type = app.sim.hop ? app.sim.hop.type : 'fast';
   if (system.timing) { app.scene.remove(system.timing); system.timing = null; }
-  const m = boardMesh(`bat:board:win:${type}`, drawWindowBoard(type), { w: 34, h: 12.4, px: 2048 });
-  m.position.set(-0.6, 15.0, 30);
+  const m = boardMesh(`bat:board:win:${type}`, drawWindowBoard(type), { w: 34, h: 11.6, px: 2048 });
+  // -5.9, not -0.6: the stage camera stands off the plate's axis, so a sheet centred on
+  // the street is not centred in the frame. Measured off the shot, like everything else.
+  m.position.set(-5.9, 17.4, 30);
   m.rotation.y = Math.PI;          // face down the street, at the camera
   m.rotation.z = -0.010;
   m.name = 'swing_window_board';
