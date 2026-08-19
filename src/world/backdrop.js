@@ -346,6 +346,14 @@ function wagonBay(card, lot, r) {
   faceQuad(Sb, xf - 0.5, 8.4, 9.4, z0 + 0.8, z0 + 2.8, texTint(0.74), rectUV(A.get('numbers')));
   // one bill, pasted on the door that asks you not to
   faceQuad(Sb, xf - 0.46, 5.2, 5.9, cz + 0.7, cz + 3.6, texTint(0.74, 0.05), rectUV(A.get('postnobills')));
+  // a stepped gable over the arch: the one break in the taxpayer's roofline
+  const gTop = buildingTop(lot.storeys);
+  for (let i = 0; i < 3; i++) {
+    const hw = 10.5 - i * 3.0;
+    W.box(xf - 0.1, gTop - 0.4 + i * 1.5, cz - hw, xf + 0.9, gTop + 1.1 + i * 1.5, cz + hw, wall, 'nx py', 8);
+    Tb.box(xf - 0.55, gTop + 0.85 + i * 1.5, cz - hw - 0.45, xf + 0.2, gTop + 1.25 + i * 1.5, cz + hw + 0.45,
+      (f, n, c) => shadeLin(lot.stoneHex, litOf(n, c[0], c[1], c[2]), f === 'ny' ? 0.4 : 0), 'nx py ny pz nz');
+  }
   // a gooseneck lamp over the arch
   Tb.box(xf - 0.4, head + 5.2, cz - 0.14, xf - 0.1, head + 5.5, cz + 0.14, () => shadeLin(0x3f3a36, 0.2), 'nx py pz nz');
   Tb.cyl(xf - 1.5, cz, 0.8, head + 4.5, head + 5.2, 8, (n, c) => shadeLin(0x4a4a44, litOf(n, c[0], c[1], c[2]) * 0.7), 'py');
@@ -514,8 +522,16 @@ function buildMidBlock(card) {
  * Distance is not the place for a facade kit. These are masses: a stepped roofline, painted
  * window rows, a cornice to say "not a housing block", tanks and pots against the sky.
  */
+/** The baked sun, shifted the way the cards' re-grade shifts it, so one set has one light. */
+function farLit(n, c, shift) {
+  const ndl = n[0] * -0.740 + n[1] * 0.545 + n[2] * -0.393;
+  if (ndl <= 0.02) return 0;
+  return ndl * (0.30 + 0.70 * occlusion(c[0] + shift, c[1], c[2]));
+}
+
 function massRow(card, o) {
   const Tb = card.b('trim'), Sb = card.b('sign'), A = card.atlas;
+  const SH = o.sunShift ?? 0;
   const r = new RNG(o.seed);
   const uv = rectUV(A.get('farwall'));
   const runs = o.gap ? [[o.x0, o.gap[0]], [o.gap[1], o.x1]] : [[o.x0, o.x1]];
@@ -528,7 +544,7 @@ function massRow(card, o) {
       const hex = r.chance(0.34) ? FACADE.ochre : r.chance(0.5) ? FACADE.brickSoot : FACADE.brick;
       const z = o.z + r.range(0, o.jitter || 0);
       Tb.box(x + 0.7, 0, z, x + w - 0.7, h, z + o.depth,
-        (f, n, c) => shadeLin(hex, litOf(n, c[0], c[1], c[2]) * 0.94, f === 'ny' ? 0.4 : 0), 'nz px nx py');
+        (f, n, c) => shadeLin(hex, farLit(n, c, SH) * 0.96, f === 'ny' ? 0.4 : 0), 'nz px nx py');
       // painted window rows — at this distance a window is a rectangle of value, nothing more
       const rows = Math.max(1, Math.round(h / 40));
       for (let k = 0; k < rows; k++) {
@@ -538,12 +554,12 @@ function massRow(card, o) {
           texTint(0.34 * clamp01((y0 - o.shadeTo) / 24 + 0.25), 0.05), uv, [0, 0, -1]);
       }
       Tb.box(x, h, z - 2.0, x + w, h + 2.2, z + 1.4,
-        (f, n, c) => shadeLin(r.chance(0.5) ? 0x4c4a3c : 0x5b3b33, litOf(n, c[0], c[1], c[2]) * 0.9,
+        (f, n, c) => shadeLin(r.chance(0.5) ? 0x4c4a3c : 0x5b3b33, farLit(n, c, SH) * 0.9,
           f === 'ny' ? 0.5 : 0), 'nz py ny px nx');
       if (r.chance(0.7)) {
         const cx = x + w * r.range(0.2, 0.8);
         Tb.box(cx - 1.5, h + 2.2, z + 5, cx + 1.5, h + 2.2 + r.range(4, 9), z + 8,
-          (f, n, c) => shadeLin(FACADE.brickSoot, litOf(n, c[0], c[1], c[2]), 0), 'nz px nx py');
+          (f, n, c) => shadeLin(FACADE.brickSoot, farLit(n, c, SH), 0), 'nz px nx py');
       }
       if (i % 2 === 1) {
         const tx = x + w * 0.5, tz = z + 13;
@@ -552,7 +568,7 @@ function massRow(card, o) {
             () => shadeLin(0x5a4a3c, 0.18), 'nz px nx');
         }
         Tb.cyl(tx, tz, 5.0, h + 11, h + 20, 12,
-          (n, c) => shadeLin(0x8e8579, litOf(n, c[0], c[1], c[2]) * 0.9), '');
+          (n, c) => shadeLin(0x8e8579, farLit(n, c, SH) * 0.9), '');
         Tb.cyl(tx, tz, 5.2, h + 19.5, h + 20.7, 12, () => shadeLin(0x4a4038, 0.16), '');
         Tb.box(tx - 0.4, h + 20.7, tz - 0.4, tx + 0.4, h + 24, tz + 0.4, () => shadeLin(0x4a4038, 0.2), 'nz px nx py');
       }
@@ -573,7 +589,7 @@ function buildFarBlock(card) {
   massRow(card, {
     z: card.z, x0: -170, x1: 170, gap: [-39, 5], seed: 4177,
     wMin: 14, wSpan: 13, hMin: 24, hSpan: 17, crest: 15, crestIn: 40, crestW: 100,
-    depth: 32, jitter: 6, shadeTo: 30, ghosts: { at: 4, key: 'goldDust' },
+    depth: 32, jitter: 6, shadeTo: 30, sunShift: 44, ghosts: { at: 4, key: 'goldDust' },
   });
   apron(card, 190, CARD_Z.elevated - 4, 170);
   hazeCard(card, 0.42);
@@ -594,25 +610,25 @@ function buildSky(card) {
   for (const [x, w, h] of towers) {
     const hex = r.chance(0.5) ? FACADE.partyWall : FACADE.ochreShade;
     Tb.box(x, 0, card.z, x + w, h, card.z + 40,
-      (f, n, c) => shadeLin(hex, litOf(n, c[0], c[1], c[2]) * 0.8, 0), 'nz px nx py');
+      (f, n, c) => shadeLin(hex, farLit(n, c, 70) * 0.82, 0), 'nz px nx py');
     Tb.box(x - 1.8, h, card.z - 2, x + w + 1.8, h + 3.4, card.z + 2,
-      (f, n, c) => shadeLin(hex, litOf(n, c[0], c[1], c[2]) * 0.68, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
+      (f, n, c) => shadeLin(hex, farLit(n, c, 70) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
     if (r.chance(0.4)) {
       const sx = x + w * r.range(0.25, 0.75);
       Tb.cyl(sx, card.z + 12, 2.9, h, h + r.range(14, 26), 10,
-        (n, c) => shadeLin(0x8a6a54, litOf(n, c[0], c[1], c[2]) * 0.6), '');
+        (n, c) => shadeLin(0x8a6a54, farLit(n, c, 70) * 0.62), '');
     }
   }
   // a steeple, because a skyline of boxes is a skyline nobody drew
   const sx = -6, sy = 74;
   Tb.box(sx - 7, 0, card.z + 4, sx + 7, sy, card.z + 22,
-    (f, n, c) => shadeLin(FACADE.partyWall, litOf(n, c[0], c[1], c[2]) * 0.8, 0), 'nz px nx py');
+    (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, 70) * 0.82, 0), 'nz px nx py');
   Tb.box(sx - 8.5, sy, card.z + 2, sx + 8.5, sy + 3, card.z + 24,
-    (f, n, c) => shadeLin(FACADE.partyWall, litOf(n, c[0], c[1], c[2]) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
+    (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, 70) * 0.7, f === 'ny' ? 0.3 : 0), 'nz py ny px nx');
   for (let i = 0; i < 7; i++) {
     const t = i / 7, ww = 6.5 * (1 - t) + 0.9;
     Tb.box(sx - ww, sy + 3 + i * 4.6, card.z + 6 + t * 3, sx + ww, sy + 7.6 + i * 4.6, card.z + 20 - t * 3,
-      (f, n, c) => shadeLin(FACADE.partyWall, litOf(n, c[0], c[1], c[2]) * (0.78 - t * 0.1), 0), 'nz px nx py');
+      (f, n, c) => shadeLin(FACADE.partyWall, farLit(n, c, 70) * (0.8 - t * 0.1), 0), 'nz px nx py');
   }
   hazeCard(card, 0.82);
 }
