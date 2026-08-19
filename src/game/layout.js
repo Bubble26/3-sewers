@@ -648,6 +648,32 @@ export const LAYOUT = {
   POSTS, ON_DECK, BENCH, SPECTATORS, SCENERY, MOB,
   groundAt, clamp, chase, blocks,
   spot: (id) => BY_ID.get(id) || null,
+  /**
+   * What separate() thinks it did, in pixels, for whoever has to argue with it next.
+   * `__SB.app.layout.frames()` in the console prints every body's predicted rectangle in
+   * both locked framings and every pair it still considers merged.
+   */
+  frames() {
+    const out = [];
+    lockedViews().forEach((v, i) => {
+      const rows = [];
+      for (const b of posted()) {
+        const f = footprint(v, b);
+        if (f) rows.push({ id: b.id || b.kid, x: +b.x.toFixed(1), z: b.z, cx: Math.round(f.cx), hw: Math.round(f.hw), top: Math.round(f.top), bot: Math.round(f.bot) });
+      }
+      const merged = [];
+      for (let a = 0; a < rows.length; a++) {
+        for (let c = a + 1; c < rows.length; c++) {
+          const A = rows[a], B = rows[c];
+          if (A.bot <= B.top || B.bot <= A.top) continue;
+          const want = A.hw + B.hw - 0.4 * Math.min(A.hw, B.hw);
+          if (Math.abs(A.cx - B.cx) < want) merged.push(`${A.id}/${B.id} ${Math.abs(A.cx - B.cx)}<${Math.round(want)}`);
+        }
+      }
+      out.push({ view: i ? 'field' : 'batting', rows, merged });
+    });
+    return out;
+  },
   /** Every body this file places, for diagnostics and for anyone drawing marks. */
   all() {
     return [

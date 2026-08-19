@@ -3,6 +3,7 @@ import { registerSystem, app as APP } from '../app.js';
 import { T } from '../core/tuning.js';
 import { bus } from '../core/bus.js';
 import { registerScenario } from '../core/scenarios.js';
+import { allColliders } from '../world/colliders.js';
 
 /**
  * cameras.js — THE CAMERA DIRECTOR (docs/DESIGN-BIBLE.md §17)
@@ -161,21 +162,21 @@ const COMPOSITION = {
     // is what puts the cornices, the fire escapes, the El and the sky in the top of the shot
     // the game is mostly played in.
     plateY: -0.70,
-    keyX: 0.10,          // the pitcher's chest, in NDC x — the shot is aimed at him
+    keyX: -0.14,         // the pitcher's chest, in NDC x — the shot is aimed at him
     keyY: 0.02,
-    batterX: -0.32,      // …with the batter this far off him: an over-the-shoulder, not a stack
+    batterX: 0.22,       // …with the batter this far off him: an over-the-shoulder, not a stack
     deepY: 0.02,         // the deepest kid's head sits just above the middle
     feetFloor: -0.90,    // no kid's feet below this: it is the follow-tilt's whole budget
     horizonY: [0.10, 0.52],
     topCard: [28, 48],   // where the top of frame crosses the near-facade card, in feet
-    pitch: [0.5, 5.0],
-    yaw: [24, 34],       // §17.4 lets BATTING off the axis; this is the half of the cut it owns
-    camX: [-42, -16],
-    dist: [56, 92],
+    pitch: [1.5, 8.0],
+    yaw: [-28, -12],       // §17.4 lets BATTING off the axis; this is the half of the cut it owns
+    camX: [8, 22],
+    dist: [50, 72],
     minPlay: 10,          // every lead and every fielder, whole, in frame
     centreCast: false,
     sepFrom: 'field',
-    sepMin: 30.5,
+    sepMin: 27.0,
   },
   field: {
     // The wide one: square to the street (§17.4), a storey higher, raked down far enough that
@@ -190,14 +191,14 @@ const COMPOSITION = {
     feetFloor: -0.93,
     horizonY: [0.18, 0.72],
     topCard: [20, 42],
-    pitch: [6.5, 10.5],
+    pitch: [7.0, 15.0],
     yaw: [0, 0],
     camX: [-6, 8],
-    dist: [60, 88],
+    dist: [64, 88],
     minPlay: 10,
     centreCast: true,
     sepFrom: 'batting',  // …and this far off the other framing's axis, in degrees
-    sepMin: 30.5,
+    sepMin: 27.0,
   },
 };
 
@@ -568,14 +569,14 @@ const W = {
   card: 90,         // where the top of frame crosses the near facade: the block's own number
   horizon: 200,     // …and whether the horizon is in the picture at all
   key: 70,          // the key subject's height in frame
-  pair: 190,        // batter vs pitcher: an over-the-shoulder, not one behind the other
+  pair: 620,        // batter vs pitcher: an over-the-shoulder, not one behind the other
   cheat: 260,       // how hard §17.6's staged scale has to work to fix the perspective
   subjScale: 2200,   // …and how hard it has to work on the one kid everybody is looking at
   overlap: 150,     // two kids in one screen column is one kid
   ball: 60,         // the ball's diameter where a hit ball actually lives
   dist: 0.10,       // the smallest pull-back that does the job
-  camX: 22,         // …and stay on your own set
-  sep: 260,         // and be a different SHOT from the other framing
+  camX: 120,        // …and stay on your own set — in the roadway, not under an awning
+  sep: 200,         // and be a different SHOT from the other framing
   curb: 260,        // and stand somewhere a camera can actually stand
 };
 const DECK_Z = -104;      // world/surface.js paves back to z = −96; a soft nudge, not a wall
@@ -593,6 +594,57 @@ const BALL_PROBES = [
   new THREE.Vector3(0, 9, 18),
   new THREE.Vector3(4, 14, 32),
 ];
+
+/* ---------------------------------------------------------------------------
+   IS THERE ANYTHING IN THE WAY?
+
+   A seat in the house is only a seat if you can see the stage from it. The street is a 64-ft
+   canyon with awnings, stoops, pushcart canopies and ash cans down both sidewalks, and the
+   solver found out the hard way: the best-scoring BATTING candidate at one point stood at
+   (−45.3, 15.8, −61.6), which is INSIDE a storefront, and rendered a striped awning across the
+   middle third of the frame. Guessing keep-out boxes is how that happens twice, so the test is
+   run against the world's own geometry — src/world/colliders.js, the same registry the ball
+   uses — and a candidate that cannot see the plate, the pitcher and the deepest kid is not a
+   candidate.
+   ------------------------------------------------------------------------ */
+
+let _occ = null;
+function occluders() {
+  if (_occ) return _occ;
+  _occ = allColliders()
+    .filter((c) => c.box && c.box.max.y > 2 && c.surface !== 'sewer')
+    .map((c) => c.box);
+  return _occ;
+}
+
+/** Slab test: does the segment eye→target enter this box? */
+function segmentHitsBox(eye, target, box) {
+  let t0 = 0, t1 = 1;
+  for (const ax of ['x', 'y', 'z']) {
+    const d = target[ax] - eye[ax];
+    const lo = box.min[ax], hi = box.max[ax];
+    if (Math.abs(d) < 1e-6) { if (eye[ax] < lo || eye[ax] > hi) return false; continue; }
+    let a = (lo - eye[ax]) / d, b = (hi - eye[ax]) / d;
+    if (a > b) { const t = a; a = b; b = t; }
+    if (a > t0) t0 = a;
+    if (b < t1) t1 = b;
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+const _eye = new THREE.Vector3();
+function sightBlocked(view, targets) {
+  const boxes = occluders();
+  _eye.copy(view.pos);
+  let n = 0;
+  for (const t of targets) {
+    for (const b of boxes) {
+      if (segmentHitsBox(_eye, t, b)) { n++; break; }
+    }
+  }
+  return n;
+}
 
 /**
  * Place a candidate view.
@@ -757,6 +809,9 @@ function score(cast, comp, view, dPlate, pitchDeg, key, rows, sepAxis) {
   if (overCurb > 0) cost += W.curb * Math.max(0, 15.5 - view.pos.y);
   if (view.pos.y < 8) cost += W.curb * (8 - view.pos.y);
 
+  // Nothing between the seat and the stage (see occluders()).
+  if (comp.sightlines) cost += BAD * 0.5 * sightBlocked(view, comp.sightlines);
+
   cost += dPlate * W.dist;
   if (view.pos.x < comp.camX[0]) cost += (comp.camX[0] - view.pos.x) * W.camX;
   if (view.pos.x > comp.camX[1]) cost += (view.pos.x - comp.camX[1]) * W.camX;
@@ -779,6 +834,13 @@ function solveFraming(key, cast, plate, leads, sepAxis) {
   const comp = COMPOSITION[key];
   const fov = F.fov;                     // §17.2 — the contract lens, and no other
   const keyPt = key === 'batting' ? (leads.pitcherChest || null) : null;
+  // Three things every seat has to be able to see: the plate, the pitcher, and the far end of
+  // the stage. If any of them is behind an awning the candidate is thrown away.
+  comp.sightlines = [
+    new THREE.Vector3(plate.x, 3.2, plate.z),
+    keyPt ? keyPt.clone() : new THREE.Vector3(0.9, 3.6, 24),
+    new THREE.Vector3(0, 3.2, S.playDepth * 0.9),
+  ];
 
   const view = new View();
   let best = null;

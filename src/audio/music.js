@@ -2240,6 +2240,14 @@ class Music {
     this.layers = [];
     this.count = { balls: 0, strikes: 0 };
     this.pendingBed = null;
+    /**
+     * THE HOOK GETS TO FINISH ITS SENTENCE. A tune nobody hears twice is not a
+     * hook, and the title states its melody bare and then harmonises it. Until
+     * `holdUntil`, no bed may displace the title — a stinger, a walk-up or the
+     * announcer still can, because those are the game talking, but the in-play
+     * bed is only wallpaper and wallpaper does not get to interrupt the theme.
+     */
+    this.holdUntil = 0;
   }
 
   cueNames() { return Object.keys(CUES); }
@@ -2305,12 +2313,16 @@ class Music {
     if (!this.enabled || !CUES[name]) return false;
     const ctx = this.ctx();
     if (!ctx) return false;
+    if (name.startsWith('bed_') && ctx.currentTime < this.holdUntil) return false;
     if (this.live && !opts.layer) this.stop(0.12);
     const t0 = ctx.currentTime + 0.06 + (opts.delay || 0);
     const loop = !!CUES[name].loop;
     const len = loop ? this.span(name) : (CUES[name].seconds || 6);
     const R = this.renderInto(ctx, name, t0, { ...opts, seconds: len, pass: 0, dest: this.dest() });
     if (!R) return false;
+    // 2 bars of intro + the whole first strain at 184 bpm (bar = 1.3043 s): the
+    // hook is stated bare, then harmonised, before any bed is allowed in.
+    if (name === 'title') this.holdUntil = t0 + 13.05;
     const entry = { R, cue: name, t0, endsAt: t0 + len, loop, pass: 0 };
     if (opts.layer) { (this.layers = this.layers || []).push(entry); }
     else { this.live = entry; this.current = name; }
@@ -2567,9 +2579,37 @@ export default registerSystem({
       const c = music.current;
       if (!c || c.startsWith('bed_') || FRONT.has(c)) music.startBed();
     };
-    bus.on('atbat:begin', wantBed);
+    /**
+     * WHO IS ALLOWED TO KILL THE FRONT END. `atbat:begin` is emitted by
+     * `bootApp()`'s own last statement (`app.sim.reset(1920)`), so listening for
+     * it here meant the title theme was stopped by the boot sequence that had
+     * just started it — the score's best 26 seconds existed only inside
+     * renderOffline. An at-bat merely BEGINNING is not the player playing; a
+     * pitch actually leaving a hand is. So the bed comes up on `pitch:called`
+     * and on `pitch:thrown`, and the front end owns the screen until then.
+     */
     bus.on('pitch:called', wantBed);
-    if (!app.flags.harness) music.play('title');
+    bus.on('pitch:thrown', wantBed);
+
+    /**
+     * STARTING THE TITLE FOR REAL. `play()` returns false against a context that
+     * has not resumed, and a browser will not resume one until the player has
+     * touched the page — so a single call at init() could only ever fail. This
+     * retries on the first gesture and unsubscribes itself the moment the theme
+     * is actually running, which is the shipping path: click into the game, the
+     * hook plays.
+     */
+    const startFront = () => {
+      if (music.current || !music.enabled) return;
+      if (!music.play('title')) return;
+      window.removeEventListener('pointerdown', startFront, true);
+      window.removeEventListener('keydown', startFront, true);
+    };
+    if (!app.flags.harness) {
+      startFront();
+      window.addEventListener('pointerdown', startFront, true);
+      window.addEventListener('keydown', startFront, true);
+    }
 
     /* --- the score answers the game ------------------------------------ */
     // The announcer and the bat both outrank the band. Every plausible name the
