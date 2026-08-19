@@ -116,10 +116,12 @@ export const RT = {
   roundOut: 13.0,             // feet up the line on a single he rounded
 
   /** The slide. */
-  slideDecel: 15.5,           // ft/s^2 on his hip — friction, not braking
-  slideMin: 5.0,              // never start one shorter than this
-  slideMax: 13.5,
-  slideWindow: 0.62,          // slide when the throw is inside this many seconds
+  slideDecel: 24.0,           // ft/s^2 on his hip — friction, not braking. At 20 ft/s
+                              // that is 8.3 feet of skid over 0.83 s, which is a slide;
+                              // half of it is a stumble and twice is a toboggan.
+  slideMin: 4.2,              // never start one shorter than this
+  slideMax: 11.0,
+  slideWindow: 1.15,          // he commits this many seconds before the throw lands
   diveBack: 0.42,             // seconds of a dive back to the bag
 
   /** The governor — see the header. */
@@ -127,7 +129,7 @@ export const RT = {
   govHi: 1.22,
   govEase: 4.5,               // how fast the multiplier is allowed to move, per second
   outBy: 0.105,               // seconds the runner arrives AFTER the ball, on an out
-  safeBy: 0.175,              // ... and before it, when he is safe
+  safeBy: 0.085,              // ... and before it, when he is safe
   closeGap: 0.10,             // inside this and the whole street has an opinion
   arguePause: 1.5,            // how long the argument holds the bag
 
@@ -136,11 +138,17 @@ export const RT = {
   leadCreep: 1.6,             // ... and how much further he steals while nobody looks
   fidgetEvery: [2.4, 5.6],
 
+  /** The lane he is running in — see §3. */
+  laneStep: 4.0,              // feet between chalk chevrons
+  laneAhead: 7,               // most chevrons drawn in front of him at once
+  bagInside: 2.6,             // feet to the crown side of the bag a race passes on
+
   /** Dust. */
-  dustSlide: 26,              // puffs in a slide's rooster tail
-  dustStop: 12,
+  dustSlide: 30,              // puffs in a slide's rooster tail
+  dustStop: 16,
   dustStep: 2,
-  smearLife: 4.2,             // seconds a slide's smear stays on the road
+  dustEvery: 0.105,           // seconds between puffs off a sprinting kid's heels
+  smearLife: 4.6,             // seconds a slide's smear stays on the road
 };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -247,13 +255,25 @@ function buildPath(from, to, tail) {
   }
 
   if (tail === 'through') {
-    // straight on, in the direction he arrived, which is the only honest way
-    // to leave first base on a play he is trying to beat
+    // Straight on, in the direction he arrived, which is the only honest way to
+    // leave first base on a play he is trying to beat.
+    //
+    // And down the CROWN side of it. The kid covering the bag came in off the
+    // gutter and holds it from there; the runner takes the middle of the road.
+    // That is period-true — on this block first base is a fender and you take the
+    // side that has not got a Ford parked on it — and it is the only thing that
+    // keeps the two of them out of one screen column. Measured on the line, the
+    // runner and the first baseman landed 8 px apart at 1600x900 and fused into a
+    // single body, which is the exact fault src/game/layout.js `separate()`
+    // exists to prevent for everybody standing still.
     const bag = BAGS[to];
-    const prev = pts[Math.max(0, pts.length - 2)];
-    const ux = bag.x - prev.x, uz = bag.z - prev.z;
+    const start = pts[0];
+    const { nx, nz } = outward(start.x, start.z, bag.x, bag.z);
+    const last = pts[pts.length - 1];
+    last.set(bag.x - nx * RT.bagInside, 0, bag.z - nz * RT.bagInside);
+    const ux = last.x - start.x, uz = last.z - start.z;
     const L = Math.hypot(ux, uz) || 1;
-    pts.push(new THREE.Vector3(bag.x + (ux / L) * RT.overrun, 0, bag.z + (uz / L) * RT.overrun));
+    pts.push(new THREE.Vector3(last.x + (ux / L) * RT.overrun, 0, last.z + (uz / L) * RT.overrun));
   }
 
   const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.5);
@@ -331,17 +351,23 @@ function smearTexture() {
 }
 
 class Dust {
-  constructor(scene, count = 132) {
+  constructor(scene, count = 190) {
     this.n = count;
     const geo = new THREE.PlaneGeometry(1, 1);
+    // A CUTOUT, not a transparency. Alpha-tested with depth written means the
+    // cloud sorts against the kids in it: dust in front of a runner hides him and
+    // dust behind him does not — which is the difference between a cloud and a
+    // sheet of cotton wool pinned over the play. (Drawn transparent with
+    // depthWrite off, round 2 of this piece painted every puff over the runner
+    // it belonged to and the runner could not be found in the frame at all.)
     const mat = new THREE.MeshBasicMaterial({
-      map: puffTexture(), transparent: true, depthWrite: false, alphaTest: 0.34,
+      map: puffTexture(), transparent: false, alphaTest: 0.45, depthWrite: true,
       side: THREE.DoubleSide, toneMapped: false,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, count);
     this.mesh.name = 'run_dust';
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 6;
+    this.mesh.renderOrder = 0;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
     scene.add(this.mesh);
@@ -360,7 +386,8 @@ class Dust {
       color: mix(PAVEMENT.asphaltSun, CHALK, 0.42), toneMapped: false,
     });
     this.smears = [];
-    for (let i = 0; i < 8; i++) {
+    this.byId = new Map();
+    for (let i = 0; i < 14; i++) {
       const m = new THREE.Mesh(sgeo, this.smearMat.clone());
       m.visible = false; m.renderOrder = 4;
       scene.add(m);
@@ -369,11 +396,11 @@ class Dust {
   }
 
   /** n puffs at a point, thrown along `dir` (a Vector3 or null for a plain bloom). */
-  burst(x, y, z, n, power = 4.4, dir = null, size = 1.15) {
+  burst(x, y, z, n, power = 4.4, dir = null, size = 1.15, hang = 1) {
     let made = 0;
     for (const it of this.items) {
       if (it.life > 0) continue;
-      it.max = brng.range(0.46, 0.86);
+      it.max = brng.range(0.46, 0.86) * hang;
       it.life = it.max;
       it.pos.set(x + brng.range(-0.5, 0.5), y + brng.range(0, 0.5), z + brng.range(-0.5, 0.5));
       const a = brng.range(0, Math.PI * 2), r = brng.range(0.25, 1) * power;
@@ -388,19 +415,26 @@ class Dust {
     this.dirty = true;
   }
 
-  /** The mark a hip leaves. `ax,az -> bx,bz` in world feet. */
-  smear(ax, az, bx, bz, width = 2.5) {
-    let slot = this.smears.find((s) => s.life <= 0) || this.smears[0];
+  /**
+   * The mark a hip leaves. `ax,az -> bx,bz` in world feet.
+   *
+   * `id` re-uses a slot, so a slide that is still happening GROWS its own smear
+   * instead of laying down forty overlapping ones.
+   */
+  smear(ax, az, bx, bz, width = 2.5, id = null) {
+    let slot = (id !== null && this.byId.get(id)) || this.smears.find((s) => s.life <= 0) || this.smears[0];
+    if (id !== null) this.byId.set(id, slot);
     const len = Math.hypot(bx - ax, bz - az);
     if (len < 0.6) return;
     slot.life = RT.smearLife; slot.max = RT.smearLife;
     const m = slot.mesh;
     m.visible = true;
+    // The geometry is already lying down (`sgeo.rotateX(-PI/2)` in the ctor), so the
+    // mesh needs a HEADING and nothing else. Setting rotation.x here as well —
+    // which the first draft did — stands the decal on its edge, where it is one
+    // pixel wide and invisible, which is exactly how it looked.
     m.position.set((ax + bx) / 2, roadHeight((ax + bx) / 2) + 0.055, (az + bz) / 2);
-    m.rotation.set(-Math.PI / 2, 0, 0);
-    m.rotation.z = Math.atan2(bx - ax, bz - az) + Math.PI / 2;
-    m.rotation.order = 'YXZ';
-    m.rotation.set(-Math.PI / 2, Math.atan2(-(bx - ax), -(bz - az)) + Math.PI / 2, 0);
+    m.rotation.set(0, Math.atan2(bx - ax, bz - az) - Math.PI / 2, 0);
     m.scale.set(len, 1, width);
     m.material.opacity = 0.52;
   }
@@ -452,8 +486,138 @@ class Dust {
   clear() {
     for (const it of this.items) it.life = 0;
     for (const s of this.smears) { s.life = 0; s.mesh.visible = false; }
+    this.byId.clear();
     this.dirty = true;
   }
+}
+
+/**
+ * The chevrons a runner is running along.
+ *
+ * This is the piece's answer to the one readability problem a shallow stage
+ * hands it: thirteen kids are on screen, the base paths are not painted, and a
+ * kid at 15% of frame height sprinting across a busy street is — measured, in
+ * round 1 of this piece — genuinely hard to find. BYB never had the problem
+ * because BYB had a green field with four white bags on it and nine kids.
+ *
+ * §11 allows exactly one material for a mark on this roadway, so the answer is
+ * chalk: three to seven fresh chevrons scuffed into the asphalt IN FRONT of the
+ * runner, pointing at the bag he is going to, brightening in a wave that runs
+ * toward it. They are drawn ahead of him and never behind, so they read as
+ * "he is going there" rather than as a trail, and they die the moment he
+ * arrives.
+ *
+ * The fade is done in COLOUR rather than in alpha — the chevron is lerped from
+ * chalk toward the roadway it is drawn on — because an InstancedMesh gets a
+ * per-instance colour for free and a per-instance alpha only through a shader
+ * patch. Chalk scuffing back into the road is also what actually happens.
+ */
+function chevronTexture() {
+  const { c, g } = makeCanvas(128, 96);
+  const R = new RNG(2207);
+  const arm = (x0, y0, x1, y1, w, col) => {
+    g.save();
+    g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath();
+    const n = 6;
+    for (let i = 0; i <= n; i++) {
+      const u = i / n;
+      const X = x0 + (x1 - x0) * u + R.range(-2.2, 2.2);
+      const Y = y0 + (y1 - y0) * u + R.range(-2.2, 2.2);
+      if (i === 0) g.moveTo(X, Y); else g.lineTo(X, Y);
+    }
+    g.stroke();
+    g.restore();
+  };
+  // ink under, chalk over — the two-sided read (§2.5), baked so one quad carries both
+  arm(14, 76, 64, 18, 20, '#2a1d1a');
+  arm(114, 76, 64, 18, 20, '#2a1d1a');
+  arm(14, 76, 64, 18, 12, '#f6f0e2');
+  arm(114, 76, 64, 18, 12, '#f6f0e2');
+  return canvasTexture(c);
+}
+
+class Lane {
+  constructor(scene, count = 96) {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      map: chevronTexture(), transparent: true, depthWrite: false,
+      alphaTest: 0.42, toneMapped: false, side: THREE.DoubleSide,
+    });
+    this.mesh = new THREE.InstancedMesh(geo, mat, count);
+    this.mesh.name = 'run_lane';
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 5;
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    scene.add(this.mesh);
+    this.n = count;
+    this.dummy = new THREE.Object3D();
+    this.col = new THREE.Color();
+    this.road = new THREE.Color(PAVEMENT.asphaltWarm);
+    this.chalkC = new THREE.Color(CHALK);
+    this.t = 0;
+  }
+
+  /**
+   * Lay this frame's chevrons out for every runner who is going somewhere.
+   *
+   * The WHOLE leg is drawn, bag to bag, not just the piece in front of him — a
+   * chalk diagonal running the width of the frame is the compositional element
+   * this stage does not otherwise have, and it is what carries the eye to a kid
+   * who is 15% of frame height in a street with thirteen people in it. The
+   * chevrons he has already passed are scuffed most of the way back into the
+   * road; the ones in front of him are fresh and a wave of brightness runs along
+   * them toward the bag, so the mark says which way as well as where.
+   */
+  update(dt, runners) {
+    this.t += dt;
+    let i = 0;
+    for (const r of runners) {
+      if (!r.path) continue;
+      const live = r.st === 'run' || r.st === 'slide';
+      if (!live) continue;
+      const end = r.bagS();
+      const first = Math.max(2.0, Math.min(r.s - 4.0, end - RT.laneStep * RT.laneAhead));
+      for (let k = 0; k < 13 && i < this.n; k++) {
+        const sv = first + k * RT.laneStep;
+        if (sv > end - 0.9) break;
+        const u = clamp(sv / r.path.len, 0, 1);
+        const q = r.path.curve.getPointAt(u);
+        const tg = r.path.curve.getTangentAt(u);
+        // heading only: the quad is already flat (see Dust.smear for the same trap)
+        this.dummy.position.set(q.x, roadHeight(q.x) + 0.09, q.z);
+        this.dummy.rotation.set(0, Math.atan2(tg.x, tg.z), 0);
+        const ahead = sv > r.s;
+        const gone = clamp((r.s - sv) / 11, 0, 1);           // how long ago he passed it
+        // A per-instance colour MULTIPLIES the texture, and the texture carries
+        // its own ink outline: tint it dark and the chalk goes to road while the
+        // ink stays ink, which turns a chalk mark into a painted road arrow. So
+        // the tint never leaves the chalk band and the scuffing-away is done in
+        // SIZE, which is also what happens to chalk under eleven pairs of boots.
+        const sc = ahead ? 1 : 0.92 - 0.42 * gone;
+        this.dummy.scale.set(4.0 * sc, 1, 2.9 * sc);
+        this.dummy.updateMatrix();
+        this.mesh.setMatrixAt(i, this.dummy.matrix);
+        const wave = 0.5 + 0.5 * Math.sin(this.t * 6.4 - (sv - first) * 0.42);
+        const bright = ahead ? 0.86 + 0.14 * wave : 0.78 - 0.16 * gone;
+        this.col.copy(this.road).lerp(this.chalkC, clamp(bright, 0, 1));
+        this.mesh.setColorAt(i, this.col);
+        i++;
+      }
+    }
+    for (; i < this.n; i++) {
+      this.dummy.position.set(0, -999, 0);
+      this.dummy.scale.setScalar(0.0001);
+      this.dummy.updateMatrix();
+      this.mesh.setMatrixAt(i, this.dummy.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+  }
+
+  clear() { this.update(0, []); }
 }
 
 /* ============================================================================
@@ -704,6 +868,7 @@ class Runner {
 
   step(dt, ctx) {
     this.t += dt;
+    if (this.pend && ctx.now >= this.pend.at) { const f = this.pend.fn; this.pend = null; f(); }
     switch (this.st) {
       case 'set': this.stepSet(dt, ctx); break;
       case 'hold': this.stepHold(dt, ctx); break;
@@ -796,15 +961,24 @@ class Runner {
       // longer than the race, and governing against the whole length is how a
       // runner ends up sprinting flat out and still arriving late.
       const need = Math.max(0.5, this.bagS() - this.s);
-      const wantV = left > 0.04 ? need / left : this.base * RT.govHi;
+      // A slide covers its last few feet at HALF the speed he went into it at, so
+      // a governor that plans a constant run to the bag delivers him late by
+      // exactly the length of his own slide. Plan for it: the skid is `ds` feet
+      // and costs the same time again.
+      const ds = this.slideExpected(ctx) ? this.slideReach() : 0;
+      const wantV = left > 0.04 ? (need + ds) / left : this.base * RT.govHi;
       const mul = clamp(wantV / this.base, RT.govLo, RT.govHi);
       this.gov += clamp(mul - this.gov, -RT.govEase * dt, RT.govEase * dt);
       want = this.base * this.gov;
     }
 
-    // pulling up at a bag he is stopping on, unless he is going to slide
+    // Pulling up at a bag he is stopping on — unless he is going to leave his
+    // feet, in which case braking and sliding fight each other for the same eight
+    // feet of road and the brake wins by a hair, which is how a runner ends up
+    // trotting into a play at the plate.
     const bs = this.bagS();
-    if (this.tail === 'stop' && !this.willSlide(ctx)) {
+    const sliding = this.slideExpected(ctx);
+    if (this.tail === 'stop' && !sliding) {
       const d = bs - this.s;
       const brake = (this.v * this.v) / (2 * RT.decel) + 0.9;
       if (d <= brake) want = 0;
@@ -819,13 +993,26 @@ class Runner {
     this.p.x = q.x; this.p.z = q.z;
     this.faceGoal = headingTo(tg.x, tg.z);
 
-    // footfalls: dust and a step on the block, off distance travelled
+    // Footfalls, off distance travelled rather than off the clock, so the sound
+    // lands under the foot that made it whatever speed he is going.
     this.stepD += this.v * dt;
     const stride = (CLIPS.run.meta.stride || 6.8) * (this.kid ? this.kid.scale : 1) * 0.5;
     if (this.stepD > stride) {
       this.stepD = 0;
       bus.emit('run:step', { pos: new THREE.Vector3(this.p.x, 0.2, this.p.z), surface: 'street', pitch: brng.range(0, 0.28) });
-      if (this.v > 11 && ctx.dust) ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.2, this.p.z, RT.dustStep, 2.1, null, 0.62);
+    }
+    // ... and the dust is on a CLOCK, not on the stride, because it is the thing
+    // that says "this one is moving" from across a crowded frame and a rope of it
+    // reads where two puffs a stride do not. Thrown backwards off his heels.
+    this.dustT = (this.dustT || 0) + dt;
+    if (this.v > 9.5 && ctx.dust && this.dustT >= RT.dustEvery) {
+      this.dustT = 0;
+      const back = new THREE.Vector3(-tg.x, 0.16, -tg.z);
+      const hot = clamp((this.v - 9.5) / 11, 0, 1);
+      ctx.dust.burst(
+        this.p.x - tg.x * 0.7, roadHeight(this.p.x) + 0.22, this.p.z - tg.z * 0.7,
+        RT.dustStep, 2.0 + hot * 2.4, back, 0.42 + hot * 0.34, 0.62,
+      );
     }
 
     // touching the bag
@@ -845,8 +1032,16 @@ class Runner {
 
     if (this.willSlide(ctx)) return this.beginSlide(ctx);
 
-    if (this.s >= P.len - 0.05) {
-      this.s = P.len;
+    // The last foot. Deceleration is asymptotic and a bag is not: a runner who
+    // coasts to a halt eleven inches short of the chalk has not touched it, never
+    // gets judged, and stands there for the rest of the inning. So the last foot
+    // is taken, not approached.
+    if (this.tail === 'stop' && this.v < 1.2 && bs - this.s < 1.4 && bs - this.s > 0) {
+      this.s = bs;
+      for (const m of P.marks) if (m.base > this.at && this.s >= m.s) { this.at = m.base; this.touch(m.base, ctx); }
+    }
+    if (this.s >= P.len - 0.05 || (this.tail === 'stop' && this.s >= bs - 0.02)) {
+      this.s = Math.max(this.s, Math.min(P.len, bs));
       this.arrive(ctx);
     }
   }
@@ -865,19 +1060,32 @@ class Runner {
    * And never into first: you run through first, and every kid on the block will
    * tell you so at length.
    */
-  willSlide(ctx) {
-    if (this.slid || this.st !== 'run') return false;
-    if (this.tail === 'through' || this.tail === 'round') return false;
+  slideReach() { return clamp((this.v * this.v) / (2 * RT.slideDecel), RT.slideMin, RT.slideMax); }
+
+  slideExpected(ctx) {
+    if (this.slid || this.tail !== 'stop') return false;
     const tta = ctx.throwTta(this.bagTag);
-    if (tta === null || tta > RT.slideWindow) return false;
-    const d = this.bagS() - this.s;
-    const reach = clamp((this.v * this.v) / (2 * RT.slideDecel), RT.slideMin, RT.slideMax);
-    return d <= reach && d > 0.8;
+    return tta !== null && tta <= RT.slideWindow;
   }
 
+  willSlide(ctx) {
+    if (this.st !== 'run' || !this.slideExpected(ctx)) return false;
+    const d = this.bagS() - this.s;
+    return d <= this.slideReach() && d > 0.8;
+  }
+
+  /**
+   * Leaving his feet. The friction is SOLVED rather than fixed: whatever speed he
+   * went in at and however far the chalk still is, `v^2 / 2d` is the deceleration
+   * that stops him exactly on it. A slide that ends a foot short of the bag is
+   * the single most common way a baseball game admits it is faking.
+   */
   beginSlide(ctx) {
     this.slid = true;
     this.st = 'slide';
+    const d = Math.max(0.8, this.bagS() - this.s);
+    this.slideA = clamp((this.v * this.v) / (2 * d), 9, 70);
+    this.smearId = `${this.id}:${Math.round(ctx.now * 100)}`;
     this.slideFrom = { x: this.p.x, z: this.p.z };
     const k = this.kid;
     const at = new THREE.Vector3(this.p.x, roadHeight(this.p.x) + 0.2, this.p.z);
@@ -889,25 +1097,34 @@ class Runner {
     }
     if (ctx.dust) {
       const tg = this.path.curve.getTangentAt(clamp(this.s / this.path.len, 0, 1));
-      ctx.dust.burst(at.x, at.y, at.z, RT.dustSlide, 6.2, new THREE.Vector3(tg.x, 0.25, tg.z), 1.35);
+      ctx.dust.burst(at.x, at.y, at.z, RT.dustSlide, 6.6, new THREE.Vector3(tg.x, 0.3, tg.z), 1.5, 1.5);
     }
     bus.emit('run:slide', { pos: at, headfirst: this.headfirst, who: this.id, name: this.name, bag: this.bagTag });
   }
 
   stepSlide(dt, ctx) {
-    this.v = Math.max(0, this.v - RT.slideDecel * dt);
+    this.v = Math.max(0, this.v - (this.slideA || RT.slideDecel) * dt);
     this.s = Math.min(this.path.len, this.s + this.v * dt);
+    const tgS = this.path.curve.getTangentAt(clamp(this.s / this.path.len, 0, 1));
+    this.faceGoal = headingTo(tgS.x, tgS.z);
     const u = clamp(this.s / this.path.len, 0, 1);
     const q = this.path.curve.getPointAt(u);
     this.p.x = q.x; this.p.z = q.z;
-    // dust keeps coming off the hip for the first third of the skid
-    if (this.v > 5 && ctx.dust && brng.next() < 0.55) {
-      ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.18, this.p.z, 2, 2.6, null, 0.9);
+    // Dust keeps boiling off the hip the whole way down, and the SMEAR is laid
+    // as he goes rather than when he stops: a still taken mid-skid needs the
+    // four feet of scuffed asphalt behind him or there is nothing in the frame
+    // that says he arrived at speed.
+    if (this.v > 4 && ctx.dust) {
+      ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.2, this.p.z, 2, 3.0, null, 1.05, 1.25);
+      if (this.slideFrom) ctx.dust.smear(this.slideFrom.x, this.slideFrom.z, this.p.x, this.p.z, 2.9, this.smearId);
     }
     for (const m of this.path.marks) {
       if (m.base > this.at && this.s >= m.s) { this.at = m.base; this.touch(m.base, ctx); }
     }
     if (this.v <= 0.35 || this.s >= this.bagS()) {
+      this.s = Math.min(this.path.len, Math.max(this.s, this.bagS()));
+      const q2 = this.path.curve.getPointAt(clamp(this.s / this.path.len, 0, 1));
+      this.p.x = q2.x; this.p.z = q2.z;
       if (ctx.dust && this.slideFrom) ctx.dust.smear(this.slideFrom.x, this.slideFrom.z, this.p.x, this.p.z, 2.7);
       this.arrive(ctx);
     }
@@ -971,6 +1188,7 @@ class Runner {
   judge(ctx) {
     if (this.touchedAt !== null) return;
     this.touchedAt = ctx.now;
+    this.deadline = null;          // the race is run; stop pushing his legs
     const bag = this.bagTag;
     const ballAt = ctx.ballArrival(bag);
     const gap = ballAt === null ? null : this.touchedAt - ballAt;
@@ -981,7 +1199,13 @@ class Runner {
         runner: +this.touchedAt.toFixed(3), ball: +ballAt.toFixed(3),
         gap: +gap.toFixed(3), frames: +(gap * 60).toFixed(1), out: called,
       });
-      if (Math.abs(gap) <= RT.closeGap) this.argue(ctx, gap, bag, called);
+      // Nobody argues about a clean single. The appeal is for a play that is
+      // OVER for this runner — he is standing on it, or he has been beaten —
+      // because a kid who stops to argue while he is still rounding the bag has
+      // thrown away the only thing he was arguing about.
+      if (Math.abs(gap) <= RT.closeGap && (this.tail === 'stop' || called)) {
+        this.argue(ctx, gap, bag, called);
+      }
     }
     if (this.to === 3) return this.score(ctx);
     if (called) return this.out(ctx, bag);
@@ -991,10 +1215,23 @@ class Runner {
     });
   }
 
-  /** End of the path: the pull-up, the over-run, the round, or standing on it. */
+  /**
+   * End of the path: the pull-up, the over-run, the round, or standing on it.
+   *
+   * The verdict is forced here if the mark loop has not already fired it. A slide
+   * decelerates asymptotically onto its own bag and can come to rest a thousandth
+   * of a foot short of the sample the mark was found at — and a runner who slides
+   * home, is announced as planted, and is never judged is the ugliest bug this
+   * file can produce, because everything downstream of it is silently wrong.
+   */
   arrive(ctx) {
     if (this.st === 'out' || this.st === 'score') return;
-    this.stand(ctx, this.touchedAt !== null && !ctx.calledOut(this));
+    if (this.touchedAt === null) {
+      this.at = clamp(this.to, 0, 3);
+      this.judge(ctx);
+      if (this.st === 'out' || this.st === 'score') return;
+    }
+    this.stand(ctx, !this.beaten);
   }
 
   stand(ctx, celebrate) {
@@ -1009,6 +1246,7 @@ class Runner {
       this.backTo = { x: BAGS[clamp(this.to, 0, 3)].x, z: BAGS[clamp(this.to, 0, 3)].z };
       if (k) {
         k.act('run_stop', { state: 'stop', lock: 0.55 });
+        if (this.beaten) k.after = (kk) => kk.act('sulk', { state: 'sulk', lock: 1.7 });
         if (ctx.dust) ctx.dust.burst(this.p.x, roadHeight(this.p.x) + 0.16, this.p.z, RT.dustStop, 3.4, null, 0.85);
       }
       return;
@@ -1029,6 +1267,7 @@ class Runner {
     this.at = clamp(this.to, 0, 3);
     this.p.x = BAGS[this.at].x; this.p.z = BAGS[this.at].z;
     this.lead = 0;
+    if (this.beaten) { this.st = 'out'; if (k && k.lock <= 0) k.act('sulk', { state: 'sulk', lock: 1.7 }); return; }
     if (k) {
       if (celebrate && k.lock <= 0) { k.act('cheer_arms', { state: 'cheer', lock: 1.1 }); k.setFace('grin', 1.8); }
       else if (k.lock <= 0) k.anim.play('ready', { fade: 0.25 });
@@ -1036,14 +1275,27 @@ class Runner {
     bus.emit('run:planted', { who: this.id, name: this.name, bag: BAG_TAG[this.at], base: BAG_WORD[this.at] });
   }
 
+  /**
+   * Beaten. He does not snap out of a slide to sulk — the skid is the picture and
+   * cutting it short throws the picture away — so when he is on his hip the sulk
+   * is queued behind the clip that is already telling the story.
+   */
   out(ctx, bag) {
-    this.st = 'out';
-    this.v = 0;
+    const wasSliding = this.st === 'slide';
+    const runThrough = this.tail === 'through' && this.st === 'run';
+    this.beaten = true;
     const k = this.kid;
-    if (k) {
-      k.lock = 0;
-      k.act('sulk', { state: 'sulk', lock: 1.9 });
-      k.setFace('sulk', 2.2);
+    if (k) k.setFace('sulk', 2.4);
+    // Beaten at the stoop, he still runs THROUGH it — nobody stops dead on a bag
+    // they have just lost a race to — and the sulk lands on the far side of it,
+    // which is also where the block is standing to tell him about it.
+    if (!runThrough) {
+      this.st = 'out';
+      this.v = 0;
+      if (k) {
+        if (wasSliding && k.lock > 0) k.after = (kk) => kk.act('sulk', { state: 'sulk', lock: 1.9 });
+        else { k.lock = 0; k.act('sulk', { state: 'sulk', lock: 1.9 }); }
+      }
     }
     bus.emit('run:out', { who: this.id, name: this.name, bag, base: BAG_WORD[clamp(this.to, 0, 3)] });
   }
@@ -1065,13 +1317,21 @@ class Runner {
    * owns the ball (DESIGN-BIBLE §8.1).
    */
   argue(ctx, gap, bag, called) {
-    const k = this.kid;
-    if (k) {
-      k.lock = 0;
-      k.act(called ? 'argue_jab' : 'argue_appeal', { state: 'argue', lock: RT.arguePause });
-      k.setFace(called ? 'taunt' : 'shock', RT.arguePause);
-      k.faceGoal = headingTo(-(this.p.x - BAGS[clamp(this.to, 0, 3)].x) || 1, 0);
-    }
+    // The pose comes AFTER the picture. A kid who springs into an argument on the
+    // frame his hip hits the road has thrown away the frame the whole play was
+    // for, so the appeal is queued a beat behind it.
+    this.pend = {
+      at: ctx.now + (this.slid ? 0.62 : 0.16),
+      fn: () => {
+        const k = this.kid;
+        if (!k) return;
+        k.lock = 0;
+        k.act(called ? 'argue_jab' : 'argue_appeal', { state: 'argue', lock: RT.arguePause });
+        k.setFace(called ? 'taunt' : 'shock', RT.arguePause);
+        const b = BAGS[clamp(this.to, 0, 3)];
+        k.faceGoal = headingTo(b.x - this.p.x || 1, b.z - this.p.z || 0.01);
+      },
+    };
     bus.emit('run:close', {
       who: this.id, name: this.name, bag, base: BAG_WORD[clamp(this.to, 0, 3)],
       gap: +gap.toFixed(3), frames: +(gap * 60).toFixed(1), out: called,
@@ -1408,6 +1668,22 @@ class Crew {
   }
 
   /**
+   * HOW CLOSE IS CLOSE. The core does not just say who won, it says by how much:
+   * `play.margin`, and its own definition of "genuinely close" is the band it
+   * only bothers a human about (`T.play.race.promptLo..promptHi`). So a play the
+   * core thought was a coin toss is staged as a coin toss, and a play it thought
+   * was comfortable is staged comfortable. Anything else makes the scoreboard and
+   * the picture disagree about the only thing they both know.
+   */
+  gapFor(out) {
+    const m = this.play && Number.isFinite(this.play.margin) ? this.play.margin : 0;
+    const R = T.play.race;
+    const close = m > R.promptLo * 1.6 && m < R.promptHi * 1.6;
+    if (out) return close ? RT.outBy : RT.outBy * 3.2;
+    return close ? RT.safeBy : RT.safeBy * 4.4;
+  }
+
+  /**
    * Hand every runner a deadline when a throw is live, so the legs and the ball
    * arrive on the correct side of each other.
    */
@@ -1418,7 +1694,8 @@ class Crew {
     for (const r of this.runners) {
       if (r.st !== 'run') continue;
       if (r.bagTag !== this.throwTag) continue;
-      r.deadline = arrive + (this.calledOut(r) ? RT.outBy : -RT.safeBy);
+      const out = this.calledOut(r);
+      r.deadline = arrive + (out ? this.gapFor(true) : -this.gapFor(false));
     }
   }
 
@@ -1672,6 +1949,7 @@ export default registerSystem({
     app.baserunning = this;
     this.dust = new Dust(app.scene);
     this.bags = new LiveBag(app.scene);
+    this.lane = new Lane(app.scene);
     crew.dust = this.dust;
     crew.bags = this.bags;
     if (typeof addEventListener === 'function') {
@@ -1706,6 +1984,7 @@ export default registerSystem({
     }
     this.dust.update(dt, app.camera.quaternion);
     this.bags.update(dt);
+    this.lane.update(dt, crew.runners);
   },
 
   onScenario(name, app) {
@@ -1714,6 +1993,7 @@ export default registerSystem({
     crew.now = 0;
     this.dust.clear();
     this.bags.clear();
+    this.lane.clear();
     const pl = players();
     if (pl && pl.batter) { pl.batter.runOut = false; pl.batter.onBase = false; }
   },
@@ -1748,12 +2028,13 @@ function framing(which) {
  * this file and src/game/fielding.js both read the result rather than a copy.
  */
 function stage(app, {
-  seed = 1920, on = [null, null, null], bat = null, ball, vel, play, prompt = null, settle = 0, view = 'field',
+  seed = 1920, half = null, on = [null, null, null], bat = null, ball, vel, play, prompt = null, settle = 0, view = 'field',
 }) {
   const sim = app.sim;
   sim.reset(seed);
   app.clock.advance(0.55);
 
+  if (half !== null) liveMatch.half = half;
   const order = liveMatch.lineups[liveMatch.battingSide()];
   liveMatch.bases = on.map((slot) => (slot === null ? '' : order[slot % order.length]));
   if (bat !== null) liveMatch.batIdx[liveMatch.battingSide()] = bat;
@@ -1812,36 +2093,45 @@ export const STAGED = {
   /**
    * run_single — a clean single into left, and TWO runners on two diagonals.
    *
-   * The ball goes to screen right and the running goes to screen left, which is
+   * The ball goes to screen RIGHT and the running goes to screen LEFT, which is
    * the whole reason this is the ball chosen: on a stage 46 wide and 70 deep the
    * one thing a frame cannot afford is the fielders and the runners occupying the
-   * same 300 px of it.
+   * same 300 px of it. Rose is on first and has to hold a beat on a liner, so she
+   * is still at full stride into second while the batter is already leaning
+   * through the turn — one frame, two runners, neither of them standing still.
    */
   single: {
     seed: 4111,
-    on: [null, 4, null],
+    on: [3, null, null],
     ball: [1.2, 3.0, 3.2], vel: [-19, 9.5, 30],
     play: { result: 'single', bases: 1, loft: 'line', fielder: 'SS', lane: -0.55, quality: 0.62, carry: 0.34, margin: 0.5 },
   },
   /**
-   * run_close_play — the race to the stoop, and the core says he is out by a
-   * stride. He runs THROUGH the bag because that is what you do at first, and
-   * the ball is in the kid's hands before his foot lands.
+   * run_close_play — the race to the stoop with Dom on the end of it, who is the
+   * fastest kid on the block and, per the roster, nobody knows it. The core says
+   * out by six hundredths; the throw is in the first baseman's hands with his
+   * front foot still in the air. He runs THROUGH the bag, because nobody has ever
+   * slid into first and been right about it.
    */
   close: {
     seed: 3311,
-    on: [null, null, null],
+    on: [null, null, null], bat: 7,
     ball: [0, 2.6, 3.0], vel: [-12, 6, 22],
     play: { result: 'out_ground', bases: 0, loft: 'ground', fielder: 'SS', lane: -0.3, quality: 0.44, margin: -0.06 },
   },
   /**
-   * run_slide — the play at the plate. A runner on third, a liner into the gap
-   * that he has to wait on, the block throws home, and he goes in under it.
+   * run_slide — the play at the plate, which is the best slide in baseball and
+   * the only one the ported core actually models (`resolveThrow('home')`).
+   *
+   * The gang are batting so the runner on third is Jesús, whose quirk is
+   * `headfirst` — the core pays him +0.05 on the race and this file spends it on
+   * the picture: he goes in on his stomach, into a manhole cover, at the front of
+   * the stage where he is the biggest body in the frame.
    */
   slide: {
-    seed: 5150,
-    on: [null, null, 5],
-    ball: [0.8, 3.2, 3.0], vel: [14, 11, 33],
+    seed: 5150, half: 1,
+    on: [null, null, 4], bat: 2,
+    ball: [0.8, 3.2, 3.0], vel: [15, 11.5, 31],
     play: { result: 'single', bases: 1, loft: 'line', fielder: 'RF', lane: 0.5, quality: 0.6, carry: 0.4, margin: 0.16 },
     prompt: { best: 'home', answer: 'home', deadline: 1.4 },
   },
@@ -1854,7 +2144,7 @@ export const STAGED = {
  */
 registerScenario('run_single', {
   seed: 4111,
-  setup: ({ app }) => { stage(app, { ...STAGED.single, settle: 2.42 }); },
+  setup: ({ app }) => { stage(app, { ...STAGED.single, settle: 2.44 }); },
   settle: 0,
 });
 
@@ -1864,7 +2154,7 @@ registerScenario('run_single', {
  */
 registerScenario('run_close_play', {
   seed: 3311,
-  setup: ({ app }) => { stage(app, { ...STAGED.close, settle: 1.86 }); },
+  setup: ({ app }) => { stage(app, { ...STAGED.close, settle: 1.10 }); },
   settle: 0,
 });
 

@@ -134,7 +134,7 @@ export const FT = {
   glideDecay: 13,              // src/chars/players.js: skid friction, ft/s per second
   holdLift: 6.2,               // fake upward speed on a held ball; see hold()
   trailSpeed: 58,              // fake speed on a thrown ball, so ballphysics trails it
-  looseSettle: 0.42,           // how long a muffed ball keeps hopping in the road
+  looseSettle: 0.55,           // how long a muffed ball keeps hopping in the road
 };
 
 const P = T.play;
@@ -178,10 +178,21 @@ function keeperSpot(tag) {
   let ax = bag.x - from.x, az = bag.z - from.z;
   const m = Math.max(1e-3, Math.hypot(ax, az));
   ax /= m; az /= m;
-  // the perpendicular that points away from the middle of the diamond
+  /**
+   * The perpendicular that points OUT of the diamond, and the choice is a
+   * screen-space one rather than a baseball one.
+   *
+   * The runner arrives up the line and, on a close play, is a stride short of
+   * the bag when the ball lands — which puts him at very nearly the receiver's
+   * own x. Standing the receiver on the INSIDE was tried and measured: at the
+   * call the two of them shared a screen column to within a foot and the kid
+   * with the ball in his hands was completely behind the kid who was out.
+   * Outside is three and a half feet of daylight in the axis the lens actually
+   * separates, and daylight is the whole job.
+   */
   let sx = az, sz = -ax;
   if (sx * (bag.x - 0) + sz * (bag.z - 30) < 0) { sx = -sx; sz = -sz; }
-  return { x: bag.x + sx * 2.9, z: bag.z + sz * 2.9 };
+  return { x: bag.x + sx * 3.6, z: bag.z + sz * 3.6 };
 }
 
 /** The core talks in six positions; the stage stands nine kids. This is the bridge. */
@@ -306,7 +317,7 @@ class Play {
     this.style = '';
     this.spot = new THREE.Vector2(0, 8);
     this.aimed = new THREE.Vector2(-999, -999);
-    this.primary = null; this.backup = null; this.relay = null; this.dozy = null;
+    this.primary = null; this.backup = null; this.relay = null; this.dozy = null; this.backer = null;
     this.keeper = null;       // the body standing on the bag this play is going to
     this.keeperTag = '1B';
     this.watchers = [];       // everybody else, tracking the ball
@@ -439,6 +450,21 @@ class Play {
     this.backup = ranked.find((k) => k !== primary && k !== keeper && k !== pl.pitcher)
       || ranked.find((k) => k !== primary && k !== keeper) || null;
 
+    /**
+     * THE PITCHER BACKS UP THE BAG.
+     *
+     * Real, and load-bearing for the picture. He is posted at (0.9, 24) — dead
+     * centre of the stage and nineteen units nearer the lens than the deep
+     * outfield — so on any ball hit past him he stands squarely between the
+     * camera and the catch. Measured on `field_fly`: the whole money frame, a
+     * kid at full stretch with the ball in her bare hands, was drawn BEHIND a
+     * stationary red sweater. Sending him round behind the bag is what a
+     * pitcher actually does on a throw, and it clears the middle third of the
+     * frame on every play in the game.
+     */
+    if (pl.pitcher && pl.pitcher !== primary && pl.pitcher !== keeper
+        && pl.pitcher !== this.backup && !perched(pl.pitcher)) this.backer = pl.pitcher;
+
     // deep ball: somebody has to turn it round
     if (spot.y > FT.relayZ) {
       this.relay = ranked.find((k) => k !== primary && k !== this.backup && k !== keeper && k.pos.y < spot.y - 12)
@@ -457,10 +483,11 @@ class Play {
 
     for (const k of pool) {
       k.fieldReact = k === primary ? FT.react.keen
-        : (k === this.backup || k === keeper) ? FT.react.quick
+        : (k === this.backup || k === keeper || k === this.backer) ? FT.react.quick
           : k === this.dozy ? FT.react.dozy : FT.react.normal;
     }
-    this.watchers = pool.filter((k) => k !== primary && k !== this.backup && k !== keeper && k !== this.relay);
+    this.watchers = pool.filter((k) => k !== primary && k !== this.backup && k !== keeper
+      && k !== this.relay && k !== this.backer);
 
     if (this.dozy && this.dozy.lock <= 0) {
       this.dozy.target = null;
@@ -628,7 +655,7 @@ class Play {
       bk.fieldPlaced = 1;
       const s = Math.sign(this.spot.x || 1);
       const to = reachable(bk, this.spot.x - s * 6.5, this.spot.y + 7.0);
-      bk.goTo(to.x, to.z, { speed: FT.chaseSpeed * 0.95, hard: true });
+      bk.goTo(to.x, to.z, { speed: FT.chaseSpeed * 0.95 });
       this.own(bk);
     }
     // the kid who covers the bag
@@ -638,17 +665,32 @@ class Play {
       const spot2 = keeperSpot(this.keeperTag);
       const to = reachable(kp, spot2.x, spot2.z);
       kp.goTo(to.x, to.z, {
-        speed: FT.sprint, hard: true,
+        speed: FT.sprint,
         onArrive: (k) => { k.act('ready', { state: 'catch', lock: 2.2 }); k.lookAt(this.spot.x, this.spot.y); },
       });
       this.own(kp);
       bus.emit('field:cover', { bag: this.keeperTag, kid: kp.home && kp.home.id });
     }
+    // and the kid behind him, in case it gets through
+    const bk2 = this.backer;
+    if (bk2 && bk2.fieldReact <= 0 && !bk2.fieldPlaced) {
+      bk2.fieldPlaced = 1;
+      const bag = BAG[this.keeperTag] || LAYOUT.FIRST;
+      let dx = bag.x - this.spot.x, dz = bag.z - this.spot.y;
+      const m = Math.max(1e-3, Math.hypot(dx, dz));
+      const to = reachable(bk2, bag.x + (dx / m) * 7.5, bag.z + (dz / m) * 7.5);
+      bk2.goTo(to.x, to.z, {
+        speed: FT.chaseSpeed,
+        onArrive: (k2) => { k2.act('ready', { state: 'catch', lock: 1.6 }); k2.lookAt(this.spot.x, this.spot.y); },
+      });
+      this.own(bk2);
+      bus.emit('field:backup', { bag: this.keeperTag, kid: bk2.home && bk2.home.id });
+    }
     // the cut-off man
     if (this.relay && this.relay.fieldReact <= 0 && !this.relay.fieldPlaced) {
       this.relay.fieldPlaced = 1;
       const to = reachable(this.relay, this.spot.x * 0.45, Math.max(14, this.spot.y * 0.48));
-      this.relay.goTo(to.x, to.z, { speed: FT.chaseSpeed, hard: true });
+      this.relay.goTo(to.x, to.z, { speed: FT.chaseSpeed });
       this.own(this.relay);
       bus.emit('field:relay', { kid: this.relay.home && this.relay.home.id });
     }
@@ -831,8 +873,12 @@ class Play {
           kk.flavour('fidget_look', { amp: 1 });
           yell(kk, YELL.legs, 1.4);
         } });
+        // ELEVEN FEET, not five. A rubber ball that goes through a kid on
+        // asphalt does not stop politely behind him; and on a lens this shallow
+        // five feet of depth is thirty pixels, which is not a gap a player can
+        // see. The distance IS the joke and it is also the readability.
         this.looseAt = new THREE.Vector3(
-          ball.pos.x + (vx / m) * 5.2, 0, ball.pos.z + (vz / m) * 5.2,
+          ball.pos.x + (vx / m) * 11.5, 0, ball.pos.z + (vz / m) * 11.5,
         );
         bus.emit('field:error', { kind: 'through_the_legs', kid: k.home && k.home.id, pos: at });
         break;
@@ -882,7 +928,7 @@ class Play {
         break;
     }
     if (APP.puffs && (style === 'dive' || style === 'pile' || style === 'scoop' || style === 'legs')) {
-      APP.puffs.burst(at, style === 'scoop' || style === 'legs' ? 6 : 15, style === 'scoop' ? 2.2 : 3.8);
+      APP.puffs.burst(at, style === 'scoop' || style === 'legs' ? 4 : 9, style === 'scoop' ? 2.2 : 3.8);
     }
   }
 
@@ -945,19 +991,28 @@ class Play {
     this.phase = 'loose';
     this.loose = { pos: at, t: 0, from: new THREE.Vector3(ball.pos.x, ball.pos.y, ball.pos.z) };
 
-    // who goes and gets it: whoever is nearest and is not lying on the road
-    const pool = pl.fielders.filter((f) => f !== pl.catcher && f !== this.keeper && !perched(f) && f.lock < 0.5);
+    /**
+     * Who goes and gets it — and it is NOT the kid who let it through.
+     *
+     * A muff where the same boy turns round, picks it up and throws is a muff
+     * with no consequence in it: the joke is that somebody else has to come all
+     * the way over and do his job while he is still looking at the road. He is
+     * excluded outright unless there is genuinely nobody else on his half of the
+     * street.
+     */
+    const pool = pl.fielders.filter((f) => f !== pl.catcher && f !== this.keeper && f !== this.primary
+      && !perched(f) && f.lock < 0.5);
     let best = null, bd = 1e9;
     for (const f of pool) {
       const d = dist2(f, at.x, at.z);
       if (d < bd) { bd = d; best = f; }
     }
-    if (!best) best = this.backup || this.primary;
+    if (!best) best = this.backup && this.backup !== this.primary ? this.backup : this.primary;
     this.recover = best;
     const to = reachable(best, at.x, at.z);
     best.target = null;
     best.lock = 0;
-    best.goTo(to.x, to.z, { speed: FT.sprint, hard: true });
+    best.goTo(to.x, to.z, { speed: FT.sprint });
     best.setFace('determined', 1.6);
     this.own(best);
     bus.emit('field:loose', { kid: best.home && best.home.id, pos: at.clone() });
@@ -972,7 +1027,7 @@ class Play {
       k.target = null;
       k.lookAt(this.loose.pos.x, this.loose.pos.z);
       k.act('crouch', { state: 'catch', lock: 0.42 });
-      if (APP.puffs) APP.puffs.burst(new THREE.Vector3(k.pos.x, (k.groundY || 0) + 0.2, k.pos.y), 5, 2.0);
+      if (APP.puffs) APP.puffs.burst(new THREE.Vector3(k.pos.x, (k.groundY || 0) + 0.2, k.pos.y), 3, 2.0);
       this.pickAt = this.loose.t + 0.24;
     }
     if (this.picking && this.loose.t >= this.pickAt) {
@@ -1081,7 +1136,7 @@ class Play {
         const to = reachable(k, sp.x, sp.z);
         k.target = null; k.lock = 0;
         k.goTo(to.x, to.z, {
-          speed: FT.sprint, hard: true,
+          speed: FT.sprint,
           onArrive: (kk) => { kk.act('ready', { state: 'catch', lock: 2.4 }); kk.lookAt(this.holder ? this.holder.pos.x : 0, this.holder ? this.holder.pos.y : 0); },
         });
         this.own(k);
@@ -1230,7 +1285,7 @@ class Play {
       a.released = true;
       this.holder = null;                      // it is out of his hand now
       a.from.copy(sim.ball.pos);
-      if (APP.puffs) APP.puffs.burst(a.from, 3, 1.6);
+      if (APP.puffs) APP.puffs.burst(a.from, 2, 1.6);
     }
     // re-aim at the hands it is going to land in
     const b = a.body;
@@ -1277,11 +1332,11 @@ class Play {
 
     const bag = BAG[a.tag] || LAYOUT.FIRST;
     if (this.isOut) this.pullUp();
-    if (!this.callWord) {
-      if (this.isOut) this.stamp('OUT!', bag, true, keeper);
-      else if (this.runner && this.runner.arrivedYet) this.stamp('SAFE!', bag, false, keeper);
-      else this.pendingSafe = bag;      // he is not there yet; the word waits for him
-    }
+    // The call goes up when the ball reaches the bag, and it goes up whichever
+    // way it went. Round 1 held SAFE! back until this file's own runner touched
+    // the chalk — and src/game/baserunning.js owns the runners now, so that
+    // flag never came and half the plays in the game ended with no call at all.
+    if (!this.callWord) this.stamp(this.isOut ? 'OUT!' : 'SAFE!', bag, this.isOut, keeper);
     this.celebrate(pl, this.isOut);
     this.beat(FT.beat);
   }
@@ -1336,8 +1391,7 @@ class Play {
       r.target = null;
       if (!this.isOut) {
         r.setFace('grin', 2.0);
-        if (this.pendingSafe) { this.stamp('SAFE!', this.pendingSafe, false, r); this.pendingSafe = null; }
-        else if (!this.callWord) this.stamp('SAFE!', LAYOUT.FIRST, false, r);
+        if (!this.callWord) this.stamp('SAFE!', LAYOUT.FIRST, false, r);
       } else {
         r.setFace('shock', 1.6);
       }
@@ -1587,16 +1641,35 @@ class Overlay {
 
   clear() { if (this.g) this.g.clearRect(0, 0, this.w, this.h); this.hits = []; }
 
+  /**
+   * SHOWN ONLY WHEN THERE IS SOMETHING ON IT.
+   *
+   * A fixed-position canvas gets its own compositing layer, and a layer whose
+   * backing store is cleared but whose element never changes is not reliably
+   * re-composited: measured in the screenshot harness, the throw prompt's chalk
+   * and tags kept appearing in the NEXT scenario's PNG for a full frame after
+   * `getImageData` proved the canvas was empty. Toggling `display` is a layout
+   * change, which nothing skips, and it costs one style write per play.
+   */
+  show(v) {
+    if (this.shown === v || !this.el) return;
+    this.shown = v;
+    this.el.style.display = v ? 'block' : 'none';
+  }
+
   paint(app) {
     const p = current;
     this.mount(); this.resize();
     if (!this.g) return;
     this.clear();
-    if (!p) return;
+    const promptUp = !!p && (p.phase === 'prompt' || (p.prompt && p.prompt.expired && p.phase === 'beat'));
+    const callUp = !!p && !!p.callWord;
+    this.show(promptUp || callUp);
+    if (!promptUp && !callUp) return;
     const g = this.g;
     g.save();
-    if (p.phase === 'prompt' || (p.prompt && p.prompt.expired && p.phase === 'beat')) this.paintPrompt(app, g, p);
-    if (p.callWord) this.paintCall(app, g, p);
+    if (promptUp) this.paintPrompt(app, g, p);
+    if (callUp) this.paintCall(app, g, p);
     g.restore();
   }
 
@@ -1624,51 +1697,84 @@ class Overlay {
     const ball = app.sim.ball;
     const bp = this.project(app, ball.pos.x, ball.pos.y, ball.pos.z);
 
-    // 1. the road: an arrow to every live bag, and a ring on the end of it
+    /**
+     * 1. THE ROAD.
+     *
+     * Not a line. A line from the boy with the ball to a bag forty feet away is
+     * a straight bar across the middle of the frame, and on a street with a
+     * lamppost, an El column and an awning strut already in it a straight bar
+     * reads as one more piece of ironwork — measured, round 1's arrow was
+     * mistaken for a scaffold pole in every frame it appeared in.
+     *
+     * So it is CHEVRONS: four chalk arrow-heads walking up the road toward the
+     * bag, drawn on the ground plane, crawling while the clock runs. Nothing
+     * continuous, nothing straight, nothing that can be mistaken for a girder,
+     * and direction is what an arrow-head says for a living.
+     */
     for (const card of pr.cards) {
       const bag = BAG[card.bag];
       if (!bag) continue;
       const best = card.bag === pr.best;
       const chosen = pr.choice === card.bag;
       const lit = best || chosen;
-      const al = (chosen ? 1 : best ? 0.95 : 0.30) * dim;
+      const al = (chosen ? 1 : best ? 0.98 : 0.40) * dim;
 
-      const pts = [];
-      for (let i = 1; i <= 9; i++) {
-        const u = 0.13 + (i / 9) * 0.74;
+      // the ground path, sampled so the chevrons sit on the crown of the road
+      const at = (u) => {
         const x = k.pos.x + (bag.x - k.pos.x) * u;
         const z = k.pos.y + (bag.z - k.pos.y) * u;
-        const s = this.project(app, x, LAYOUT.groundAt(x) + 0.05, z);
-        if (s) pts.push([s.x, s.y]);
-      }
-      const aw = (lit ? 8.6 : 3.6) * U;
-      if (pts.length > 2) {
-        chalkMark(g, pts, aw, 37 + card.bag.length, al * 0.95);
-        // CHEVRONS. A line says "these two things are connected"; three arrow
-        // heads crawling up it say "throw it THAT WAY", which is the whole
-        // question the player is being asked.
-        const heads = lit ? 3 : 1;
-        for (let i = 0; i < heads; i++) {
-          const u = clamp(0.42 + i * 0.26 + (lit ? ((pr.t * 0.55) % 0.26) : 0), 0, 0.995);
-          const idx = clamp(Math.floor(u * (pts.length - 1)), 0, pts.length - 2);
-          const a = pts[idx + 1], b = pts[idx];
-          const ang = Math.atan2(a[1] - b[1], a[0] - b[0]);
-          const L = (lit ? 26 : 15) * U;
-          for (const sgn of [0.66, -0.66]) {
-            chalkMark(g, [[a[0] - Math.cos(ang + sgn) * L, a[1] - Math.sin(ang + sgn) * L], [a[0], a[1]]],
-              aw * 0.92, 63 + i * 7 + card.bag.length, al * (1 - i * 0.16));
-          }
+        return this.project(app, x, LAYOUT.groundAt(x) + 0.05, z);
+      };
+      /**
+       * A CHALK LINE, BROKEN, with one big head on the end of it.
+       *
+       * The road is seen at about ten degrees, so anything drawn flat on it is
+       * squashed to a sliver and a cluster of small marks reads as litter — that
+       * is what killed the four-chevron version. What survives that projection
+       * is LENGTH: one line that runs the whole way from the boy with the ball
+       * to the bag, dashed so it is unmistakably chalk rather than ironwork, and
+       * thin enough that it never becomes the scaffold pole round 1 drew.
+       */
+      // It TAPERS toward the bag, in three passes, because a constant-width
+      // stroke forty feet long is a rule and a rule is a piece of ironwork; a
+      // chalk line a kid drags with his thumb gets fatter as he leans into it.
+      for (let seg = 0; seg < 3; seg++) {
+        const u0 = 0.32 + seg * 0.19, u1 = u0 + 0.20;
+        const line = [];
+        for (let i = 0; i <= 5; i++) {
+          const sp = at(u0 + (i / 5) * (u1 - u0));
+          if (sp) line.push([sp.x, sp.y]);
+        }
+        if (line.length > 2) {
+          chalkMark(g, line, (lit ? 2.8 + seg * 1.5 : 1.6 + seg * 0.5) * U,
+            37 + seg * 3 + card.bag.length, al * (lit ? 0.7 + seg * 0.1 : 0.7));
         }
       }
-
-      // the ring, drawn as a circle of world radius 3.2 on the road
-      const ring = [];
-      for (let i = 0; i <= 20; i++) {
-        const a = (i / 20) * Math.PI * 2;
-        const s = this.project(app, bag.x + Math.cos(a) * 3.2, LAYOUT.groundAt(bag.x) + 0.05, bag.z + Math.sin(a) * 3.2);
-        if (s) ring.push([s.x, s.y]);
+      // and the head, on the bag end, where the eye finishes
+      const a1 = at(0.90), a0 = at(0.80);
+      if (a1 && a0) {
+        const ang = Math.atan2(a1.y - a0.y, a1.x - a0.x);
+        const L = (lit ? 36 : 16) * U;
+        chalkMark(g, [
+          [a1.x - Math.cos(ang + 0.60) * L, a1.y - Math.sin(ang + 0.60) * L],
+          [a1.x, a1.y],
+          [a1.x - Math.cos(ang - 0.60) * L, a1.y - Math.sin(ang - 0.60) * L],
+        ], (lit ? 9.0 : 3.4) * U, 63 + card.bag.length, al);
       }
-      if (ring.length > 3) chalkMark(g, ring, (lit ? 6.4 : 3.2) * U, 19 + card.bag.length, al);
+
+      // THE RING. On the good one it is drawn twice, fast, the way a kid rings
+      // something on a wall when he means it, and it breathes.
+      const rings = lit ? [3.1, 3.9] : [3.2];
+      for (let rr = 0; rr < rings.length; rr++) {
+        const rad = rings[rr] + (lit ? 0.14 * Math.sin(pr.t * 6 + rr) : 0);
+        const ring = [];
+        for (let i = 0; i <= 24; i++) {
+          const a = (i / 24) * Math.PI * 2;
+          const sp = this.project(app, bag.x + Math.cos(a) * rad, LAYOUT.groundAt(bag.x) + 0.05, bag.z + Math.sin(a) * rad);
+          if (sp) ring.push([sp.x, sp.y]);
+        }
+        if (ring.length > 3) chalkMark(g, ring, (lit ? (rr ? 3.4 : 6.0) : 2.6) * U, 19 + rr * 5 + card.bag.length, al * (rr ? 0.7 : 1));
+      }
     }
 
     // 1b. a ring round the boy with the ball. Three tags and two arrows do not
@@ -1681,7 +1787,7 @@ class Overlay {
       const s = this.project(app, k.pos.x + Math.cos(a) * rr, (k.groundY || 0) + 0.05, k.pos.y + Math.sin(a) * rr);
       if (s) me.push([s.x, s.y]);
     }
-    if (me.length > 3) chalkMark(g, me, 6.4 * U, 97, dim * 0.95, urgent ? ACCENTS.red : CHALK);
+    if (me.length > 3) chalkMark(g, me, 5.2 * U, 97, dim * 0.95, urgent ? ACCENTS.red : CHALK);
 
     // 2. the tags. Solved so no two of them touch and none of them sits on the
     //    ball — a UI element covering the ball is the one unforgivable one.
@@ -1698,7 +1804,7 @@ class Overlay {
       const best = card.bag === pr.best;
       const sc = (best ? 1.42 : 0.84) * U * (pr.choice === card.bag ? 1 + pr.pop * 0.12 : 1);
       const w = 132 * sc, h = 68 * sc;
-      boxes.push({ card, best, sc, w, h, x: s.x - w / 2, y: s.y - h - 104 * U });
+      boxes.push({ card, best, sc, w, h, bag, x: s.x - w / 2, y: s.y - h - 104 * U });
     }
     boxes.sort((A, B) => A.y - B.y);
     for (let i = 0; i < boxes.length; i++) {
@@ -1721,6 +1827,16 @@ class Overlay {
     }
     this.hits = [];
     for (const b of boxes) {
+      // THE STEM. A label floating above a street with nine kids in it belongs
+      // to nobody until something joins it to the chalk it is about; this is the
+      // bit of string between the tag and the bag, and it is drawn first so the
+      // paper sits on top of it.
+      const foot = this.project(app, b.bag.x, LAYOUT.groundAt(b.bag.x) + 0.08, b.bag.z);
+      if (foot) {
+        const sx = b.x + b.w / 2, sy = b.y + b.h;
+        chalkMark(g, [[sx, sy], [(sx + foot.x) / 2 + 4 * U, (sy + foot.y) / 2], [foot.x, foot.y]],
+          (b.best ? 3.6 : 2.2) * U, 211 + b.card.bag.length, (b.best ? 0.9 : 0.5) * dim);
+      }
       b.card.box = { x: b.x, y: b.y, w: b.w, h: b.h };
       this.hits.push({ bag: b.card.bag, x: b.x, y: b.y, w: b.w, h: b.h });
       this.tag(g, b.card, b.x, b.y, b.w, b.h, b.sc, b.best, pr.choice === b.card.bag, dim);
@@ -1733,14 +1849,14 @@ class Overlay {
     //    The ring round HIM says who; this says how long, chalked on the flags at
     //    the bottom of the frame where a kid would actually chalk something, in
     //    one of the three corner clusters §11 allows.
-    this.tally(g, 0.205 * this.w, this.h - 116 * U, U, pr, frac, urgent);
+    this.tally(g, 0.148 * this.w, this.h - 104 * U, U, pr, frac, urgent);
   }
 
   /** One torn butcher-paper tag: accent band, chalked key cap, bag, kid. */
   tag(g, card, x, y, w, h, sc, best, chosen, alpha) {
     const acc = accentOf(card.kid);
     const ink = inkOf(acc);
-    const a = best || chosen ? alpha : alpha * 0.44;
+    const a = best || chosen ? alpha : alpha * 0.62;
     const tilt = (card.bag === 'home' ? -2.6 : card.bag === '2B' ? 3.2 : -1.5) * Math.PI / 180;
     g.save();
     g.globalAlpha = a;
@@ -1825,16 +1941,19 @@ class Overlay {
     const R = new RNG(404);
     for (let i = 0; i <= 26; i++) {
       const a = (i / 26) * Math.PI * 2;
-      const rx = (w / 2 + 15 * U) * (0.92 + R.next() * 0.12);
-      const ry = (h / 2 + 27 * U) * (0.86 + R.next() * 0.20);
+      const rx = (w / 2 + 12 * U) * (0.94 + R.next() * 0.10);
+      const ry = (h / 2 + 22 * U) * (0.88 + R.next() * 0.16);
       const X = Math.cos(a) * rx, Y = -13 * U + Math.sin(a) * ry;
       if (i === 0) patch.moveTo(X, Y); else patch.lineTo(X, Y);
     }
     patch.closePath();
-    g.save(); g.globalAlpha = 0.38; g.fillStyle = C(INK);
+    g.save(); g.globalAlpha = 0.26; g.fillStyle = C(INK);
     g.translate(0, 6 * U); g.fill(patch); g.restore();
-    g.save(); g.globalAlpha = 0.62;
-    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.60)); g.fill(patch); g.restore();
+    // WARM, not grey. §11 forbids a neutral grey HUD pixel outright, and the
+    // first pass of this patch mixed chalk into the SHADE value and produced
+    // exactly that: a dishwater plate with red marks on it.
+    g.save(); g.globalAlpha = 0.52;
+    g.fillStyle = C(mix(PAVEMENT.asphaltSun, CHALK, 0.52)); g.fill(patch); g.restore();
 
     slab(g, pr.expired ? 'TOO LATE' : hot ? 'THROW IT NOW' : 'THROW IT', 0, -h * 0.34, 32 * U, {
       align: 'center', color: C(hot ? ACCENTS.red : INK),
@@ -1848,19 +1967,21 @@ class Overlay {
     const y0 = h * 0.12, y1 = h * 0.96;
     const cell = w / n;
     const box = [[-w / 2, y0], [w / 2, y0], [w / 2, y1], [-w / 2, y1], [-w / 2, y0]];
-    chalkMark(g, box, 3.8 * U, 137, 0.95, INK);
+    chalkMark(g, box, 2.6 * U, 137, 0.9, INK);
     for (let i = 1; i < n; i++) {
       const x = -w / 2 + cell * i;
-      chalkMark(g, [[x, y0], [x, y1]], 2.8 * U, 151 + i, 0.75, INK);
+      chalkMark(g, [[x, y0], [x, y1]], 2.0 * U, 151 + i, 0.6, INK);
     }
     for (let i = 0; i < n; i++) {
       const x = -w / 2 + cell * (i + 0.5);
-      const seg = [[x - 6 * U, y0 + 7 * U], [x + 6 * U, y1 - 7 * U]];
+      // a tally stroke is a STROKE — a short fat rectangle is a segment of a
+      // progress bar, which is the one HUD shape §11 bans by name
+      const seg = [[x - 9 * U, y1 - 5 * U], [x + 6 * U, y0 + 5 * U]];
       const alive = i < leftN;
-      if (!alive) { chalkStroke(g, seg, 9 * U, 41 + i * 3, 0.18, C(INK)); continue; }
+      if (!alive) { chalkStroke(g, seg, 6 * U, 41 + i * 3, 0.16, C(INK)); continue; }
       const dying = i === leftN - 1;
       const a = dying ? 0.55 + 0.45 * ((frac * n) % 1 || 1) : 1;
-      chalkMark(g, seg, 12 * U, 41 + i * 3, a, hot ? ACCENTS.red : INK);
+      chalkMark(g, seg, 7.5 * U, 41 + i * 3, a, hot ? ACCENTS.red : INK);
     }
     g.restore();
   }
@@ -1882,40 +2003,51 @@ class Overlay {
     const U = this.U;
     const age = p.t - p.callAt;
     const pop = clamp(age / 0.10, 0, 1);
-    const fade = clamp(1 - (age - 1.05) / 0.5, 0, 1);
+    const fade = clamp(1 - (age - 1.15) / 0.5, 0, 1);
     if (fade <= 0) return;
     const bag = p.callBag;
     const s = this.project(app, bag.x, LAYOUT.groundAt(bag.x) + 1.6, bag.z);
     if (!s) return;
-    const over = 1 + 0.24 * Math.sin(clamp(age / 0.16, 0, 1) * Math.PI);   // overshoot
-    const sc = U * (0.62 + 0.30 * pop) * over * (p.callWord.length > 5 ? 0.70 : 1);
-    const size = 84 * sc;
+    const over = 1 + 0.26 * Math.sin(clamp(age / 0.16, 0, 1) * Math.PI);   // overshoot
+    const sc = U * (0.62 + 0.30 * pop) * over * (p.callWord.length > 5 ? 0.66 : 1);
+    const size = 74 * sc;
     const wpx = slabW(p.callWord, size, { tracking: 0.06, condense: 0.88 });
 
-    // what the word must not sit on: the ball, and the body it is about
+    /**
+     * WHAT THE WORD MUST NOT SIT ON.
+     *
+     * Everything that is a body, and the ball hardest of all. Round 1 anchored
+     * this to the bag and wrote OUT! straight across the catch in `field_fly` —
+     * a red word on top of the one pair of hands the whole frame is about, which
+     * is BYB anti-pattern 5 committed by the piece that is supposed to prevent
+     * it. Eight seats round the bag are scored against every kid on the street
+     * and the word takes the emptiest one.
+     */
     const avoid = [];
     const ball = app.sim.ball;
     const b = this.project(app, ball.pos.x, ball.pos.y, ball.pos.z);
-    if (b) avoid.push({ x: b.x, y: b.y, r: 54 * U });
-    const near = p.callNear;
-    if (near) {
-      const hd = this.project(app, near.pos.x, (near.groundY || 0) + 3.4, near.pos.y);
-      if (hd) avoid.push({ x: hd.x, y: hd.y, r: 66 * U });
+    if (b) avoid.push({ x: b.x, y: b.y, r: 78 * U });
+    const pl = players();
+    if (pl) {
+      for (const k of pl.fielders.concat(pl.batter ? [pl.batter] : [])) {
+        const hd = this.project(app, k.pos.x, (k.groundY || 0) + 2.4, k.pos.y);
+        if (hd) avoid.push({ x: hd.x, y: hd.y, r: (k === p.callNear ? 56 : 44) * U });
+      }
     }
-    const rw = wpx * 0.5 + 30 * U, rh = size * 0.62;
-    const seats = [
-      { x: s.x, y: s.y - rh * 2.0 },
-      { x: s.x + rw + 26 * U, y: s.y - rh * 0.6 },
-      { x: s.x - rw - 26 * U, y: s.y - rh * 0.6 },
-      { x: s.x, y: s.y + rh * 1.5 },
-    ];
+    const rw = wpx * 0.5 + 24 * U, rh = size * 0.56;
+    const seats = [];
+    for (let i = 0; i < 8; i++) {
+      const a = -Math.PI / 2 + (i / 8) * Math.PI * 2;
+      seats.push({ x: s.x + Math.cos(a) * (rw + 54 * U), y: s.y + Math.sin(a) * (rh + 62 * U) });
+    }
     let seat = seats[0], bestScore = -1e9;
     for (const c of seats) {
       const X = clamp(c.x, rw + 22 * U, this.w - rw - 22 * U);
-      const Y = clamp(c.y, rh + 78 * U, this.h - rh - 40 * U);
+      const Y = clamp(c.y, rh + 84 * U, this.h - rh - 44 * U);
       let sc2 = 0;
-      for (const a of avoid) sc2 += Math.min(Math.hypot(X - a.x, Y - a.y) - a.r, 240 * U);
-      sc2 -= Math.hypot(X - c.x, Y - c.y) * 0.35;      // prefer the seat we asked for
+      for (const a of avoid) sc2 += Math.min(Math.hypot(X - a.x, Y - a.y) - a.r, 220 * U);
+      sc2 -= Math.hypot(X - c.x, Y - c.y) * 0.4;      // prefer the seat we asked for
+      sc2 -= Math.abs(Y - (s.y - rh - 62 * U)) * 0.55; // and above the bag, all else equal
       if (sc2 > bestScore) { bestScore = sc2; seat = { x: X, y: Y }; }
     }
 
@@ -1924,27 +2056,37 @@ class Overlay {
     g.translate(seat.x, seat.y);
     g.rotate(-3.6 * Math.PI / 180);
 
-    // the rubbed patch, with an ink shadow so it lifts off the block work
+    /**
+     * The ground it sits on is a SCUFF, not a plate.
+     *
+     * The first pass filled a 450x180 ellipse of half-opaque grey behind the
+     * word and, because this is a screen overlay rather than a decal, that grey
+     * lay over the first baseman, the runner and the dog as well as the road —
+     * one smudge across the whole payoff frame. It is now a rubbed streak that
+     * hugs the letters, warm rather than neutral, and the word carries its own
+     * legibility instead: a fat INK skeleton, a CHALK rim on top of that, and
+     * the colour last. Three passes of the same hand-drawn glyphs, which is what
+     * a kid with a stub of chalk and a lot of feeling actually produces.
+     */
     const patch = new Path2D();
     const R = new RNG(909);
-    const pw = wpx * 0.62 + 26 * sc, ph = size * 0.78;
+    const pw = wpx * 0.54 + 12 * sc, ph = size * 0.50;
     for (let i = 0; i <= 22; i++) {
       const a = (i / 22) * Math.PI * 2;
-      const X = Math.cos(a) * pw * (0.88 + R.next() * 0.20);
-      const Y = -size * 0.28 + Math.sin(a) * ph * (0.80 + R.next() * 0.30);
+      const X = Math.cos(a) * pw * (0.92 + R.next() * 0.14);
+      const Y = -size * 0.26 + Math.sin(a) * ph * (0.84 + R.next() * 0.22);
       if (i === 0) patch.moveTo(X, Y); else patch.lineTo(X, Y);
     }
     patch.closePath();
-    g.save(); g.globalAlpha = fade * 0.34; g.fillStyle = C(INK);
-    g.translate(0, 5 * U); g.fill(patch); g.restore();
-    g.save(); g.globalAlpha = fade * 0.56;
-    g.fillStyle = C(mix(PAVEMENT.asphaltShade, CHALK, 0.50)); g.fill(patch); g.restore();
+    g.save(); g.globalAlpha = fade * 0.34;
+    g.fillStyle = C(mix(PAVEMENT.asphaltSun, CHALK, 0.44)); g.fill(patch); g.restore();
 
     const col = p.callOut ? ACCENTS.red : CHALK;
-    slab(g, p.callWord, 0, 0, size, {
-      color: C(col), align: 'center', weight: 0.215, tracking: 0.06, condense: 0.88,
-      jitter: 1.4, seed: 71, shadow: { dx: 5.0 * sc, dy: 5.6 * sc, color: C(INK) },
-    });
+    const opt = { align: 'center', tracking: 0.06, condense: 0.88, jitter: 1.4, seed: 71 };
+    slab(g, p.callWord, 0, 0, size, { ...opt, color: C(INK), weight: 0.44,
+      shadow: { dx: 5.0 * sc, dy: 5.6 * sc, color: C(INK) } });
+    slab(g, p.callWord, 0, 0, size, { ...opt, color: C(mix(CHALK, col, 0.18)), weight: 0.32 });
+    slab(g, p.callWord, 0, 0, size, { ...opt, color: C(col), weight: 0.205 });
     g.restore();
   }
 
@@ -1970,12 +2112,16 @@ class Overlay {
  */
 function chalkMark(g, pts, w, seed, alpha, colour) {
   if (pts.length < 2) return;
-  // the ink pass is SOLID — a broken dash under a broken dash is still a dashed
-  // line, and a dashed line on Belgian block is camouflage
+  // The ink pass is SOLID — a broken dash under a broken dash is still a dashed
+  // line, and a dashed line on Belgian block is camouflage. But it is only a
+  // LINING, not a second mark: at 1.9x the chalk's width and full alpha, a long
+  // straight arrow across this street stopped reading as chalk at all and read
+  // as a scaffold pole lying in the road. 1.4x at half alpha holds the mark and
+  // keeps the chalk on top of it the thing you see.
   g.save();
-  g.globalAlpha = Math.min(1, alpha * 0.86);
+  g.globalAlpha = Math.min(1, alpha * 0.55);
   g.strokeStyle = C(INK);
-  g.lineWidth = w * 1.9;
+  g.lineWidth = w * 1.4;
   g.lineJoin = 'round'; g.lineCap = 'round';
   const R = new RNG(seed + 700);
   g.beginPath();
@@ -2343,8 +2489,9 @@ registerScenario('field_grounder', {
   setup: ({ app }) => {
     stage(app, STAGED.grounder);
   },
-  // the ball is in the air on its way to first, the runner is off his feet and
-  // the kid on the bag is reaching for it — one frame, three bodies, one story
+  // the throw has just landed in the kid covering the bag: ball in his bare
+  // hands, the runner a stride short and still on his feet, and the word on the
+  // road beside them — one frame, three bodies, one story
   settle: 1.90,
 });
 
@@ -2384,5 +2531,5 @@ registerScenario('field_error', {
   setup: ({ app }) => {
     stage(app, STAGED.error);
   },
-  settle: 1.90,
+  settle: 1.62,
 });

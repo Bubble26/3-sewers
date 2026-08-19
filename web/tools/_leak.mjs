@@ -7,11 +7,14 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 await page.goto(`http://127.0.0.1:${port}/index.html?harness=1`, { waitUntil: 'load' });
 await page.waitForFunction(() => globalThis.__SB && globalThis.__SB.ready);
 const sample = () => page.evaluate(() => {
-  const el = document.getElementById('sb-field');
-  const g = el.getContext('2d');
-  const d = g.getImageData(0,0,el.width,el.height).data;
-  let nz=0; for (let i=3;i<d.length;i+=4*197) if (d[i]>8) nz++;
-  return { nz, phase: globalThis.__SB.app.fielding.debug.phase, t: globalThis.__SB.app.fielding.debug.t };
+  const outs = [];
+  for (const el of document.querySelectorAll('canvas')) {
+    let nz = -1;
+    try { const g = el.getContext('2d'); const d = g.getImageData(0,0,el.width,el.height).data;
+      nz=0; for (let i=3;i<d.length;i+=4*197) if (d[i]>8) nz++; } catch(e) { nz = -2; }
+    outs.push(`${el.id||'(noid)'}:${el.width}x${el.height}:${nz}`);
+  }
+  return { canvases: outs, phase: globalThis.__SB.app.fielding.debug.phase };
 });
 for (const n of ['throw_prompt','field_error']) {
   await page.evaluate(async (x) => { await globalThis.__SB.scenario(x); }, n);
