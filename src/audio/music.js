@@ -2240,6 +2240,7 @@ class Music {
     this.layers = [];
     this.count = { balls: 0, strikes: 0 };
     this.pendingBed = null;
+    this.retiring = [];
     /**
      * THE HOOK GETS TO FINISH ITS SENTENCE. A tune nobody hears twice is not a
      * hook, and the title states its melody bare and then harmonises it. Until
@@ -2346,23 +2347,49 @@ class Music {
   /** Start (or switch to) the bed the game is currently asking for. */
   startBed() {
     const want = this.bedFor();
-    if (this.current !== want) this.play(want);
+    // A refused bed (the title still holds the screen) must not sneak the radio
+    // in under the theme either: the third-floor window belongs to the in-play
+    // mix, and layering it over the title is two tunes in two keys at once.
+    if (this.current !== want && !this.play(want)) return this.current;
     this.ensureWorldRadio();
     return this.current;
   }
+  /**
+   * FADING IS NOT THE SAME AS STOPPING, and the difference is measurable on the
+   * machine CONTRACT §3 names as the target. A cue faded out at 13 s still has
+   * every one of its scheduled note sources in the rendering graph until its
+   * last written bar — the title is 26 s of full band, so cutting to the bed
+   * used to leave ~13 s of a silent orchestra being rendered underneath it. On
+   * SwiftShader the timer starvation from that is visible: 775 samples in 50 s
+   * of wall clock instead of one every 15 ms. So a stopped cue is now RETIRED —
+   * faded, then disconnected from the graph a frame after the fade ends, which
+   * is what actually takes it out of the audio thread's work.
+   */
   stop(fade = 0.25) {
     const ctx = this.ctx();
+    const now = ctx ? ctx.currentTime : 0;
     for (const e of [this.live, ...(this.layers || [])]) {
       if (!e) continue;
       try {
         const g = e.R.master.gain;
-        const now = ctx ? ctx.currentTime : 0;
         g.cancelScheduledValues(now);
         g.setValueAtTime(g.value, now);
         g.linearRampToValueAtTime(0.0001, now + fade);
       } catch (err) { /* context already gone */ }
+      (this.retiring = this.retiring || []).push({ R: e.R, killAt: now + fade + 0.05 });
     }
     this.live = null; this.layers = []; this.current = null;
+  }
+  /** Disconnect faded graphs once their ramp has finished. Called from update(). */
+  reap(now) {
+    if (!this.retiring || !this.retiring.length) return;
+    const keep = [];
+    for (const r of this.retiring) {
+      if (now < r.killAt) { keep.push(r); continue; }
+      try { r.R.endSources(now); } catch (e) { /* already stopped */ }
+      try { r.R.master.disconnect(); } catch (e) { /* already gone */ }
+    }
+    this.retiring = keep;
   }
   /** Called by the announcer bus and by bat:contact. The one rule of this file. */
   duck(depthDb = MT.duckAnnouncerDb, hold = 1.0, release = MT.duckRelease, attack = MT.duckAttack) {
@@ -2396,6 +2423,7 @@ class Music {
     // moods relax; the score does not stay excited on its own
     this.mood.rally = Math.max(0, this.mood.rally - dt * 0.09);
     const ctxNow = this.ctx();
+    if (ctxNow) this.reap(ctxNow.currentTime);
     // layered stingers were accumulating forever: one per big hit, for a whole
     // game, each holding a graph. Retire them once they have rung out.
     if (this.layers && this.layers.length && ctxNow) {
@@ -2422,7 +2450,11 @@ class Music {
       const R = this.renderInto(ctx, name, t0, { seconds: len, pass, dest: this.dest() });
       this.live = { R, cue: name, t0, endsAt: t0 + len, loop: true, pass };
     } else if (!this.live.loop && ctx.currentTime > this.live.endsAt + 1.5) {
+      const ended = this.live.cue;
       this.live = null; this.current = null;
+      // The title is 26 s long and the block is not allowed to go silent when it
+      // finishes: a player who has not pitched yet gets handed to the bed.
+      if (ended === 'title') this.startBed();
     }
   }
 
@@ -2574,10 +2606,22 @@ export default registerSystem({
     // The front end must not still be playing once a pitch has been called; a
     // moment (the between-innings rag, a win, a stinger) is allowed to finish.
     const FRONT = new Set(['title', 'team_select']);
+    /**
+     * A kid's sting that arrived while the title still held the screen is not
+     * thrown away, it is DEFERRED: `bootApp()` emits `atbat:begin` from its own
+     * last statement, so at boot Sal's walk-up used to fire in his key on top of
+     * the title's first bar. Now it waits and lands with the bed, which is the
+     * moment the player actually arrives at the plate.
+     */
+    let flushSting = () => {};
     const wantBed = () => {
       if (!music.enabled) return;
       const c = music.current;
       if (!c || c.startsWith('bed_') || FRONT.has(c)) music.startBed();
+      // ...and only once the bed is actually up. While the title still holds the
+      // screen the sting keeps waiting; it must not leak out on the pitch that
+      // was refused.
+      if (music.current && music.current.startsWith('bed_')) flushSting();
     };
     /**
      * WHO IS ALLOWED TO KILL THE FRONT END. `atbat:begin` is emitted by
@@ -2671,23 +2715,34 @@ export default registerSystem({
     let atBat = null;
     const trips = new Map();          // kid -> how many times they have come up
     let lastSting = -99;
+    let heldSting = null;
+    const fireSting = (id) => {
+      const ctx = music.ctx();
+      const now = ctx ? ctx.currentTime : 0;
+      // Several pieces announce the same at-bat (sim.js re-emits, the card UI
+      // emits its own), and two copies of one sting on top of each other is a
+      // phase mess, not a louder sting. One per second, and no more.
+      if (ctx && now - lastSting < 1.0) return false;
+      const n = trips.get(id) || 0;
+      // a sting that could not sound (no context yet, audio disabled) must not
+      // burn the kid's turn in the A/B rotation
+      if (!music.play(walkupCue(id, n), { layer: true })) return false;
+      lastSting = now; trips.set(id, n + 1);
+      return true;
+    };
+    flushSting = () => {
+      if (!heldSting) return;
+      const id = heldSting; heldSting = null;
+      fireSting(id);
+    };
     for (const ev of ['atbat:begin', 'batter:up', 'walkup', 'batter:ready']) {
       bus.on(ev, (p) => {
         const id = kidId(p);
         if (!id) return;
         atBat = id;
-        // Several pieces announce the same at-bat (sim.js re-emits, the card UI
-        // emits its own), and two copies of one sting on top of each other is a
-        // phase mess, not a louder sting. One per second, and no more.
-        const ctx = music.ctx();
-        const now = ctx ? ctx.currentTime : 0;
-        if (ctx && now - lastSting < 1.0) return;
-        const n = trips.get(id) || 0;
-        // a sting that could not sound (no context yet, audio disabled) must not
-        // burn the kid's turn in the A/B rotation
-        if (!music.play(walkupCue(id, n), { layer: true })) return;
-        lastSting = now;
-        trips.set(id, n + 1);
+        const c0 = music.ctx();
+        if (c0 && c0.currentTime < music.holdUntil) { heldSting = id; return; }
+        fireSting(id);
       });
     }
     bus.on('ball:sewer', () => {

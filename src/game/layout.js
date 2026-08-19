@@ -290,7 +290,10 @@ function footprint(v, b) {
 function separate(bodies) {
   const views = lockedViews();
   if (!views.length) return;
-  const GAP = 0.40;                       // the brief: 40% of the narrower body
+  // The brief allows 40% of the narrower body; this pass asks for a little more than that,
+  // because the width model is an estimate and the arbiter is not. Measured against rendered
+  // bounding boxes, budgeting for 24% overlap lands real frames at 35-40%.
+  const GAP = 0.24;
   const EDGE = 26;                        // px of daylight between a body and the frame edge
   // Where each body may end up: `slack` is how far in x it may be argued with. The three on
   // the pitch axis and the kid standing on a car top get almost none; everybody else is free
@@ -344,17 +347,25 @@ function separate(bodies) {
           if (!a || !b) continue;
           if (a.bot <= b.top || b.bot <= a.top) continue;        // clear sky between them
           const want = a.hw + b.hw - GAP * Math.min(a.hw, b.hw);
-          const dx = b.cx - a.cx;
-          const over = want - Math.abs(dx);
+          const over = want - Math.abs(b.cx - a.cx);
           if (over <= 0) continue;
           worst = Math.max(worst, over);
-          const dir = dx >= 0 ? 1 : -1;
+          /**
+           * WHICH WAY THEY PART IS A WORLD DECISION, NOT A SCREEN ONE — and that is the whole
+           * trick. Two bodies at different depths can sit on opposite sides of each other in
+           * the two framings: measured, the batter read 81 px LEFT of the pitcher from BATTING
+           * and 78 px RIGHT of him from FIELD. Resolving each view in its own screen direction
+           * then asks for opposite pushes, the two cancel, and the pair sits merged in both
+           * shots for ever while the solver reports it is working. So the one who is further
+           * up the street in x goes further up the street, in both views, always.
+           */
+          const dir = Math.sign(B.x - A.x) || Math.sign(B.z - A.z) || 1;
           // Each gives way in proportion to how much room it has left to give.
           const wa = Math.max(0.001, range(A)), wb = Math.max(0.001, range(B));
           const tot = wa + wb;
           const move = over * 0.36;
-          push.set(A, push.get(A) - dir * move * (wa / tot) / grad.get(A));
-          push.set(B, push.get(B) + dir * move * (wb / tot) / grad.get(B));
+          push.set(A, push.get(A) - dir * move * (wa / tot) / Math.abs(grad.get(A)));
+          push.set(B, push.get(B) + dir * move * (wb / tot) / Math.abs(grad.get(B)));
         }
       }
     }
@@ -445,7 +456,7 @@ export const BASES = [FIRST, SECOND, THIRD];
  * (which runs |x| 1.5…4.8, z −2.6…2.4) and it opens ninety pixels of daylight between the two
  * of them at 1600×900.
  */
-export const PLATE_BOX = { x: 4.6, z: 2.0, kid: 'otto', look: [0.9, 24], slot: 0.034, tier: 'subject', slack: 2.4, wide: 1.15 };
+export const PLATE_BOX = { x: 4.6, z: 2.0, kid: 'otto', look: [0.9, 24], slot: 0.034, tier: 'subject', slack: 2.6, wide: 1.30 };
 
 /** The pitcher's scratch, kept next to the pitcher so the two can never drift. */
 export const PITCH_SCRATCH = { x: 0.9, z: 24.0 };
@@ -458,7 +469,7 @@ export const PITCH_SCRATCH = { x: 0.9, z: 24.0 };
  */
 export const POSTS = [
   {
-    id: 'catcher', x: 0.2, z: -4.6, kid: 'sal', clip: 'ready', look: [0.9, 24], yawDeg: 40,
+    id: 'catcher', x: 0.2, z: -4.6, kid: 'sal', clip: 'argue_jab', look: [0.9, 24], yawDeg: 66,
     slot: 0.002, tier: 'lead', accent: 'claret', garment: 'sweater', slack: 1.5, wide: 1.50,
     note: 'The Fireplug: barrel torso, no neck, jammed cap. BEHIND THE PLATE, on the pitch '
         + 'axis — pitcher (0.9, 24) → home (0, 0) → here is collinear to 1.42 units, which is '
@@ -470,17 +481,24 @@ export const POSTS = [
         + 'squatting kid seen from behind renders as a rectangle with a cap on it. `ready` is '
         + 'the half-crouch a bare-handed kid actually takes — weight down, knees at 44°, both '
         + 'hands out in front of him — and the root is yawed 40° toward first so the lens gets '
-        + 'a shoulder, a cheek and a raised bare hand instead of a back. THE REAL FIX IS '
+        + 'a shoulder, a cheek and a raised bare hand instead of a back — 40° was the brief\'s '
+        + 'number and 40° still rendered a flat slab from a lens this high, so it is 66°, which '
+        + 'is most of the way to profile and is where an arm and a knee finally appear. THE '
+        + 'REAL FIX IS '
         + 'ANIMATION, NOT PLACEMENT: this file can turn him and lower him, but it cannot give '
         + 'him a step forward on the pitch. See the report.',
   },
   {
     id: 'pitcher', x: 0.9, z: 24.0, kid: 'irving', clip: 'pitch_set', look: [4.6, 0],
-    slot: 0.008, tier: 'lead', accent: 'red', garment: 'sweater', slack: 1.0,
+    slot: 0.008, tier: 'lead', accent: 'red', garment: 'sweater', slack: 3.2,
     note: 'The Beanpole, all leg. Halfway to second on the scratch — 24, not the old 42. At 42 '
         + 'he is 1.5x the catcher\'s depth and cannot reach 18% of frame at any legal lens; '
         + 'casting the tallest kid here buys back the rest. He is the far point of the axis '
-        + 'and he wears the loudest hue on the block for the same reason.',
+        + 'and he wears the loudest hue on the block for the same reason. He carries three '
+        + 'feet of lateral argument and the chalk scratch follows him: a lens looking up the '
+        + 'axis puts him directly behind the batter\'s head, which is the one pair the whole '
+        + 'shot is about and the one pair that must never fuse. Three feet at twenty-four is '
+        + 'seven degrees, which is a hundred pixels of daylight and no baseball at all.',
   },
   {
     id: 'first', x: 13.5, z: 19.0, kid: 'rocco', clip: 'ready', look: [0, 0],
@@ -500,15 +518,18 @@ export const POSTS = [
         + 'one chorus line. Never stops moving.',
   },
   {
-    id: 'third', x: -13.8, z: 42.0, kid: 'luz', clip: 'ready', look: [0, 0],
-    slot: -0.111, tier: 'field', accent: 'plum', garment: 'sweater',
-    note: 'Past the ice truck\'s tailgate. The truck is parked across the old third-base '
-        + 'corner (it fills x −21.5…−14.9, z 16.8…35.2), so the bag was re-chalked on its '
-        + 'street side and the kid plays behind the whole thing — which is exactly what a '
-        + 'block does when somebody parks on third.',
+    id: 'third', x: -12.5, z: 44.0, kid: 'luz', clip: 'ready', look: [0, 0],
+    slot: -0.098, tier: 'field', accent: 'plum', garment: 'sweater',
+    note: 'Past the ice truck\'s tailgate, and INBOARD of it by four feet, which is not taste. '
+        + 'The truck (x −21.9…−14.5, z 16.7…35.3, eight feet tall) throws a shadow from both '
+        + 'locked seats that covers the whole deep gutter on this side: blocks() puts the only '
+        + 'clear window at roughly x −13…−9 for anything past z 40, and one body is what one '
+        + 'window holds. So the bag was re-chalked on the truck\'s street side and he plays '
+        + 'behind the whole thing — which is exactly what a block does when somebody parks on '
+        + 'third.',
   },
   {
-    id: 'right', x: 11.0, z: 35.0, kid: 'ethel', clip: 'ready', look: [0, 0],
+    id: 'right', x: 11.5, z: 35.0, kid: 'ethel', clip: 'ready', look: [0, 0],
     slot: 0.093, tier: 'field', accent: 'olive', garment: 'dress',
     note: 'Short right, inboard of the parked Ford (which fills x 15.2…21.6, z 44.4…55.6) and '
         + 'in front of it rather than beside it: level with the fender she shares a screen '
@@ -523,11 +544,16 @@ export const POSTS = [
         + 'crown on purpose: the crown projects straight onto the batter\'s head.',
   },
   {
-    id: 'left', x: -18.0, z: 55.0, kid: 'kathleen', clip: 'idle_slouch', look: [0, 0],
-    slot: -0.132, tier: 'field', accent: 'bottleGreen', garment: 'sweater',
-    note: 'Deepest on the lamppost side, out at the gutter line, bored, and about to be very '
-        + 'busy. Wide of third rather than behind him, because at depth two kids in one lane '
-        + 'is one kid.',
+    id: 'left', x: -17.0, z: 12.0, kid: 'kathleen', clip: 'idle_slouch', look: [0, 0],
+    slot: -0.179, tier: 'field', accent: 'bottleGreen', garment: 'sweater',
+    note: 'AT THE FRONT BUMPER, not out behind it. She is nominally the deep kid on the '
+        + 'lamppost side and there is no deep on the lamppost side any more: the ice truck '
+        + 'stands eight feet tall from z 16.7 to 35.3 and you cannot see the plate through a '
+        + 'truck. So she has walked up in front of it, twelve feet off the casting on the '
+        + 'gutter line, which is where a real kid ends up and which fills the near quarter of '
+        + 'the batting frame on the side nobody was standing in. Bored, and about to be very '
+        + 'busy. Deep left is covered by the truck; that is the block\'s problem and it is '
+        + 'funnier than solving it.',
   },
   {
     id: 'roof', x: 18.4, z: 48.6, y: 6.95, kid: 'eugene', clip: 'idle_slouch', look: [4.6, 0],
@@ -572,9 +598,9 @@ export const ON_DECK = { x: 15.0, z: 2.5, kid: 'bessie', clip: 'bat_wait', look:
  * north gutter in the order they bat, well inside the frame's extremes.
  */
 export const BENCH = [
-  { x: 18.6, z: 7.0, kid: 'connie', clip: 'curb_wait', look: [4.6, -0.6], slot: 0.207, tier: 'block', ghost: true },
-  { x: 19.8, z: 13.0, kid: 'peggy', clip: 'idle_slouch', look: [0.9, 24], slot: 0.206, tier: 'block', ghost: true },
-  { x: 20.6, z: 19.0, kid: 'gertie', clip: 'idle', look: [0.9, 24], slot: 0.202, tier: 'block', ghost: true },
+  { x: 20.4, z: 5.0, kid: 'connie', clip: 'curb_wait', look: [4.6, -0.6], slot: 0.232, tier: 'block', ghost: true },
+  { x: 21.2, z: 10.5, kid: 'peggy', clip: 'idle_slouch', look: [0.9, 24], slot: 0.227, tier: 'block', ghost: true },
+  { x: 21.6, z: 16.0, kid: 'gertie', clip: 'idle', look: [0.9, 24], slot: 0.218, tier: 'block', ghost: true },
 ];
 
 /**
@@ -598,7 +624,7 @@ export const BENCH = [
  */
 export const SPECTATORS = [
   {
-    id: 'cards', x: 16.6, z: 30.0, kid: 'carmen', clip: 'sit_flip', face: 'grin',
+    id: 'cards', x: 20.2, z: 34.0, kid: 'carmen', clip: 'sit_flip', face: 'grin',
     look: [4.6, 0], slot: 0.147, tier: 'block',
     note: 'squatting in the road at the foot of the stoop, flipping cigarette cards against '
         + 'the granite. She used to sit at x 21 in the gutter dish and from BATTING the '
@@ -913,6 +939,10 @@ export default registerSystem({
       const c = clamp(b.x, b.z, b.y || 0);
       b.x = c.x; b.z = c.z;
     }
+    // The chalk scratch is the pitcher's foot, not a coordinate: wherever the separation pass
+    // argued him to, that is where the block scuffed the road.
+    const pitcher = POSTS.find((p) => p.id === 'pitcher');
+    if (pitcher) { PITCH_SCRATCH.x = pitcher.x; PITCH_SCRATCH.z = pitcher.z; }
     // The bases do not move, but the batter's box does — separate() may argue him a couple of
     // feet along the casting to get him out of the catcher's screen column, and a chalk box he
     // is standing beside instead of inside is worse than no chalk box. So both marks are laid

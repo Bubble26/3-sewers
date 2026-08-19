@@ -144,7 +144,7 @@ const HIER = {
   subjectBand: [24.7, 25.9],
   leadBand: [18.15, 19.2],
   otherBand: [12.5, 15.0],
-  scaleBand: [0.40, 1.60],
+  scaleBand: [0.38, 1.85],
   promoteMax: 1.36,                    // the most we will scale a kid UP to make him the subject
 };
 
@@ -183,18 +183,18 @@ const COMPOSITION = {
     // the whole shallow stage lies out flat and no fielder hides behind another — and no
     // further, because every degree of rake is a degree the ball-follow cannot spend and a foot
     // of block that leaves the top of the frame.
-    plateY: -0.68,
+    plateY: -0.62,
     keyX: 0.0,           // centred on the cast's own width, not on any one kid
     keyY: null,
     batterX: null,
     deepY: 0.22,
     feetFloor: -0.93,
     horizonY: [0.18, 0.72],
-    topCard: [20, 42],
-    pitch: [7.0, 15.0],
+    topCard: [21, 42],
+    pitch: [8.0, 13.0],
     yaw: [0, 0],
     camX: [-6, 8],
-    dist: [64, 88],
+    dist: [64, 78],
     minPlay: 10,
     centreCast: true,
     sepFrom: 'batting',  // …and this far off the other framing's axis, in degrees
@@ -219,7 +219,7 @@ const MOTION = {
   tiltMaxDeg: 6.0,
   tiltRateDeg: 20,        // deg/sec ceiling — a follow, never a whip
   tiltDead: 0.34,         // ball may climb this far in NDC y before the tilt wakes up
-  tiltPark: 0.52,         // …and is carried back to here, clear of the HUD's top band
+  tiltPark: 0.58,         // …and is carried back to here, clear of the HUD's top band
   tiltTau: 0.12,
   tiltHome: 0.30,         // slower on the way back down: settling is not a move
   feetFloor: -0.985,      // no kid's feet past this, at any tilt, ever
@@ -566,7 +566,7 @@ const W = {
   floor: 700,       // …and nobody's feet go below the follow's budget line
   crowd: 260,       // per kid missing from the stage
   deep: 90,         // how much stage stands above the plate
-  card: 90,         // where the top of frame crosses the near facade: the block's own number
+  card: 160,        // where the top of frame crosses the near facade: the block's own number
   horizon: 200,     // …and whether the horizon is in the picture at all
   key: 70,          // the key subject's height in frame
   pair: 620,        // batter vs pitcher: an over-the-shoulder, not one behind the other
