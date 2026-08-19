@@ -93,14 +93,26 @@ export function clamp(x, z) {
 }
 
 /**
- * Where a fielder is allowed to chase to. Tighter than the stage itself: a kid
- * standing on the very curb is standing in the gutter, and a kid at z=70 is at
- * the contract's edge with no room to overrun, so both are pulled in a little.
+ * Where a fielder is allowed to chase to.
+ *
+ * Tighter than the stage itself in x — a kid at the very curb is standing in the gutter — and
+ * tighter in z BY HOW TALL HE IS, which is the part worth explaining. Screen height is
+ * 50·h/(t·depth), so the depth at which a kid hits the §17.3 floor is proportional to his own
+ * height. Measured against the solved framings, a 5.36-unit Beanpole at z=64 renders at 14.2%
+ * of frame, which pins the constant: a kid of height h stays above 13.8% out to a depth
+ * of 2087·(h/5.36)/13.8 ≈ 28.2·h, i.e. z ≈ 28.2·h − 83.
+ *
+ * Without this a short kid backing up a deep fly runs himself off the bottom of the scale —
+ * measured, a 4.68 Brace sent to z=64 rendered at exactly 12.0%, on the floor — which is a
+ * frame the build fails for a reason no artist put there. The posts themselves are cast so
+ * that nobody is ever posted past his own limit (src/game/layout.js POSTS); this is the guard
+ * for everywhere the ball sends him afterwards.
  */
-export function chase(x, z) {
+export function chase(x, z, tall = 4.4) {
+  const zMax = Math.min(64, Math.max(34, 28.2 * tall - 83));
   return {
     x: Math.min(21.0, Math.max(-21.0, x)),
-    z: Math.min(64.0, Math.max(-3.0, z)),
+    z: Math.min(zMax, Math.max(-3.0, z)),
   };
 }
 
@@ -532,15 +544,23 @@ registerScenario('layout_field', {
   setup: () => {
     APP.sim.reset(606);
     APP.clock.advance(0.62);
+    // Driven into the gap behind second on purpose. That is the one hole in the arrangement,
+    // and it is the shot that proves the arrangement: the ball lands between the middle kid
+    // and the deep left kid, so BOTH have to move and the frame shows them converging with
+    // the corners still holding their bags. Timed so the ball is still in the air and neither
+    // has arrived — a fielder already lying on the road is a pose, not an arrangement.
     const b = APP.sim.ball;
-    b.pos.set(6.0, 6.4, 20.0);
-    b.vel.set(12.5, 4.0, 40.0);
+    b.pos.set(2.2, 6.0, 18.0);
+    b.vel.set(-4.0, 11.0, 38.4);
     b.live = true; b.inFlight = true;
     APP.sim.state.phase = 'in_play';
     APP.sim.playT = 0;
     const P = APP.get('players');
-    if (P) P.reactToBall(APP, 0.0);
+    if (P) {
+      P.batter.act('swing', { state: 'swing', speed: 0.75 });
+      P.reactToBall(APP, 0.0);
+    }
     framing('field');
   },
-  settle: 0.62,
+  settle: 0.72,
 });

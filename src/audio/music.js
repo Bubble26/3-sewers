@@ -581,7 +581,7 @@ const INSTRUMENTS = {
     kind: 'blow', gain: 0.24, pan: 0.22,
     waves: [{ type: 'triangle', gain: 1 }, { type: 'sine', gain: 0.5, detune: 1200 }],
     filter: { type: 'lowpass', base: 3200, track: 1.6, envAmt: 2600, q: 0.7 },
-    env: { a: 0.020, d: 0.07, s: 0.88, r: 0.07 },
+    env: { a: 0.020, d: 0.06, s: 0.72, r: 0.07 },
     vib: { rate: 5.9, cents: 14, delay: 0.20 },
     noise: { gain: 0.085, hp: 2800, lp: 9500 },     // a whistle is mostly breath
     chiff: 0.5,
@@ -605,7 +605,10 @@ const INSTRUMENTS = {
     ],
     filter: { type: 'bandpass', base: 1900, track: 0.6, envAmt: 900, q: 1.8 },
     peak: { f: 2400, q: 2.0, gain: 5 },
-    env: { a: 0.012, d: 0.05, s: 0.78, r: 0.06 },
+    // s 0.66, not 0.78: a harmonica is a breath instrument and it tapers. At 0.78
+    // under a legato lead the rendered envelope was a flat ribbon with no visible
+    // notes in it — see shots/music-r2/audio/walkup_otto-analysis.png before/after.
+    env: { a: 0.012, d: 0.05, s: 0.66, r: 0.06 },
     vib: { rate: 5.4, cents: 12, delay: 0.28 },
     noise: { gain: 0.05, hp: 1200, lp: 7000 },      // the breath through the comb
     draw: 300,                                      // draw reeds sit a formant higher
@@ -616,7 +619,7 @@ const INSTRUMENTS = {
     waves: [{ type: 'sawtooth', gain: 1 }, { type: 'square', gain: 0.5, detune: 4 }],
     filter: { type: 'bandpass', base: 1000, track: 0.25, envAmt: 300, q: 2.6 },
     peak: { f: 2450, q: 3.0, gain: 9 },
-    env: { a: 0.020, d: 0.06, s: 0.90, r: 0.05 },
+    env: { a: 0.020, d: 0.06, s: 0.74, r: 0.05 },
     vib: { rate: 5.0, cents: 18, delay: 0.10 },
     noise: { gain: 0.05, hp: 1500, lp: 6000 },
     drive: 0.85, growl: 42,                         // the membrane rattle
@@ -1509,14 +1512,14 @@ const WALKUPS = {
     inst: 'trombone', bpm: 146, chartStr: 'F6 | C7 F6', swing: MT.swingHot,
     mel: 'A4:2 A4:1 G4:1 F4:2 A4:2 | C5:3 A4:1 F4:4/',
     mel2: 'F4:2 A4:1 C5:1 A4:2 F4:2 | G4:2 A4:2 C5:3 A4:1/',
-    trim: 0.823, trimB: 0.806, preroll: 0.78, rhythm: 'strut', taps: 4, glissTo: -7,
+    trim: 0.8354, trimB: 0.82, preroll: 0.78, rhythm: 'strut', taps: 4, glissTo: -7,
   },
   // Will not step on a crack: the tune skips the beat where the crack would be.
   kathleen: {
     inst: 'penny_whistle', bpm: 172, chartStr: 'G6 | D7 G6', swing: MT.swingHot,
     mel: 'D5:1 G5:1 B5:1 r:1 B5:1 A5:1 G5:2 | A5:1 B5:1 D6:2 r:2 B5:2',
     mel2: 'G5:1 B5:1 D6:1 r:1 D6:1 B5:1 G5:2 | F#5:1 A5:1 B5:2 r:2 G5:2',
-    trim: 1.033, trimB: 1.022, rhythm: 'light',
+    trim: 1.2012, trimB: 1.1952, rhythm: 'light',
   },
   // Nine years old, four foot nothing, nobody has ever picked second. Fierce.
   filomena: {
@@ -1530,14 +1533,14 @@ const WALKUPS = {
     inst: 'kazoo', bpm: 146, chartStr: 'F6 | C7 F6', swing: MT.swingHot,
     mel: 'r:2 A5:2 A5:1 G5:1 F5:2 | A5:2 C6:3 A5:1 F5:2',
     mel2: 'r:2 F5:2 A5:1 C6:1 A5:2 | G5:2 A5:2 C6:3 A5:1',
-    trim: 0.998, trimB: 0.933, rhythm: 'strut', wobble: 22,
+    trim: 1.1275, trimB: 1.059, rhythm: 'strut', wobble: 22,
   },
   // Six feet of elbows. Klezmer freygish, and it laughs on the way out.
   irving: {
     inst: 'clarinet', bpm: 152, chartStr: 'Dm | A7 Dm', swing: MT.swingHot,
     mel: 'D5:2 ^Eb5:1 F#5:1 G5:2 A5:2 | Bb5:2 A5:1 G5:1 F#5:2 D5:2/',
     mel2: 'A5:2 ^Bb5:1 A5:1 G5:2 F#5:2 | E5:2 F#5:1 G5:1 A5:2 D5:2/',
-    trim: 0.635, trimB: 0.631, rhythm: 'klez', glissTo: 7,
+    trim: 0.6446, trimB: 0.6435, rhythm: 'klez', glissTo: 7,
   },
   // Runs the argument. The wood block interrupts the band and wins.
   bessie: {
@@ -1551,7 +1554,7 @@ const WALKUPS = {
     inst: 'piano', bpm: 168, chartStr: 'Eb6 | Bb7 Eb6', swing: MT.swingRag,
     mel: 'Bb4:1 C5:1 Eb5:2 G5:1 F5:1 Eb5:2 | D5:1 Eb5:1 F5:2 Bb5:3 G5:1',
     mel2: 'Eb5:1 F5:1 G5:2 Bb5:1 Ab5:1 G5:2 | F5:1 G5:1 Ab5:2 F5:2 Eb5:2',
-    trim: 1.426, trimB: 1.466, rhythm: 'stride',
+    trim: 1.4458, trimB: 1.483, rhythm: 'stride',
   },
   // Four bars of harmonica between innings. Only four. Nobody has heard the fifth.
   // So he gets a harmonica, alone, and it quits before the phrase is done.
@@ -1559,21 +1562,21 @@ const WALKUPS = {
     inst: 'harmonica', bpm: 132, chartStr: 'F6 | Bb6 | F6', swing: MT.swing,
     mel: 'C5:2 F5:2 A5:2 F5:2 | G5:2 Bb5:2 D6:4 | C5:2 F5:2 A5:2 r:2',
     mel2: 'A5:2 G5:2 F5:2 C5:2 | D5:2 F5:2 Bb5:4 | A5:2 C6:2 F5:2 r:2',
-    trim: 1.416, trimB: 1.45, rhythm: 'none', stopGag: true,
+    trim: 1.656, trimB: 1.6958, rhythm: 'none', stopGag: true,
   },
   // The best kid on the block for two innings. It wanders off at the end.
   stash: {
     inst: 'accordion', bpm: 140, chartStr: 'Gm | D7 Gm', swing: MT.swing,
     mel: 'G4:2 Bb4:2 D5:3 C5:1 | Bb4:2 A4:2 G4:4',
     mel2: 'D5:2 G4:2 Bb4:3 A4:1 | F#4:2 A4:2 G4:4',
-    trim: 0.967, trimB: 0.969, rhythm: 'oompah', drift: 55,
+    trim: 0.9805, trimB: 0.9813, rhythm: 'oompah', drift: 55,
   },
   // Has a pigeon. The pigeon has opinions.
   eugene: {
     inst: 'cornet_plunger', bpm: 132, chartStr: 'Bb6 | F7 Bb6', swing: MT.swingHot,
     mel: 'F4:3 Bb4:1 D5:2 C5:2 | Bb4:6 r:2',
     mel2: 'D5:3 C5:1 Bb4:2 F4:2 | A4:2 C5:4 r:2',
-    trim: 1.927, trimB: 1.786, rhythm: 'sparse', pigeon: true,
+    trim: 1.9742, trimB: 1.8488, rhythm: 'sparse', pigeon: true,
   },
   // Named at six for being the slowest. The name stayed. She is not slow.
   ethel: {
@@ -1582,21 +1585,21 @@ const WALKUPS = {
       'B5:1 G5:1 D5:1 B4:1 D5:1 F5:1 G5:1 B5:1 | C6:1 G5:1 E5:1 C5:1 E5:2 G5:2',
     mel2: 'E5:1 G5:1 C6:1 E6:1 C6:1 G5:1 E5:1 C5:1 | ' +
       'D5:1 F5:1 G5:1 B5:1 D6:1 B5:1 G5:1 F5:1 | E5:1 G5:1 C6:2 G5:2 E5:2',
-    trim: 2.616, trimB: 2.81, rhythm: 'drive',
+    trim: 2.6251, trimB: 2.8197, rhythm: 'drive',
   },
   // No shoes since June. Claims it is faster. It is faster.
   jesus: {
     inst: 'guiro', bpm: 164, chartStr: 'A7 | D7 A7', swing: MT.swingHot,
     mel: 'A4:1 r:1 A4:1 A4:1 r:2 A4:2 | A4:1 r:1 A4:2 A4:1 r:1 A4:2',
     mel2: 'A4:1 A4:1 r:2 A4:1 r:1 A4:2 | r:1 A4:1 A4:1 r:1 A4:2 A4:2',
-    trim: 3.963, trimB: 3.94, rhythm: 'street', whistle: true,
+    trim: 4.4929, trimB: 4.4463, rhythm: 'street', whistle: true,
   },
   // Plants the crutch, and then the ball is already past you.
   luz: {
     inst: 'cuatro', bpm: 150, chartStr: 'D6 | A7 D6', swing: MT.swingRag,
     mel: 'A4:4 r:4 | A4:0.5 B4:0.5 C#5:0.5 D5:0.5 E5:0.5 F#5:0.5 G5:0.5 A5:0.5 A5:2 D3:2',
     mel2: 'D5:4 r:4 | D5:0.5 E5:0.5 F#5:0.5 G5:0.5 A5:0.5 B4:0.5 C#5:0.5 D5:0.5 F#5:2 D3:2',
-    trim: 5.856, trimB: 5.561, rhythm: 'plant',
+    trim: 5.883, trimB: 5.5802, rhythm: 'plant',
   },
   // Best pair of hands on the block. Calm, exact, and it glides.
   ling: {
@@ -1610,14 +1613,14 @@ const WALKUPS = {
     inst: 'celesta', bpm: 128, chartStr: 'C6 | G7 C6', swing: MT.swingRag,
     mel: 'C6:1 E6:1 G6:2 E6:1 C6:1 G5:2 | A5:1 C6:1 E6:2 D6:1 r:3',
     mel2: 'G5:1 C6:1 E6:2 G6:1 E6:1 C6:2 | B5:1 D6:1 G6:2 F6:1 r:3',
-    trim: 1.837, trimB: 1.805, rhythm: 'boxy', copGag: true,
+    trim: 1.8776, trimB: 1.8449, rhythm: 'boxy', copGag: true,
   },
   // Named Tiny at four and has been growing out of it ever since.
   tommy: {
     inst: 'bass_drum', bpm: 104, chartStr: 'F6 | C7 F6', swing: MT.swing,
     mel: 'F2:2 F2:2 F2:2 F2:2 | F2:2 F2:2 F2:4',
     mel2: 'F2:2 F2:2 F2:1 F2:1 F2:2 | F2:2 F2:1 F2:1 F2:4',
-    trim: 2.621, trimB: 2.228, rhythm: 'onemanband', tinyGag: true,
+    trim: 2.6301, trimB: 2.2331, rhythm: 'onemanband', tinyGag: true,
   },
 };
 
@@ -1666,7 +1669,11 @@ function buildWalkup(R, id, t0, o = {}) {
   // The featured instrument, out front and unmistakable.
   const leadOpts = {
     gain: 1.25, chanGain: 1.35, portamento: !!spec.portamento,
-    glissTo: spec.glissTo, legato: spec.portamento ? 1.0 : 0.86, tag: 'feature',
+    // 0.80, not 0.92. The whole point of a walk-up is that you can name the
+    // instrument, and you name an instrument by its attacks. A slurred line hides
+    // them. `portamento` kids (Ling's erhu) are the exception: sliding IS the
+    // sound, so those stay joined.
+    glissTo: spec.glissTo, legato: spec.portamento ? 1.0 : (spec.legato ?? 0.80), tag: 'feature',
     ringLast: spec.ringLast ?? 1.25,
   };
   if (spec.tremolo) {

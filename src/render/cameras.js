@@ -188,13 +188,21 @@ const COMPOSITION = {
  * keeps the ball, and we spend it on tilt.
  *
  * Round 1 capped that tilt at 2.6° and, worse, gave up entirely when the ball went past reach —
- * a camera that stops following the ball is not a camera. The cap is now 9°, which on the FIELD
- * lens is 1.13 of NDC, and the follow never bails: if the ball outruns the cap the camera holds
- * at the stop with the ball as close to the top edge as it can get, and comes home when the
- * ball dies.
+ * a camera that stops following the ball is not a camera. The follow never bails now: if the
+ * ball outruns the cap the camera holds AT the stop, pointed as high as it is allowed, and
+ * walks home when the ball dies.
+ *
+ * The cap is 11°, and that number is measured rather than chosen. On the FIELD lens 11° is 1.38
+ * of NDC. The contract's hardest reachable hit — `defaults.evaluateContact` at quality 1, power
+ * 120, launch 24° — peaks at NDC y 0.71 with the follow working, comfortably inside frame. A
+ * ball that beats the cap is beating it by a lot: the envelope's high corner (a 52° launch)
+ * apexes 61 units over the street and would need ~19° of tilt, which puts all sixteen kids off
+ * the bottom of the frame. Holding at 11° keeps the deep half of the cast on screen, tips the
+ * horizon into the top third, and hands the ball to the chalk landing marker (DESIGN-BIBLE
+ * §2.5), which is a gameplay mechanic built for exactly this.
  */
 const MOTION = {
-  tiltMaxDeg: 9.0,
+  tiltMaxDeg: 11.0,
   tiltRateDeg: 22,        // deg/sec ceiling — a follow, never a whip
   tiltDead: 0.42,         // ball may climb this far in NDC y before the tilt wakes up
   tiltPark: 0.52,         // …and is carried back to here: high in frame, where fly balls live
@@ -909,4 +917,50 @@ registerScenario('cam_field_fly', {
     pin('field');
   },
   settle: 0.5,
+});
+
+/**
+ * THE CUT ITSELF, on demand.
+ *
+ * The headline feature of this file — hold on BATTING through the hitstop, then cut to FIELD
+ * with the ball already inside the frame — had never once been seen on screen, because nothing
+ * in the build can currently produce a `bat:contact` from a clean boot. Measured, from
+ * `sim.reset(4242)`:
+ *
+ *   * the wind-up ends at t = 1.45 s and `pitching.js` releases from the pitcher's own hand at
+ *     z ≈ 25, at ~67 units/s, so the ball crosses the plate at pitchT ≈ 0.36 s;
+ *   * `defaults.evaluateContact` (the batting slot is still empty) scores the swing against
+ *     `sim.timeToPlate` = (moundZ 42 − plateZ) / T.pitch.speed 46 = 0.913 s, a constant that
+ *     describes a pitch nobody throws any more;
+ *   * so the smallest reachable timing error is 0.55 s against a 0.085 s contact window, and
+ *     every swing is a whiff by a factor of six.
+ *
+ * That is the batting/pitching pieces' bug to fix — the two numbers have to come from the same
+ * pitch — and it is written up in this piece's report. Until it is, this scenario swings for
+ * real (real input, real `bat:swing`, real swing animation, real crack and particles when the
+ * ball arrives) and pins the RECORDED timing to what the evaluator is grading against, so the
+ * one code path this file exists for can be seen working:
+ *
+ *   node tools/film.mjs cam_cut --frames 12 --step 0.05
+ *
+ * gives twelve frames across the hold and the cut — BATTING through the contact, then FIELD
+ * with the ball already in the middle of it.
+ */
+registerScenario('cam_cut', {
+  seed: 4242,
+  setup: () => {
+    const sim = APP.sim;
+    sim.reset(4242);
+    let g = 0;
+    while (sim.state.phase !== 'pitch' && g++ < 900) APP.clock.advance(1 / 60);
+    // …and let the pitch travel until it is about a tenth of a second out, so the swing has
+    // started before the ball arrives rather than being triggered by it.
+    g = 0;
+    while (sim.state.phase === 'pitch' && sim.ball.pos.z > T.street.plateZ + 7 && g++ < 300) {
+      APP.clock.advance(1 / 60);
+    }
+    sim.swing();
+    if (sim.swingAt >= 0) sim.swingAt = sim.timeToPlate;
+  },
+  settle: 0,
 });

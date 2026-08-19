@@ -36,12 +36,12 @@
  *   crack_weak       0.296   33.3dB    0ms    23ms    366 Hz    dull thock: darker AND shorter
  *   crack_wallop     0.661   27.0dB    0ms   164ms    497 Hz    +4.8 dB and 4.7x the tail of the pock
  *   whiff            0.146   25.0dB   12ms   211ms   2684 Hz    air only, and it peaks AT contact
- *   clang_iron       0.282   23.4dB    0ms   891ms    376 Hz    6 onsets = a staircase you can count
+ *   clang_iron       0.270   24.0dB    0ms   750ms    378 Hz    7 onsets = a staircase you can count
  *   ashcan_lid       0.194   30.3dB    0ms   105ms    734 Hz    9 onsets = the wobble-to-flat
  *   window_flex      0.402   28.6dB    0ms    94ms    116 Hz    a flat boom, then a beat of nothing
  *   window_break     0.359   29.2dB    0ms   258ms   2151 Hz    glass, an octave above everything else
  *   sewer_swallow    0.264   25.8dB    0ms    35ms    882 Hz    plink, slide whistle, gone
- *   city_bed (10 s)  0.120   12.7dB   78ms      -     305 Hz    no transient sharp enough to fight a bounce
+ *   city_bed (10 s)  0.138   12.7dB   78ms      -     305 Hz    no transient sharp enough to fight a bounce
  *   mix_headroom     0.678   26.5dB     -        -    583 Hz    the worst real instant, 3.4 dB under full scale
  *
  * THE THREE BROOMSTICK TIERS separate on every axis: 366 / 680 / 497 Hz centroid
@@ -51,12 +51,15 @@
  * while its peak sits 4.8 dB above it. That inversion is the sound of weight.
  *
  * THE TWO STAIRCASES are mirror images, on purpose (§7.4). `ashcan_lid` contacts
- * at 0.29 / 0.45 / 0.57 / 0.68 / 0.77 / 0.86 / 0.93 / 0.98 / 1.04 s — gaps
- * SHRINKING, a lid falling flat like a dropped coin. `clang_iron` contacts at
- * 0.12 / 0.23 / 0.35 / 0.48 / 0.62 / 0.76 (+ a seventh at 0.92 under the floor) —
- * gaps WIDENING, a ball walking down a ladder with less bounce every rung. Two
- * cartoon lies, two different objects, and the analysis PNGs prove they are not
- * the same sound twice.
+ * at 0.29 / 0.45 / 0.57 / 0.68 / 0.77 / 0.86 / 0.93 / 0.98 / 1.04 s — gaps of
+ * 152/129/106/93/82/71/58/59 ms, SHRINKING, a lid falling flat like a dropped
+ * coin. `clang_iron` contacts at 0.12 / 0.23 / 0.35 / 0.48 / 0.62 / 0.76 / 0.91 s
+ * — gaps of 117/118/128/141/141/152 ms, WIDENING, a ball walking DOWN a ladder
+ * and taking longer to reach every next bar. Nine accelerating steps against
+ * seven decelerating ones: two cartoon lies about two different objects, and the
+ * two analysis PNGs are the proof they are not the same sound twice. (Read
+ * `clang_iron` at --seconds 1.5 if you want the staircase to fill the frame;
+ * at the default 3 s it is squeezed into the left third.)
  *
  * THE BED IS FOUR LAYERS, NOT EIGHT. §7.5 asks for looping layers plus a sporadic
  * layer every 20-60 s. The bed is now only what is continuously true of this block
@@ -715,7 +718,7 @@ registerCue('clang_iron', {
     //    The broadband part matters as much as the tuned part: three sine partials
     //    alone beat against each other and the floor ripples, and a rippling floor
     //    eats the small late rungs.
-    const FR = 0.100 * s;
+    const FR = 0.092 * s;
     const frame = gain(ctx, 1);
     chain(frame, lp(ctx, 950, 0.9), pk(ctx, 205 * p, 1.1, 4), out);
     for (const [mult, g] of [[0.181, 1.0], [0.290, 0.62], [0.410, 0.34]]) {
@@ -730,42 +733,44 @@ registerCue('clang_iron', {
       f0, g: 0.150 * s, strike: 0.42, strikeF: f0 * 4.1, strikeD: 0.010, beat: 1.6,
       ratios: [1, 1.52, 2.34, 3.06, 4.21, 5.44, 7.1],
       gains: [0.85, 1.0, 0.66, 0.44, 0.30, 0.19, 0.10],
-      decays: [0.44, 0.52, 0.34, 0.25, 0.17, 0.12, 0.075],
+      decays: [0.26, 0.30, 0.20, 0.15, 0.10, 0.070, 0.044],
     });
 
     // 2. THE DESCENT. A rung is one 3/4-inch bar, so it is a NOTE and not a crash:
     //    four modes, short decays, gone before the next one lands. Tight on purpose
     //    — the rungs are the spikes, the frame is the floor, and keeping those two
     //    jobs in separate objects is what makes the staircase readable.
-    // The contact click is deliberately NOT on the same taper as the ring. The ring
-    // is how hard the bar was excited and it dies fast (0.72 a rung); the click is
-    // just rubber touching steel and it barely cares (0.86 a rung), so the last two
-    // rungs still TICK after they have stopped ringing. It is a small level in the
-    // measured envelope and a large one in the ear.
-    const rung = (t, ff, g, i) => metal(ctx, out, t, {
-      f0: ff, g, strike: 0.55 * Math.pow(0.86 / 0.72, i), strikeF: ff * 3.4, strikeD: 0.006, beat: 1.15,
+    const rung = (t, ff, g) => metal(ctx, out, t, {
+      f0: ff, g, strike: 0.55, strikeF: ff * 3.4, strikeD: 0.006, beat: 1.15,
       ratios: [1, 2.44, 3.92, 6.05],
       gains: [1.0, 0.50, 0.26, 0.11],
-      decays: [0.155, 0.100, 0.068, 0.042],
+      decays: [0.098, 0.066, 0.045, 0.028],
     });
     // dt GROWS 6% a rung. The ball has less bounce left every time, so it takes
     // longer to reach the next bar — the exact opposite of ashcan_lid, whose
     // contacts accelerate. Same cartoon lie, two different objects, and the two
     // analysis PNGs are mirror images of each other.
-    let t = t0 + 0.115, f = f0 * 0.90, g = 0.30 * s, dt = 0.115;
+    // LEVEL TAPER 0.84, not the 0.72 the pock uses. Two reasons, one measured and
+    // one physical. Measured: at 0.72 the seventh rung is 14% of the first, which
+    // in the audition envelope is a 7-pixel ripple on the floor — the numbers said
+    // "staircase" and the picture said "wash", and the picture is the thing §7.4
+    // actually asks for. Physical: the ball is FALLING between rungs, so gravity
+    // hands back most of what the bounce takes, and impact speed barely drops.
+    // 0.84 gives seven rungs you can count in the PNG and in the ear.
+    let t = t0 + 0.115, f = f0 * 0.90, g = 0.255 * s, dt = 0.115;
     for (let i = 0; i < 7; i++) {
-      rung(t, f, g, i);
-      t += dt; dt *= 1.06; f *= 0.90; g *= 0.72;
+      rung(t, f, g);
+      t += dt; dt *= 1.06; f *= 0.90; g *= 0.84;
     }
 
     // 3. the grating buzzing about it, all the way down
-    const bz = noiseSrc(ctx, t0 + 0.02, 1.05, 'white', 2.3);
+    const bz = noiseSrc(ctx, t0 + 0.02, 0.55, 'white', 2.3);
     const bf = bp(ctx, 2400 * p, 6);
     const am = gain(ctx, 0.5);
     const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 47;
     lfo.connect(gain(ctx, 0.5)).connect(am.gain);
-    lfo.start(t0 + 0.02); lfo.stop(t0 + 1.08);
-    chain(bz, bf, am, envGain(ctx, t0 + 0.02, { peak: 0.038 * s, a: 0.004, hold: 0.26, d: 0.62 }), out);
+    lfo.start(t0 + 0.02); lfo.stop(t0 + 0.58);
+    chain(bz, bf, am, envGain(ctx, t0 + 0.02, { peak: 0.030 * s, a: 0.004, hold: 0.10, d: 0.40 }), out);
   },
 });
 
@@ -1525,9 +1530,27 @@ registerCue('mother_calling', {
 });
 
 /* -----------------------------------------------------------------------------
- * 3.10 THE BED ITSELF — every layer at once, at its own period
- * §7.5: 4-6 loops at different periods, plus a sporadic layer, so the loop never
- * becomes audible. This is the cue the ambience bus actually runs.
+ * 3.10 THE BED ITSELF — only what is continuously true of this block
+ * §7.5 asks for 4-6 looping layers at different periods PLUS a sporadic layer, so
+ * the loop never becomes audible. The trap in that sentence is the word "layer":
+ * the previous build read it as "put everything in", and the bed came out as
+ * eight objects — including a full Third Avenue El pass — re-drawn every 7.5-10.5
+ * seconds, which meant a train went overhead every eight seconds forever. Eight
+ * objects averaging into a wash is not a place; it is a hiss with a rumble in it.
+ *
+ * So the bed is four layers and the four are chosen by ONE test: is this true of
+ * this block all the time? The avenue is. A horse cart on a delivery round is.
+ * The cornice pigeons are. One radio in one window is (§7.1 says so in as many
+ * words). A train, a dog, a knife grinder, a church, a klaxon and a mother at a
+ * window are not — they are events, they belong to engine.js's sporadic
+ * scheduler, and they are worth hearing precisely because they are rare.
+ *
+ * Cutting the layer list also cuts the allocation burst the last builder flagged
+ * and could not measure. Counted by instrumenting OfflineAudioContext's create*
+ * methods around one build: the bed is 840 nodes per pass, against ~1,600 before
+ * — the El alone was 422 of them, the knife grinder 229. That is a 47% cut, and
+ * it is still a wholesale rebuild rather than persistent looping sources, which
+ * remains the honest weak point of this file.
  * ------------------------------------------------------------------------- */
 registerCue('city_bed', {
   bus: 'ambience', gain: 1.5, dur: 8.0,

@@ -411,10 +411,16 @@ export class AudioEngine {
 /* =============================================================================
  * MIX DEMONSTRATION CUES
  * ---------------------------------------------------------------------------
- * Ducking and distance are mix behaviour, not sounds, so they cannot be heard in
- * a single-cue render — and CONTRACT.md is explicit that a thing which cannot be
- * rendered offline counts as unbuilt. These two cues put the whole mix through
- * the offline path so both are visible in an audition envelope.
+ * Ducking, distance, headroom and the swing seam are MIX behaviour, not sounds,
+ * so none of them can be heard in a single-cue render — and CONTRACT.md is
+ * explicit that a thing which cannot be rendered offline counts as unbuilt. These
+ * four cues put the whole mix through the offline path so every claim this file
+ * makes about the mix is something a critic can measure:
+ *
+ *   mix_duck_demo      the block drops -18 dB under a voice, and comes back
+ *   mix_distance_demo  the same pock at 4 / 18 / 55 / 140 feet
+ *   mix_headroom       the worst real instant: every bus lit inside 300 ms
+ *   mix_swing_demo     a swing that misses, then a swing that connects
  * ========================================================================== */
 registerCue('mix_duck_demo', {
   bus: 'ambience', gain: 1.0, dur: 7.0, send: 0.05,

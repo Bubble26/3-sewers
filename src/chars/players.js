@@ -509,8 +509,10 @@ export default registerSystem({
     }
     this.chaseDelay = delay;
     this.chase = best;
-    // A ball may leave the stage; a kid may not. LAYOUT.chase() is the only gate.
-    this.chaseTo = LAYOUT.chase(lx, lz);
+    // A ball may leave the stage; a kid may not. LAYOUT.chase() is the only gate, and it is
+    // given the chaser's own height because how deep a kid may go before he falls under the
+    // §17.3 floor is a fact about how tall he is.
+    this.chaseTo = LAYOUT.chase(lx, lz, best && best.group.userData.metrics?.tall);
     // a second kid backs him up — nobody in this game stands still while a ball is live
     let second = null, sd = 1e9;
     for (const f of this.fielders) {
@@ -700,7 +702,7 @@ export default registerSystem({
           const b = this.backup; this.backup = null;
           // the backup comes in BEHIND and to the side, which is where a real backup stands
           // and, on this stage, is also the only way two kids on one ball read as two kids
-          const bt = LAYOUT.chase(to.x - Math.sign(to.x || 1) * 6.5, to.z + 7.5);
+          const bt = LAYOUT.chase(to.x - Math.sign(to.x || 1) * 6.5, to.z + 7.5, b.group.userData.metrics?.tall);
           b.goTo(bt.x, bt.z, { speed: T.field.speed * 0.85 });
         }
       }
