@@ -104,16 +104,20 @@ export const STOCK = {
    the three: the announcers, the kids, and the shout. Everything is cap-height
    in design pixels at a 900 px tall frame. */
 const TYPE = {
-  announce: 27,
-  kid: 24,
-  shout: 41,
-  lead: 1.52,          // line advance, x cap height
-  track: 0.10,
-  condense: 0.86,
+  announce: 25,        // the booth. Two sizes, and the shout is the third (§6.4).
+  announceShout: 31,
+  kid: 20,             // the block. Never the same size as the booth, so a glance sorts them.
+  kidShout: 23,
+  lead: 1.5,           // line advance, x cap height
+  track: 0.095,
+  condense: 0.85,
 };
 
-const PAD = { x: 20, top: 26, bottom: 20 };
-const CARDW = { dot: 528, gooch: 528, kid: 372 };
+const PAD = {
+  booth: { x: 19, top: 25, bottom: 19 },
+  kid: { x: 15, top: 17, bottom: 14 },
+};
+const CARDW = { dot: 512, gooch: 512, kid: 264 };
 
 /* ============================================================================
    2. Halftone — what makes newsprint newsprint
@@ -183,14 +187,14 @@ function burstPath(x, y, w, h, amp, seed) {
   const r = new RNG(seed >>> 0);
   const cx = x + w / 2, cy = y + h / 2;
   const pts = [];
-  const n = Math.max(18, Math.round((w + h) / 34) * 2);
+  const n = clamp(Math.round((w + h) / 62) * 2, 12, 20);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * TAU - Math.PI / 2;
     // a rounded rectangle in polar form, then spiked alternately
     const ca = Math.cos(a), sa = Math.sin(a);
     const k = 1 / Math.max(Math.abs(ca) / (w / 2), Math.abs(sa) / (h / 2));
-    const spike = (i % 2 === 0) ? 1 + amp / 26 : 1 - amp / 52;
-    const j = r.range(0.965, 1.045);
+    const spike = (i % 2 === 0) ? 1 + amp : 1 - amp * 0.30;
+    const j = r.range(0.975, 1.03);
     pts.push([cx + ca * k * spike * j, cy + sa * k * spike * j]);
   }
   return pts;
@@ -435,6 +439,8 @@ class Bubbles {
     this.enabled = true;
     /** set by src/audio/announcer.js so the 'bubbles' scenario can stage a moment */
     this.demo = null;
+    /** the call sheet, when a scenario wants the whole bank on one page */
+    this.sheet = null;
   }
 
   mount() {
@@ -476,7 +482,7 @@ class Bubbles {
     if (prev) prev.retire();
     // never more than four pieces of paper on screen; the oldest kid goes first
     const kids = this.cards.filter((c) => c.who === 'kid' && !c.out);
-    while (kids.length >= 3) { const k = kids.shift(); k.age = k.life + 0.01; }
+    while (kids.length >= 4) { const k = kids.shift(); k.age = k.life + 0.01; }
     this.cards.push(card);
     return card;
   }
@@ -510,7 +516,17 @@ class Bubbles {
     const foot = this.project(app, p.x, 0, p.z);
     if (!head) return null;
     const px = foot ? Math.abs(foot.y - head.y) : 90 * this.U;
-    return { x: head.x, y: head.y, px: Math.max(24, px) };
+    const on = head.x > -40 && head.x < this.w + 40 && head.y > -40 && head.y < this.h + 40;
+    return { x: head.x, y: head.y, px: Math.max(24, px), on };
+  }
+
+  /** Is this kid actually in the frame right now. A bubble for somebody you
+      cannot see is not chatter, it is a floating label. */
+  visible(app, body, minPct = 0) {
+    this.mount(); this.resize();
+    const a = this.kidAnchor(app, body);
+    if (!a || !a.on) return false;
+    return a.px >= (minPct / 100) * this.h;
   }
 
   /** The three things a card may never sit on. Rebuilt every frame. */
@@ -554,17 +570,23 @@ class Bubbles {
   /** Lay a card out: wrap the words, measure the paper. */
   layout(card) {
     const U = this.U;
-    const size = (card.kind === 'shout' ? TYPE.shout : card.who === 'kid' ? TYPE.kid : TYPE.announce) * U;
-    const maxW = (card.who === 'kid' ? CARDW.kid : CARDW.dot) * U - PAD.x * 2 * U;
+    const isKid = card.who === 'kid';
+    const shout = card.kind === 'shout';
+    const size = (isKid ? (shout ? TYPE.kidShout : TYPE.kid) : (shout ? TYPE.announceShout : TYPE.announce)) * U;
+    const P = isKid ? PAD.kid : PAD.booth;
+    const maxW = (isKid ? CARDW.kid : CARDW.dot) * U - P.x * 2 * U;
     const opt = { tracking: TYPE.track, condense: TYPE.condense };
     const lines = wrap(card.text, size, maxW, opt);
     let wid = 0;
     for (const l of lines) wid = Math.max(wid, slabW(l, size, opt));
-    const badge = card.who === 'kid' ? 0 : 62 * U;
-    const w = wid + PAD.x * 2 * U + badge;
-    const h = lines.length * size * TYPE.lead + (PAD.top + PAD.bottom) * U;
-    card.lines = lines; card.size = size; card.badge = badge;
+    const badge = isKid ? 0 : 72 * U;
+    const w = wid + P.x * 2 * U + badge;
+    const h = lines.length * size * TYPE.lead + (P.top + P.bottom) * U;
+    card.lines = lines; card.size = size; card.badge = badge; card.pad = P;
     card.rect.w = w; card.rect.h = h;
+    // a burst throws its spikes outside the box, and those spikes cover the game
+    // as thoroughly as the box does, so the collision box grows with them
+    card.bleed = shout ? Math.min(w, h) * 0.11 : 0;
     return card;
   }
 
@@ -576,7 +598,7 @@ class Bubbles {
     if (card.who === 'kid') {
       const a = this.kidAnchor(app, card.body) || { x: W * 0.5, y: H * 0.55, px: 90 * U };
       card.anchor = a;
-      const gap = Math.max(30 * U, a.px * 0.34);
+      const gap = Math.max(34 * U, a.px * 0.42) + (card.bleed || 0);
       // above the head first, then the shoulders, then either hip
       for (const [dx, dy, pri] of [
         [0, -1, 0], [0.62, -0.92, 0.5], [-0.62, -0.92, 0.5],
@@ -601,10 +623,15 @@ class Bubbles {
 
     const blocked = this.blocked;
     let best = null, bestCost = Infinity;
+    // a card that is mid-escalation is drawn scaled about its own centre, so the
+    // frame it has to fit inside is the grown one, not the laid-out one
+    const gw = card.rect.w * Math.max(1, card.grow), gh = card.rect.h * Math.max(1, card.grow);
+    const ox = (gw - card.rect.w) / 2, oy = (gh - card.rect.h) / 2;
     for (const c of cands) {
-      const x = clamp(c.x, m * 0.5, W - m * 0.5 - card.rect.w);
-      const y = clamp(c.y, m * 0.4, H - m * 0.4 - card.rect.h);
-      const r = { x, y, w: card.rect.w, h: card.rect.h };
+      const x = clamp(c.x, m * 0.4 + ox, W - m * 0.4 - card.rect.w - ox);
+      const y = clamp(c.y, m * 0.35 + oy, H - m * 0.35 - card.rect.h - oy);
+      const bl = card.bleed || 0;
+      const r = { x: x - bl, y: y - bl, w: card.rect.w + bl * 2, h: card.rect.h + bl * 2 };
       let cost = c.pri * 900 * U * U;
       for (const b of blocked) cost += this.overlap(r, b) * b.weight;
       for (const o of this.cards) {
@@ -631,6 +658,7 @@ class Bubbles {
     this.resize();
     const g = this.g;
     g.clearRect(0, 0, this.w, this.h);
+    if (this.sheet) return this.paintSheet(g, this.sheet);
     if (!this.enabled || !this.cards.length) return;
     this.survey(app);
     const dt = 1 / 60;
@@ -638,6 +666,124 @@ class Bubbles {
     // announcers behind, kids in front — a kid yelling wins the frame
     const order = [...this.cards].sort((a, b) => (a.who === 'kid' ? 1 : 0) - (b.who === 'kid' ? 1 : 0));
     for (const c of order) this.draw(g, c);
+  }
+
+  /**
+   * THE CALL SHEET. What is actually pinned inside Dot's window: the afternoon
+   * paper, torn down and lettered in her own hand, with the lines she has ready.
+   * It is a page of the game's writing, presented as an object off the block
+   * rather than as a debug dump, because a debug dump is not something anybody
+   * on this street would ever have made.
+   */
+  paintSheet(g, sheet) {
+    const U = this.U, W = this.w, H = this.h;
+    const st = STOCK.news;
+    const M = 46 * U;
+    const r = { x: M * 0.55, y: M * 0.35, w: W - M * 1.1, h: H - M * 0.7 };
+
+    // the page
+    for (let i = 3; i >= 1; i--) {
+      g.save(); g.globalAlpha = 0.09 * i;
+      g.translate(3 * U * i * 0.5, 5 * U * i * 0.5);
+      poly(g, tornPath(r.x, r.y, r.w, r.h, 4.6 * U, 771));
+      g.fillStyle = C(mix(AIR.shadowTint, INK, 0.4)); g.fill(); g.restore();
+    }
+    const page = tornPath(r.x, r.y, r.w, r.h, 4.6 * U, 771);
+    poly(g, page);
+    g.save(); g.clip();
+    g.fillStyle = C(st.paper); g.fillRect(0, 0, W, H);
+    const vg = g.createRadialGradient(W * 0.42, H * 0.40, H * 0.12, W * 0.5, H * 0.5, H * 1.10);
+    vg.addColorStop(0, C(mix(st.paper, CHALK, 0.5)));
+    vg.addColorStop(1, C(mix(st.paper, st.edge, 0.40)));
+    g.globalAlpha = 0.85; g.fillStyle = vg; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
+    g.globalAlpha = 0.42; g.fillStyle = speckle(g, 'sheet', st.tint, 3);
+    g.fillRect(0, 0, W, H); g.globalAlpha = 1;
+
+    // a ring off the bottom of somebody's cup
+    g.save();
+    g.strokeStyle = C(mix(WOOD.cart, st.paper, 0.42));
+    g.globalAlpha = 0.34; g.lineWidth = 4.4 * U;
+    g.beginPath(); g.arc(W * 0.845, H * 0.845, 52 * U, 0.4, 5.6); g.stroke();
+    g.restore();
+
+    const ink = C(st.ink);
+    const inner = { x: r.x + 30 * U, y: r.y + 22 * U, w: r.w - 60 * U };
+
+    /* --- masthead ------------------------------------------------------- */
+    g.fillStyle = ink;
+    g.fillRect(inner.x, inner.y + 6 * U, inner.w, 3.4 * U);
+    slab(g, sheet.title, inner.x + inner.w / 2, inner.y + 54 * U, 40 * U, {
+      align: 'center', color: ink, weight: 0.215, tracking: 0.15, serif: 7 * U, jitter: 0.8, seed: 41,
+    });
+    slab(g, sheet.sub, inner.x + inner.w / 2, inner.y + 78 * U, 15 * U, {
+      align: 'center', color: C(mix(st.ink, st.paper, 0.34)), weight: 0.20, tracking: 0.16, condense: 0.9, jitter: 0.7, seed: 77,
+    });
+    g.fillStyle = ink;
+    g.fillRect(inner.x, inner.y + 90 * U, inner.w, 2.2 * U);
+
+    /* --- three columns --------------------------------------------------- */
+    const cols = sheet.columns;
+    const gap = 30 * U;
+    const cw = (inner.w - gap * (cols.length - 1)) / cols.length;
+    const size = 16.5 * U;
+    const opt = { tracking: 0.085, condense: 0.82 };
+    const top = inner.y + 112 * U;
+
+    cols.forEach((col, ci) => {
+      const x = inner.x + ci * (cw + gap);
+      if (ci) {
+        g.strokeStyle = C(mix(st.rule, st.paper, 0.35));
+        g.lineWidth = Math.max(1, 1.3 * U);
+        g.beginPath(); g.moveTo(x - gap / 2, top - 26 * U); g.lineTo(x - gap / 2, r.y + r.h - 40 * U); g.stroke();
+      }
+      // the head, reversed out of an ink bar, the way a paper does it
+      g.fillStyle = ink;
+      g.fillRect(x, top - 30 * U, cw, 24 * U);
+      slab(g, col.head, x + cw / 2, top - 12 * U, 13.5 * U, {
+        align: 'center', color: C(st.paper), weight: 0.23, tracking: 0.14, condense: 0.84, jitter: 0.5, seed: 300 + ci,
+      });
+      let y = top + size + 6 * U;
+      const limit = r.y + r.h - 46 * U;
+      let n = 0;
+      for (const raw of col.lines) {
+        const lines = wrap(raw, size, cw - 16 * U, opt);
+        if (y + lines.length * size * 1.46 > limit) break;
+        // the tick she puts against a line she has already used
+        g.strokeStyle = C(mix(st.ink, st.paper, 0.5));
+        g.lineWidth = Math.max(1, 2.0 * U);
+        g.beginPath();
+        g.moveTo(x, y - size * 0.34); g.lineTo(x + 5 * U, y - size * 0.34);
+        g.stroke();
+        for (const l of lines) {
+          slab(g, l, x + 12 * U, y, size, {
+            ...opt, color: ink, weight: 0.185, serif: size * 0.15, jitter: 0.75, seed: 900 + n * 13 + ci * 7,
+          });
+          y += size * 1.46;
+        }
+        y += 9 * U;
+        n++;
+      }
+    });
+
+    /* --- the footer, in her own chalk ------------------------------------ */
+    const c = sheet.count || {};
+    const tally = `${(c.dot || 0) + (c.gooch || 0) + (c.chatter || 0) + (c.gags || 0) + (c.kid || 0)} LINES ON THE SILL · DOT ${c.dot || 0} · GOOCH ${c.gooch || 0} · THE BLOCK ${c.chatter || 0} · RUNNING GAGS ${c.gags || 0} · ONE APIECE FOR ${sheet.kids || 0} KIDS`;
+    slab(g, tally, inner.x + inner.w / 2, r.y + r.h - 20 * U, 13 * U, {
+      align: 'center', color: C(mix(st.ink, st.paper, 0.30)), weight: 0.2, tracking: 0.16, condense: 0.88, jitter: 0.6, seed: 512,
+    });
+    g.restore();
+
+    poly(g, page);
+    g.strokeStyle = C(st.edge); g.lineWidth = Math.max(1.2, 2.4 * U); g.lineJoin = 'round'; g.stroke();
+
+    // two thumbtacks, because it is pinned to the inside of a window frame
+    for (const [tx, ty] of [[r.x + 40 * U, r.y + 16 * U], [r.x + r.w - 40 * U, r.y + 16 * U]]) {
+      g.beginPath(); g.arc(tx, ty, 8 * U, 0, TAU);
+      g.fillStyle = C(ACCENTS.red); g.fill();
+      g.strokeStyle = C(inkOf(ACCENTS.red)); g.lineWidth = 2 * U; g.stroke();
+      g.beginPath(); g.arc(tx - 2.4 * U, ty - 2.6 * U, 2.6 * U, 0, TAU);
+      g.fillStyle = C(mix(ACCENTS.red, CHALK, 0.55)); g.fill();
+    }
   }
 
   draw(g, card) {
@@ -660,11 +806,8 @@ class Bubbles {
     const st = card.stock;
     const shout = card.kind === 'shout';
     const path = shout
-      ? burstPath(r.x, r.y, r.w, r.h, 15 * U, card.seed)
-      : tornPath(r.x, r.y, r.w, r.h, 3.4 * U, card.seed);
-
-    /* --- the tail, first, so the card covers where it joins --------------- */
-    this.tail(g, card, st, shout);
+      ? burstPath(r.x, r.y, r.w, r.h, card.who === 'kid' ? 0.215 : 0.115, card.seed)
+      : tornPath(r.x, r.y, r.w, r.h, (card.who === 'kid' ? 4.6 : 3.4) * U, card.seed);
 
     /* --- contact shadow: three offset copies, a real drop, warm-dark ------ */
     for (let i = 3; i >= 1; i--) {
@@ -676,6 +819,11 @@ class Bubbles {
       g.fill();
       g.restore();
     }
+
+    /* --- the tail, before the card body so the card covers where it joins ---
+       Only the kids get one. Dot and the Gooch are off the top of the frame and
+       a tail into empty sky reads as a bug; their faces do the attributing. */
+    if (card.who === 'kid' && card.anchor && card.anchor.on !== false) this.tail(g, card, st, shout);
 
     /* --- the paper -------------------------------------------------------- */
     poly(g, path);
@@ -699,17 +847,30 @@ class Bubbles {
     this.furniture(g, card, st);
     g.restore();
 
-    /* --- the torn edge ---------------------------------------------------- */
+    /* --- the torn edge ----------------------------------------------------
+       A kid's scrap is outlined in HIS OWN accent (§2.9), which is how you know
+       who is yelling from the far side of the street without reading a name. */
     poly(g, path);
-    g.strokeStyle = C(st.edge);
-    g.lineWidth = Math.max(1.2, 2.2 * U);
     g.lineJoin = 'round';
-    g.stroke();
+    if (card.who === 'kid') {
+      g.strokeStyle = C(card.accent);
+      g.lineWidth = Math.max(2.2, 4.0 * U);
+      g.stroke();
+      poly(g, path);
+      g.strokeStyle = C(inkOf(card.accent));
+      g.lineWidth = Math.max(1.1, 1.9 * U);
+      g.stroke();
+    } else {
+      g.strokeStyle = C(st.edge);
+      g.lineWidth = Math.max(1.2, 2.2 * U);
+      g.stroke();
+    }
 
     /* --- the words -------------------------------------------------------- */
     const size = card.size;
-    const x0 = r.x + PAD.x * U + card.badge;
-    let y = r.y + PAD.top * U + size;
+    const P = card.pad || PAD.booth;
+    const x0 = r.x + P.x * U + card.badge;
+    let y = r.y + P.top * U + size;
     const opt = {
       tracking: TYPE.track, condense: TYPE.condense, weight: shout ? 0.235 : 0.20,
       serif: size * 0.16, jitter: 0.9, seed: card.seed % 9973,
@@ -728,38 +889,64 @@ class Bubbles {
   furniture(g, card, st) {
     const U = this.U, r = card.rect;
     if (card.who === 'kid') {
+      // a band of his one saturated garment along the top of the scrap
       g.fillStyle = C(card.accent);
-      g.fillRect(r.x, r.y, r.w, 9 * U);
-      g.globalAlpha = 0.35;
-      g.fillStyle = C(mix(card.accent, INK, 0.4));
-      g.fillRect(r.x, r.y + 9 * U, r.w, 2.4 * U);
+      g.fillRect(r.x, r.y, r.w, 7 * U);
+      g.globalAlpha = 0.30;
+      g.fillStyle = C(mix(card.accent, INK, 0.45));
+      g.fillRect(r.x, r.y + 7 * U, r.w, 2 * U);
       g.globalAlpha = 1;
       return;
     }
-    const badge = 62 * U;
+    const badge = card.badge;
     if (card.who === 'dot') {
-      // two printed rules and a column edge — an afternoon paper, torn across
-      g.strokeStyle = C(st.rule); g.globalAlpha = 0.5;
+      // torn off a column of type: a few surviving lines of body copy, a heavy
+      // rule under the masthead, and the fold she creased it along
+      g.globalAlpha = 0.30;
+      g.fillStyle = C(st.rule);
+      const rnd = new RNG(card.seed ^ 0x5bd1);
+      for (let i = 0; i < 5; i++) {
+        const yy = r.y + 5 * U + i * 2.6 * U;
+        if (yy > r.y + 15 * U) break;
+        g.fillRect(r.x + 8 * U + rnd.range(0, 30) * U, yy, rnd.range(30, r.w * 0.7 / U) * U, 1.2 * U);
+      }
+      g.globalAlpha = 0.55;
+      g.strokeStyle = C(st.rule);
+      g.lineWidth = Math.max(1.2, 2.4 * U);
+      g.beginPath(); g.moveTo(r.x + 5 * U, r.y + 19 * U); g.lineTo(r.x + r.w - 5 * U, r.y + 19 * U); g.stroke();
+      g.lineWidth = Math.max(1, 1.0 * U);
+      g.beginPath(); g.moveTo(r.x + 5 * U, r.y + r.h - 10 * U); g.lineTo(r.x + r.w - 5 * U, r.y + r.h - 10 * U); g.stroke();
+      g.globalAlpha = 0.18;
       g.lineWidth = Math.max(1, 1.6 * U);
-      g.beginPath(); g.moveTo(r.x + 6 * U, r.y + 14 * U); g.lineTo(r.x + r.w - 6 * U, r.y + 14 * U); g.stroke();
-      g.lineWidth = Math.max(1, 0.9 * U);
-      g.beginPath(); g.moveTo(r.x + 6 * U, r.y + 18.5 * U); g.lineTo(r.x + r.w - 6 * U, r.y + 18.5 * U); g.stroke();
-      g.beginPath(); g.moveTo(r.x + 6 * U, r.y + r.h - 11 * U); g.lineTo(r.x + r.w - 6 * U, r.y + r.h - 11 * U); g.stroke();
+      g.beginPath(); g.moveTo(r.x + r.w * 0.62, r.y); g.lineTo(r.x + r.w * 0.58, r.y + r.h); g.stroke();
       g.globalAlpha = 1;
     } else {
-      // THE ICE CARD: heavy printed border, and the pounds numeral in the corner
-      g.strokeStyle = C(st.accent); g.globalAlpha = 0.55;
-      g.lineWidth = Math.max(1.4, 3.0 * U);
+      // THE ICE CARD. A real one carried four numbers, one to a side, and you
+      // turned it in the window to say how many pounds you wanted today.
+      g.strokeStyle = C(st.accent); g.globalAlpha = 0.6;
+      g.lineWidth = Math.max(1.6, 3.2 * U);
       g.strokeRect(r.x + 7 * U, r.y + 7 * U, r.w - 14 * U, r.h - 14 * U);
-      g.globalAlpha = 0.16;
-      slab(g, '25', r.x + r.w - 26 * U, r.y + r.h - 14 * U, 46 * U,
+      g.lineWidth = Math.max(1, 1.2 * U);
+      g.strokeRect(r.x + 12 * U, r.y + 12 * U, r.w - 24 * U, r.h - 24 * U);
+      g.globalAlpha = 0.15;
+      slab(g, '25', r.x + r.w - 24 * U, r.y + r.h - 15 * U, 48 * U,
         { align: 'right', color: C(st.accent), weight: 0.26, tracking: 0.04 });
+      g.save();
+      g.translate(r.x + 26 * U, r.y + 17 * U); g.rotate(Math.PI);
+      slab(g, '50', 0, 0, 30 * U, { align: 'center', color: C(st.accent), weight: 0.26, tracking: 0.04 });
+      g.restore();
       g.globalAlpha = 1;
     }
-    // the face
-    const hc = headCanvas(card.who, 128);
-    const d = badge - 14 * U;
-    g.drawImage(hc, r.x + 10 * U, r.y + (r.h - d) / 2, d, d);
+    // the face — the only attribution either of them gets, so it has to read
+    const hc = headCanvas(card.who, 160);
+    const d = badge - 12 * U;
+    const bx = r.x + 8 * U, by = r.y + (r.h - d) / 2;
+    g.save();
+    g.globalAlpha = 0.22;
+    g.beginPath(); g.ellipse(bx + d / 2 + 2 * U, by + d / 2 + 3 * U, d * 0.49, d * 0.49, 0, 0, TAU);
+    g.fillStyle = C(mix(AIR.shadowTint, INK, 0.4)); g.fill();
+    g.restore();
+    g.drawImage(hc, bx, by, d, d);
   }
 
   /** A folded strip of the same paper, pointing at whoever is talking. */
@@ -791,10 +978,13 @@ class Bubbles {
     g.closePath();
     g.fillStyle = C(mix(st.paper, st.edge, 0.18));
     g.fill();
-    g.strokeStyle = C(st.edge);
-    g.lineWidth = Math.max(1.1, 2.0 * U);
     g.lineJoin = 'round';
-    g.stroke();
+    if (card.who === 'kid') {
+      g.strokeStyle = C(card.accent); g.lineWidth = Math.max(2.2, 4.0 * U); g.stroke();
+      g.strokeStyle = C(inkOf(card.accent)); g.lineWidth = Math.max(1.1, 1.9 * U); g.stroke();
+    } else {
+      g.strokeStyle = C(st.edge); g.lineWidth = Math.max(1.1, 2.0 * U); g.stroke();
+    }
     g.restore();
   }
 }

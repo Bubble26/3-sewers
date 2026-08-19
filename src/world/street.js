@@ -3,14 +3,13 @@ import { registerSystem } from '../app.js';
 import { T } from '../core/tuning.js';
 import { RNG } from '../core/rng.js';
 import { registerScenario } from '../core/scenarios.js';
-import { PAVEMENT, FACADE, AIR, CHALK, INK, soot } from '../render/palette.js';
+import { FACADE, soot } from '../render/palette.js';
 import {
-  M, Builder, Atlas, setTone, tc, tcCss, hexToLin, linToCss, scaleLin, mixLin,
-  shadeLin, texTint, litOf, occlusion, rectUV, panel, storeyTop, buildingTop, FACE_N,
+  M, Builder, Atlas, setTone, shadeLin, texTint, litOf, rectUV, buildingTop,
   brickTexture, washTexture, registerFacadeSprites, buildTenement,
 } from './facade.js';
-import { SHOPS, registerSignSprites, buildStorefront } from './storefronts.js';
-import { EL, registerElSprites, buildElevated, buildTrain } from './elevated.js';
+import { registerSignSprites, buildStorefront } from './storefronts.js';
+import { registerElSprites, buildTrain } from './elevated.js';
 import { buildBackdrop } from './backdrop.js';
 
 /**
@@ -34,9 +33,7 @@ import { buildBackdrop } from './backdrop.js';
  * the ones the kids and the ball throw.
  */
 
-const ROAD_HALF = M.roadHalf;
-const WALK = M.walkY;
-const BLOCK_END = 80;             // the wings stop here; the near facade card stands at 84
+// The wings stop at z=80; src/world/backdrop.js stands the near facade card at z=84.
 
 // ─── the lot plan ─────────────────────────────────────────────────────────────
 // Hand-authored, because composition is not something you seed a random number generator for.
@@ -234,7 +231,7 @@ function alleyArch(ctx, lot) {
 // ─── the system ───────────────────────────────────────────────────────────────
 // §17.4: the camera CUTS, it does not fly. These are locked framings, nothing more.
 const DEFAULT_CAM = { pos: [0, 12, -34], look: [0, 4, 30], fov: 46 };
-const BLOCK_CAM = { pos: [0, 38, -58], look: [0.5, 37.4, 84], fov: 20 };
+const BLOCK_CAM = { pos: [0, 40, -58], look: [0.5, 44, 84], fov: 20 };
 const DETAIL_CAM = { pos: [-14, 9, 26], look: [32, 35, 62], fov: 26 };
 
 export default registerSystem({
@@ -355,7 +352,7 @@ function lock(app, cam) {
   app.camera.updateProjectionMatrix();
 }
 
-/** The block as an elevation, from a second-floor window: wings, near card, notch, El. */
+/** The block from a fourth-floor window: the set above the awnings — wings, notch, El, sky. */
 registerScenario('block_tour', {
   seed: 1925,
   setup: ({ app }) => { app.sim.reset(1925); lock(app, BLOCK_CAM); },

@@ -22,5 +22,6 @@ import '../ui/hud.js';
 import '../audio/engine.js';
 import '../audio/music.js';
 import '../ui/teamselect.js';
+import '../audio/announcer.js'; // the booth on the block: play-by-play, kid chatter, speech bubbles
 // --- scenarios (must stay last: they reference finished systems) ------------
 import './scenarios.js';

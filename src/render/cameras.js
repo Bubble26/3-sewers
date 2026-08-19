@@ -88,7 +88,7 @@ const COMPOSITION = {
     // centred across it, and a small bias left so the batter's body sits off the pitcher
     // rather than in front of him.
     plateY: -0.74,
-    biasX: 0.04,
+    biasX: 0.13,
     // Where the back of the stage lands. This is what actually chooses the elevation: on a
     // long lens the cast's vertical spread is proportional to tan(pitch), so asking for the
     // deepest kid's head at a particular height IS asking for a camera height — and it stays
@@ -102,8 +102,8 @@ const COMPOSITION = {
   field: {
     // The wide one: a steeper seat in the same theatre. Plate on the floor, the whole stage
     // stacked above it, and enough elevation that the fielders separate instead of stacking.
-    plateY: -0.84,
-    biasX: 0.0,
+    plateY: -0.80,
+    biasX: 0.08,
     deepY: 0.88,
     softMaxPct: 27,
     fovBias: 0.35,
@@ -416,7 +416,8 @@ function solveFraming(key, cast, plate) {
    THE SYSTEM
    ========================================================================= */
 
-const EPS = 1e-4;
+const EPS = 1e-4;                              // 0.01 units: below this the camera has not moved
+const LIM_TILT = MOTION.tiltMaxDeg * RAD;      // the follow's hard stop, in radians
 
 export const CAM = {
   framing: 'batting',
@@ -484,10 +485,22 @@ export default registerSystem({
     this.pushT = -1;
     this.cutIn = -1; this.cutTo = null;
     this.wasPhase = '';
-    // The framings are solved once, at boot, off the cast standing at its posts. Re-solving per
-    // scenario would make the shot depend on which scenario ran before it, and a framing that
-    // moves when you are not looking is not a locked framing.
-    this.cut('batting', true);
+    // Every scenario opens on BATTING. The framings themselves are solved once, at boot, off
+    // the cast standing at its posts — re-solving per scenario would make the shot depend on
+    // which scenario ran before it, and a framing that moves when you are not looking is not a
+    // locked framing.
+    this.framing = 'batting';
+    CAM.framing = 'batting';
+    // SNAPSHOT, DO NOT WRITE. Every system's onScenario hook has run by now, but the scenario's
+    // own setup() has not, so this is the last moment the camera is unclaimed. Baselining here
+    // instead of stamping our own transform is what lets somebody else's scenario keep its own
+    // LENS as well as its own position: the lineup, the face sheet and the block tour set a
+    // camera in setup() without setting a fov, and a director that had already written 10°
+    // would leave them shot through a telephoto built for a street 120 units away.
+    const c = app.camera;
+    this.applied.pos.copy(c.position);
+    this.applied.quat.copy(c.quaternion);
+    this.applied.fov = c.fov;
   },
 
   /** An instant, one-frame change of framing. There is no other kind. */
@@ -566,7 +579,6 @@ export default registerSystem({
       view.fwd.set(0, 0, -1).applyQuaternion(view.quat);
       view.t = Math.tan(f.fov * RAD / 2);
       const y = view.ndcY(sim.ball.pos);
-      const lim = MOTION.tiltMaxDeg * RAD;
       if (y != null && Math.abs(y) > MOTION.tiltDead) {
         // d(ndcY)/d(tilt) = −1/t: tilting the camera up pushes the image DOWN the frame, so a
         // ball that has climbed to +ndc is brought back by tilting up, i.e. by a positive step.
@@ -576,15 +588,14 @@ export default registerSystem({
         // pinned at the stop with the whole cast off the bottom of the frame, the camera lets
         // it go and settles back onto the stage, where the chalk landing marker is already
         // drawing the answer on the ground (DESIGN-BIBLE §2.5).
-        if (Math.abs(need) < lim * MOTION.tiltGiveUp) { this.tiltGoal = need; home = false; }
+        if (Math.abs(need) < LIM_TILT * MOTION.tiltGiveUp) { this.tiltGoal = need; home = false; }
       } else if (y != null) {
         home = false;                                // ball is in the box: hold, do not drift
         this.tiltGoal = this.tilt;
       }
     }
     if (home) this.tiltGoal = 0;
-    const cap0 = MOTION.tiltMaxDeg * RAD;
-    this.tiltGoal = THREE.MathUtils.clamp(this.tiltGoal, -cap0, cap0);
+    this.tiltGoal = THREE.MathUtils.clamp(this.tiltGoal, -LIM_TILT, LIM_TILT);
     const tau = home ? MOTION.tiltHome : MOTION.tiltTau;
     let step = (this.tiltGoal - this.tilt) * (1 - Math.exp(-dt / tau));
     const cap = MOTION.tiltRateDeg * RAD * dt;
@@ -651,6 +662,8 @@ function pin(name) {
   sys.pin = name;
   CAM.pin = name;
   sys.cutIn = -1; sys.cutTo = null;
+  sys.tilt = 0; sys.tiltGoal = 0;
+  sys.pushT = -1;
   sys.cut(name, true);
 }
 

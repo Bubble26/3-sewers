@@ -3,10 +3,10 @@ import { registerSystem } from '../app.js';
 import { T } from '../core/tuning.js';
 import { RNG } from '../core/rng.js';
 import { registerScenario } from '../core/scenarios.js';
-import { FACADE, PAVEMENT, AIR } from '../render/palette.js';
+import { FACADE, PAVEMENT } from '../render/palette.js';
 import {
   M, Builder, storeyTop, buildingTop, shadeLin, texTint, litOf, occlusion, lit3,
-  rectUV, floorLum, tc, buildTenement,
+  rectUV, floorLum, buildTenement,
 } from './facade.js';
 import { buildStorefront } from './storefronts.js';
 import { EL, buildElevated } from './elevated.js';
@@ -49,9 +49,10 @@ import { EL, buildElevated } from './elevated.js';
 const S = T.stage;
 export const CARD_Z = S.backdrop;
 
-// The five layers, near to far. `p` is T.stage.parallax; `ox` is the source-space origin that
-// puts the card's lots where we want them in x while keeping every lot inside the fully-sunlit
-// band of the baked light solution (source z < 39), so relightCard() starts from one value.
+// The five layers, near to far. `p` is T.stage.parallax. `ox` is the source-space origin: a
+// card lot's dest x is (ox - z_src), so ox both places the row and keeps every lot inside the
+// fully-sunlit band of the baked light solution (source z < 39) — which is what lets
+// relightCard() start from one known value and grade the whole card in one pass.
 export const LAYERS = [
   { key: 'nearFacade', z: CARD_Z.nearFacade, p: S.parallax.nearFacade, ox: -40 },
   { key: 'midBlock', z: CARD_Z.midBlock, p: S.parallax.midBlock, ox: -80 },
@@ -523,7 +524,8 @@ function curbDressing(card, r) {
         const cx = x + r.range(-0.9, 0.9), cz = z - 2.6 + i * 1.35;
         const hh = 1.5 + r.range(0, 0.5), lift = i === 2 || i === 3 ? 1.5 : 0;
         Tb.box(cx - 1.25, y + lift, cz - 0.72, cx + 1.25, y + lift + hh, cz + 0.72,
-          (f, n, c) => shadeLin(0x6e675c, litOf(n, c[0], c[1], c[2]) * 0.8, f === 'ny' ? 0.35 : 0.05), 'nx px py pz nz');
+          (f, n, c) => shadeLin(i % 3 === 1 ? 0x8a7f70 : 0x9a8a68, litOf(n, c[0], c[1], c[2]) * 0.85,
+            f === 'ny' ? 0.35 : 0.04), 'nx px py pz nz');
       }
     } else {
       Tb.cyl(x, z, 1.35, y, y + 3.4, 10, (n, c) => shadeLin(0x7a6244, litOf(n, c[0], c[1], c[2]) * 0.85, 0.05));
@@ -768,7 +770,11 @@ const setCam = (app, pos, look, fov) => {
   app.camera.updateProjectionMatrix();
 };
 
-/** The whole set from the front: play plane, wings, five cards, the El closing the far end. */
+/**
+ * The set from the audience: the play plane, the two wings, and every card behind them —
+ * near facade, the notch, the mid block rising over it, the far rooftops, the El with a train
+ * on it, and the skyline. One frame that shows what the street is now made of.
+ */
 registerScenario('stage_wide', {
   seed: 1925,
   setup: ({ app }) => {
@@ -778,7 +784,11 @@ registerScenario('stage_wide', {
   settle: 0.4,
 });
 
-/** The same set from the wings, so a critic can count the cards and see they are cards. */
+/**
+ * The same set raked from stage left, so the cards can be counted. Front to back: the wing's
+ * own party wall, the near facade card, the mid block card, the far rooftops, the El, the
+ * skyline — six planes, each one a step hazier and cooler than the one in front of it.
+ */
 registerScenario('backdrop_layers', {
   seed: 1925,
   setup: ({ app }) => {
