@@ -83,8 +83,23 @@ const MUSIC_DEFAULTS = {
   mixTrim: 0.36,
   masterGain: 1.05,
   bedGainDb: -20,          // BYB §6.6 / BIBLE §7.5: the in-play bed sits 20 dB down
-  bedTrimDb: 17.8,         // measured: the bed's thinner arrangement is already 10.8 dB down
-  duckAnnouncerDb: -14,    // the announcer always wins
+  /**
+   * ONE TRIM PER BED, and this is a correctness fix, not a taste one. The three
+   * beds are three different arrangements — brushes-and-bass, a diminished
+   * tremolo wash, and a full four-to-the-bar band — so one shared trim made the
+   * score get 7.2 dB louder on a full count and 12.8 dB louder on a rally, which
+   * are precisely the two moments BIBLE §7.5 says belong to the kids and the
+   * announcer. A rally has to read as a TEXTURE change (tuba on all four, sticks
+   * instead of brushes, cornet + trombone) at the same level, never as volume.
+   * Every number below is measured through the engine's own graph, not guessed.
+   */
+  bedTrimDb: 17.8,         // bed_play  — measured -44.1 dBFS through MIX.buses.music
+  bedTrimTensionDb: 9.6,   // bed_tension
+  bedTrimRallyDb: 5.4,     // bed_rally
+  duckAnnouncerDb: -12,    // the announcer always wins — and -12 is the SHIPPED number:
+                           // it is MIX.duck.voice.music in src/audio/engine.js, which is the
+                           // duck that actually runs. `duck_proof` therefore demonstrates the
+                           // depth the game applies, not a second one this file would like.
   duckCrackDb: -10,        // the bat always wins
   duckAttack: 0.055,
   duckRelease: 0.34,
@@ -457,7 +472,12 @@ const INSTRUMENTS = {
     waves: [{ type: 'square', gain: 1 }, { type: 'triangle', gain: 0.22, detune: 0 }],
     filter: { type: 'lowpass', base: 900, track: 1.9, envAmt: 1500, q: 1.1 },
     peak: { f: 1500, q: 1.4, gain: 4 },
-    env: { a: 0.032, d: 0.10, s: 0.86, r: 0.085 },
+    // s 0.60, not 0.86. A reed that holds 86% of its peak for the whole note
+    // leaves no floor between beats: measured, the arranged cues sat at 6 dB of
+    // 20 ms peak-to-trough inside a 0.6 s window while the sparse bed sat at 41.
+    // Real players breathe and taper; the tune has to open up between notes or
+    // the swing lives only on paper.
+    env: { a: 0.032, d: 0.06, s: 0.60, r: 0.085 },
     vib: { rate: 5.1, cents: 11, delay: 0.24 },
     noise: { gain: 0.030, hp: 1800, lp: 6500 },
     drive: 0.12,
@@ -476,7 +496,7 @@ const INSTRUMENTS = {
     waves: [{ type: 'sawtooth', gain: 1 }, { type: 'sawtooth', gain: 0.42, detune: 7 }],
     filter: { type: 'lowpass', base: 1250, track: 1.5, envAmt: 2400, q: 1.0 },
     peak: { f: 1150, q: 1.6, gain: 6 },
-    env: { a: 0.040, d: 0.09, s: 0.82, r: 0.10 },
+    env: { a: 0.040, d: 0.06, s: 0.58, r: 0.10 },
     vib: { rate: 5.6, cents: 8, delay: 0.30 },
     noise: { gain: 0.022, hp: 2200, lp: 8000 },
     drive: 0.22, rip: 190,                          // brass attack scoops up from below
@@ -486,7 +506,7 @@ const INSTRUMENTS = {
     waves: [{ type: 'sawtooth', gain: 1 }, { type: 'sawtooth', gain: 0.5, detune: -9 }],
     filter: { type: 'bandpass', base: 620, track: 0.30, envAmt: 1500, q: 3.4, wah: true },
     peak: { f: 1750, q: 2.2, gain: 7 },
-    env: { a: 0.045, d: 0.11, s: 0.80, r: 0.11 },
+    env: { a: 0.045, d: 0.07, s: 0.62, r: 0.11 },
     vib: { rate: 5.4, cents: 10, delay: 0.26 },
     noise: { gain: 0.030, hp: 1400, lp: 5200 },
     drive: 0.36, rip: 150, growl: 27,
@@ -496,7 +516,7 @@ const INSTRUMENTS = {
     waves: [{ type: 'sawtooth', gain: 1 }, { type: 'sawtooth', gain: 0.35, detune: -6 }],
     filter: { type: 'lowpass', base: 720, track: 1.25, envAmt: 1500, q: 1.3 },
     peak: { f: 620, q: 1.5, gain: 5 },
-    env: { a: 0.055, d: 0.12, s: 0.85, r: 0.13 },
+    env: { a: 0.055, d: 0.06, s: 0.60, r: 0.13 },
     vib: { rate: 4.9, cents: 9, delay: 0.34 },
     noise: { gain: 0.026, hp: 900, lp: 4200 },
     drive: 0.30, rip: 120,
@@ -508,7 +528,7 @@ const INSTRUMENTS = {
     // read on the spectrum as a wall of mud under everything else.
     waves: [{ type: 'sawtooth', gain: 1 }, { type: 'sine', gain: 0.55, detune: 0 }],
     filter: { type: 'lowpass', base: 240, track: 0.85, envAmt: 380, q: 1.1 },
-    env: { a: 0.030, d: 0.10, s: 0.72, r: 0.09 },
+    env: { a: 0.030, d: 0.07, s: 0.62, r: 0.09 },
     vib: { rate: 4.2, cents: 4, delay: 0.4 },
     noise: { gain: 0.030, hp: 220, lp: 1400 },
     drive: 0.20,
@@ -545,6 +565,30 @@ const INSTRUMENTS = {
     noise: { gain: 0.085, hp: 2800, lp: 9500 },     // a whistle is mostly breath
     chiff: 0.5,
     drive: 0.05,
+  },
+  /**
+   * THE HARMONICA. Otto's roster charm says harmonica, his art prop is a
+   * harmonica, and the Gooch says out loud between innings that Otto plays four
+   * bars of it — so the score has to own one. A ten-hole diatonic is two rows of
+   * reeds: you BLOW one set and DRAW the other, and the two rows do not sound
+   * alike, so `draw` shifts the formant on every other note down the line. That
+   * alternation is the whole reason a harmonica sounds like a harmonica and not
+   * like a small accordion.
+   */
+  harmonica: {
+    kind: 'blow', gain: 0.26, pan: 0.14,
+    waves: [
+      { type: 'sawtooth', gain: 1, detune: -9 },
+      { type: 'sawtooth', gain: 1, detune: 9 },
+      { type: 'square', gain: 0.4, detune: 0 },
+    ],
+    filter: { type: 'bandpass', base: 1900, track: 0.6, envAmt: 900, q: 1.8 },
+    peak: { f: 2400, q: 2.0, gain: 5 },
+    env: { a: 0.012, d: 0.05, s: 0.78, r: 0.06 },
+    vib: { rate: 5.4, cents: 12, delay: 0.28 },
+    noise: { gain: 0.05, hp: 1200, lp: 7000 },      // the breath through the comb
+    draw: 300,                                      // draw reeds sit a formant higher
+    drive: 0.18,
   },
   kazoo: {                                          // membrane buzz + fixed nasal formant
     kind: 'blow', gain: 0.19, pan: 0.26,
@@ -643,7 +687,7 @@ const INSTRUMENTS = {
 
 // Alias so a roster entry can name any of the bible's bank and still sound.
 const INSTRUMENT_ALIAS = {
-  jaw_harp: 'kazoo', hurdy_gurdy: 'accordion', harmonica: 'accordion',
+  jaw_harp: 'kazoo', hurdy_gurdy: 'accordion',
   tin_whistle: 'penny_whistle', spoons: 'wood_block', jug: 'tuba', cornet_muted: 'cornet_plunger',
 };
 const inst = (n) => INSTRUMENTS[n] || INSTRUMENTS[INSTRUMENT_ALIAS[n]] || INSTRUMENTS.piano;
@@ -678,6 +722,20 @@ class Render {
     this.duckGain.connect(this.limiter);
     this._duckUntil = 0;
 
+    /**
+     * ARRANGEMENT DYNAMICS, on their OWN gain stage.
+     * A break — the band stops dead and one horn keeps going — is the oldest
+     * device in this music, and it is a level move, not a note move. It used to
+     * have nowhere to live: the only automatable gain in the chain was the duck,
+     * and an arrangement that writes to the duck fights the announcer for the
+     * same AudioParam and loses (or wins, which is worse). So there are two
+     * stages now. `arrangeAt` is the composer. `duckAt` is the mix. They
+     * multiply, they never overwrite each other, and the announcer still wins.
+     */
+    this.arrangeGain = ctx.createGain();
+    this.arrangeGain.gain.value = 1;
+    this.arrangeGain.connect(this.duckGain);
+
     this.musicBus = ctx.createGain();
     this.musicBus.gain.value = MT.mixTrim;
 
@@ -709,16 +767,30 @@ class Render {
       const wowLfo = ctx.createOscillator(); wowLfo.type = 'sine'; wowLfo.frequency.value = 0.7;
       const wowAmt = ctx.createGain(); wowAmt.gain.value = 0.0016;
       wowLfo.connect(wowAmt).connect(wow.delayTime); wowLfo.start(0);
-      this.musicBus.connect(hp); hp.connect(dip); dip.connect(honk); honk.connect(lp);
-      lp.connect(crunch); crunch.connect(wow); wow.connect(this.duckGain);
-      // shellac surface noise, always present, never loud
+      /**
+       * ORDER MATTERS AND IT WAS WRONG. The waveshaper used to sit AFTER the
+       * 4 kHz lowpass with oversampling off, so its odd harmonics and its
+       * aliases landed at 8–13 kHz with nothing in front of them — a 1925 horn
+       * speaker that was brighter in the top octave than the modern full-band
+       * mix it is supposed to contrast with. The distortion now happens where a
+       * receiver's distortion happens, in front of the horn, and the horn is
+       * two cascaded poles pairs (24 dB/oct) because a real horn does not roll
+       * off gently. §7.1's boundary is the point of this cue; it has to be a
+       * boundary you can hear.
+       */
+      const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 4000; lp2.Q.value = 0.6;
+      crunch.oversample = '4x';
+      this.musicBus.connect(hp); hp.connect(dip); dip.connect(honk); honk.connect(crunch);
+      crunch.connect(lp); lp.connect(lp2); lp2.connect(wow); wow.connect(this.arrangeGain);
+      // shellac surface noise, always present, never loud — and coming off the
+      // same disc through the same horn, so it goes through the same lowpass
       const sn = ctx.createBufferSource(); sn.buffer = noiseBuffer(this.sr); sn.loop = true;
-      const snf = ctx.createBiquadFilter(); snf.type = 'bandpass'; snf.frequency.value = 2600; snf.Q.value = 0.6;
-      const sng = ctx.createGain(); sng.gain.value = 0.013;
-      sn.connect(snf).connect(sng).connect(this.duckGain); sn.start(0);
+      const snf = ctx.createBiquadFilter(); snf.type = 'bandpass'; snf.frequency.value = 2600; snf.Q.value = 2.0;
+      const sng = ctx.createGain(); sng.gain.value = 0.016;
+      sn.connect(snf).connect(sng).connect(lp); sn.start(0);
       this.world = true;
     } else {
-      this.musicBus.connect(this.duckGain);
+      this.musicBus.connect(this.arrangeGain);
     }
 
     // a small stone-canyon room, generated
@@ -792,6 +864,23 @@ class Render {
     this._duckUntil = t0 + a + hold + release;
   }
 
+  /**
+   * THE BREAK. Fall to `db` over `fall`, sit there for `hold`, come back over
+   * `rise`. Deliberately does NOT cancelScheduledValues: a looping cue writes one
+   * of these per pass and they have to stack up the timeline in order, not erase
+   * each other. Deliberately not on the duck gain either — see the constructor.
+   */
+  arrangeAt(t, db, hold, rise = 0.12, fall = 0.04) {
+    const g = this.arrangeGain.gain;
+    const lvl = dB(db);
+    const t0 = Math.max(t, (this.ctx.currentTime || 0) + fall);
+    g.setValueAtTime(1, t0 - fall);
+    g.linearRampToValueAtTime(lvl, t0);
+    g.setValueAtTime(lvl, t0 + hold);
+    g.linearRampToValueAtTime(1, t0 + hold + rise);
+    return t0 + hold + rise;
+  }
+
   /* --- note dispatch ---------------------------------------------------- */
   note(name, midi, t, dur, vel = 1, opts = {}) {
     const S = inst(name);
@@ -827,7 +916,16 @@ class Render {
     // filter: brightness tracks the note and opens with the breath
     const filt = ctx.createBiquadFilter();
     filt.type = S.filter.type;
-    const base = S.filter.base + S.filter.track * f;
+    // draw vs blow: two physically different rows of reeds, alternating down the
+    // line. Counted per instrument per render, so it is deterministic.
+    let drawShift = 0;
+    if (S.draw) {
+      this._draw = this._draw || new Map();
+      const k = this._draw.get(name) || 0;
+      this._draw.set(name, k + 1);
+      drawShift = (k % 2) ? S.draw : 0;
+    }
+    const base = S.filter.base + drawShift + S.filter.track * f;
     filt.Q.value = S.filter.q;
     if (S.filter.wah) {
       // plunger: closed -> open -> closing again across the note
@@ -1183,7 +1281,10 @@ function partBrushes(R, P, t0, o = {}) {
   const g = o.gain ?? 1;
   for (let bar = from; bar < to; bar++) {
     for (const e of [0, 4]) {
-      R.note('brush_swirl', 0, t0 + tAt(P, bar, e) + human(P, 8), P.beat * 0.9, 0.85 * g, {});
+      // 0.55 of a beat, not 0.9. A swirl that runs almost the whole beat welds
+      // the noise floor shut and the band reads as one continuous texture; a
+      // brush actually leaves the head before the next beat arrives.
+      R.note('brush_swirl', 0, t0 + tAt(P, bar, e) + human(P, 8), P.beat * (o.swirl ?? 0.55), 0.85 * g, {});
     }
     for (const e of [2, 6]) {
       R.note('brush_tap', 0, t0 + tAt(P, bar, e) + human(P, 6), 0.06, 0.95 * accentAt(e) * g, {});
@@ -1200,7 +1301,13 @@ function partBrushes(R, P, t0, o = {}) {
   }
 }
 
-/** A written melody, played with swing, accents and the lead's own lag. */
+/**
+ * A written melody, played with swing, accents and the lead's own lag.
+ * `legato` defaults to 0.78, not 0.92: at 0.92 consecutive notes touch, the
+ * amplitude never returns to the floor, and the accent pattern that IS the swing
+ * gets buried under its own sustain. 0.78 is a 1925 wind player's articulation —
+ * tongued, not slurred — and it is what puts the daylight back between beats.
+ */
 function partLead(R, P, t0, m, name, o = {}) {
   const g = o.gain ?? 1;
   const lag = (o.lagMs ?? MT.leadLagMs) / 1000;
@@ -1213,11 +1320,11 @@ function partLead(R, P, t0, m, name, o = {}) {
     if (n.grace) {
       R.note(name, n.midi - 1, t - 0.055, 0.05, vel * 0.55, { bus: o.bus || 'lead', gain: o.chanGain });
     }
-    R.note(name, n.midi + (o.transpose || 0), t, Math.max(0.06, dur * (o.legato ?? 0.92)), vel, {
+    R.note(name, n.midi + (o.transpose || 0), t, Math.max(0.06, dur * (o.legato ?? 0.78)), vel, {
       bus: o.bus || 'lead',
       glideFrom: (o.portamento && prev != null) ? prev + (o.transpose || 0) : undefined,
       gliss: n.gliss ? (o.glissTo ?? -5) : undefined,
-      pan: o.pan, chanGain: o.chanGain, damp: Math.max(0.06, dur * (o.legato ?? 0.92)), tag: o.tag,
+      pan: o.pan, chanGain: o.chanGain, damp: Math.max(0.06, dur * (o.legato ?? 0.78)), tag: o.tag,
     });
     prev = n.midi;
   }
@@ -1396,10 +1503,11 @@ const WALKUPS = {
     trim: 1.58, rhythm: 'stride',
   },
   // Four bars of harmonica between innings. Only four. Nobody has heard the fifth.
+  // So he gets a harmonica, alone, and it quits before the phrase is done.
   otto: {
-    inst: 'tuba', bpm: 122, chartStr: 'F6 | F6', swing: MT.swing,
-    mel: 'F2:2 C3:2 F2:2 C3:2 | r:8',
-    trim: 0.86, rhythm: 'none', stopGag: true,
+    inst: 'harmonica', bpm: 132, chartStr: 'F6 | Bb6 | F6', swing: MT.swing,
+    mel: 'C5:2 F5:2 A5:2 F5:2 | G5:2 Bb5:2 D6:4 | C5:2 F5:2 A5:2 r:2',
+    trim: 1.0, rhythm: 'none', stopGag: true,
   },
   // The best kid on the block for two innings. It wanders off at the end.
   stash: {
@@ -1415,8 +1523,9 @@ const WALKUPS = {
   },
   // Named at six for being the slowest. The name stayed. She is not slow.
   ethel: {
-    inst: 'banjo', bpm: 188, chartStr: 'C6 | G7 C6', swing: MT.swingHot,
-    mel: 'C5:1 E5:1 G5:1 C6:1 G5:1 E5:1 G5:1 C6:1 | E6:1 C6:1 G5:1 E5:1 C5:2 r:2',
+    inst: 'banjo', bpm: 188, chartStr: 'C6 | G7 | C6', swing: MT.swingHot,
+    mel: 'C5:1 E5:1 G5:1 C6:1 G5:1 E5:1 G5:1 C6:1 | ' +
+      'B5:1 G5:1 D5:1 B4:1 D5:1 F5:1 G5:1 B5:1 | C6:1 G5:1 E5:1 C5:1 E5:2 G5:2',
     trim: 2.01, rhythm: 'drive',
   },
   // No shoes since June. Claims it is faster. It is faster.
@@ -1507,8 +1616,9 @@ function buildWalkup(R, id, t0) {
     }
   }
   if (spec.stopGag) {
-    // Otto plays four notes and stops. The cymbal tick is the silence's punchline.
-    R.note('hi_hat', 0, t0 + tAt(P, 1, 2), 0.05, 0.30, {});
+    // Otto quits with a bar and a half still to go. The tick is the punchline of
+    // the silence — somebody in the band waiting for a fifth bar that never comes.
+    R.note('hi_hat', 0, t0 + tAt(P, m.bars - 1, 7), 0.05, 0.26, {});
   }
   if (spec.pigeon) {
     // The pigeon has opinions. It offers them in the rest.
@@ -1537,7 +1647,7 @@ function buildWalkup(R, id, t0) {
   if (spec.drift) {
     R.note('accordion', 67, t0 + tAt(P, 1, 6), 0.5, 0.45, { bus: 'lead', gliss: 1 });
   }
-  return t0 + barT(P, 2) + 1.1;
+  return t0 + barT(P, m.bars) + 1.1;
 }
 
 function buildGenericWalkup(R, id, t0) {
@@ -1604,6 +1714,17 @@ const CUES = {
         R.note('tuba', nearest(c.bass, 28, 43, 36), t1 + tAt(P, bar, 0), 0.55, 0.9, { bus: 'bass' });
       }
 
+      /**
+       * THE BREAK, FINALLY AUDIBLE. Bars 13-14 used to be "everybody out except
+       * the cornet" on paper and 1.6 dB down in the render, because one cornet
+       * playing the hook is nearly as loud as the whole band playing under it.
+       * A break is a hole in the music. The rhythm section stopping is only half
+       * of it; the other half is the level, and the level now happens on its own
+       * gain stage 40 ms before the barline and comes back on the downbeat of 15.
+       */
+      const bar = 4 * P.beat;                    // 1.3043 s at 184
+      R.arrangeAt(t1 + BRK[0] * bar, -9, (BRK[1] - BRK[0]) * bar, 0.12, 0.04);
+
       partLead(R, P, t1, TITLE_HOOK, 'cornet', { gain: 1.15 });
       // The clarinet only harmonises the second half. The hook has to be heard
       // once, bare, or nobody hums it.
@@ -1613,7 +1734,8 @@ const CUES = {
       // trombone answers the borrowed-minor bar with a smear
       R.note('trombone', 53, t1 + tAt(P, 7, 4), 0.7, 0.8, { bus: 'lead', gliss: -4 });
       // and the whole band lands on the last bar together
-      partShout(R, P, t1, 15, 0, { hold: 1.6, gain: 0.95 });
+      // and the whole band comes back IN on 15, louder than it left
+      partShout(R, P, t1, 15, 0, { hold: 1.6, gain: 1.5 });
       partBanjoTremolo(R, P, t1, 15, 3.4, { rate: 17, gain: 0.5 });
     },
   },
@@ -1642,25 +1764,59 @@ const CUES = {
     // MEASURED difference in arrangement density between this and `title`, not a
     // guess — bed RMS lands at title RMS − 20 dB with it.
     seconds: 25.6, span: 25.6, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimDb),
-    build(R, t0) {
-      const P = planOf({ bpm: 150, swing: MT.swingHot, chartStr: BED_CHART, seed: MT.seed + 4 });
-      // Four passes, four textures. A bed that plays the same four bars over and
-      // over becomes audible as a loop inside one inning (BYB §6.4), and an
-      // audible loop is worse than no music at all under an announcer.
+    build(R, t0, o = {}) {
+      const pass = (o.pass | 0);
+      // a different draw every pass, so the micro-timing and the banjo's own
+      // fills are never bar-for-bar the same twice
+      const P = planOf({ bpm: 150, swing: MT.swingHot, chartStr: BED_CHART, seed: MT.seed + 4 + pass * 37 });
+      /**
+       * Four reps, four textures — and WHICH rep gets which texture rotates once
+       * per pass. Two things come out of that. The bed stops being a four-bar
+       * loop you can hum along to inside one inning (BYB §6.4), and, more
+       * importantly, the pass boundary stops being a cliff: the old build put the
+       * thin rep last and the full rep first, so every 25.6 s the bed stepped
+       * 13.7 dB in 400 ms. A level slam is a louder announcement of a loop than
+       * a click is.
+       *
+       * The colour is deliberately NOT the title's. This bed is brushes and
+       * string bass — no banjo except on one rep in four — so the in-play music
+       * is a different band from the front end rather than a quieter copy of it.
+       */
+      const thinRep = (2 + pass) % 4;      // the one that empties out
+      const chunkRep = (3 + pass) % 4;     // the one where the banjo shows up at all
+      const talkRep = (1 + pass) % 4;      // the one where the plunger cornet says something
       for (let rep = 0; rep < 4; rep++) {
         const t = t0 + rep * barT(P, 4);
-        partBass(R, P, t, { inst: 'string_bass', gain: rep === 3 ? 0.75 : 0.9 });
-        if (rep !== 2) partBanjo(R, P, t, { gain: 0.55, fills: rep === 1, push: rep === 3 });
-        partBrushes(R, P, t, { gain: rep === 2 ? 0.62 : 0.8, ticks: rep === 0 ? false : (rep === 3 ? 'all' : true) });
-        if (rep === 1) partLead(R, P, t, BED_PUNCH, 'cornet_plunger', { gain: 0.55 });
-        if (rep === 2) partStride(R, P, t, { gain: 0.42, tenth: false });
+        const thin = rep === thinRep;
+        partBass(R, P, t, { inst: 'string_bass', gain: thin ? 0.78 : 0.9 });
+        partBrushes(R, P, t, { gain: thin ? 0.66 : 0.8, ticks: thin ? false : (rep === chunkRep ? 'all' : true) });
+        if (rep === chunkRep) partBanjo(R, P, t, { gain: 0.55, fills: false, push: true });
+        if (rep === talkRep && !thin) partLead(R, P, t, BED_PUNCH, 'cornet_plunger', { gain: 0.55 });
+        if (thin) partStride(R, P, t, { gain: 0.42, tenth: false });
+        if (rep === 3) {
+          /**
+           * THE PICKUP. Two beats of banjo climbing chord tones out of the last
+           * bar and landing on the downbeat of the next pass. It is what a real
+           * rhythm player does at the end of a chorus, and it is also the thing
+           * that closes the seam: the 280 ms before the boundary used to be
+           * empty air.
+           */
+          const nc = chordAt(P.bars, 0, 0);
+          let v = voiceLead(null, chordAt(P.bars, 3, 2), 55, 74, 4);
+          const up = [v[0], v[1], v[2], nearest(nc.bass, 62, 76, v[3])];
+          for (let i = 0; i < 4; i++) {
+            R.note('banjo', up[i], t + tAt(P, 3, 4 + i) + human(P, 6), 0.18,
+              (0.34 + i * 0.09) * accentAt(4 + i), { damp: 0.22 * P.beat, release: 0.05 });
+          }
+          R.note('brush_swirl', 0, t + tAt(P, 3, 6) + human(P, 6), P.beat * 0.7, 0.6, {});
+        }
       }
     },
   },
 
   /** Full count. Diminished, rising, a press roll, and the bass stops walking. */
   bed_tension: {
-    seconds: 12.8, span: 6.4, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimDb - 5),
+    seconds: 12.8, span: 6.4, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimTensionDb),
     build(R, t0) {
       const P = planOf({ bpm: 150, swing: MT.swingHot, chartStr: TENSION_CHART, seed: MT.seed + 5 });
       for (let bar = 0; bar < 4; bar++) {
@@ -1686,7 +1842,7 @@ const CUES = {
 
   /** A rally. Everybody stands up: four to the bar, sticks instead of brushes. */
   bed_rally: {
-    seconds: 12.2, span: 6.076, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimDb - 5),
+    seconds: 12.2, span: 6.076, loop: true, bus: 'game', gain: dB(MT.bedGainDb + MT.bedTrimRallyDb),
     build(R, t0) {
       const P = planOf({ bpm: 158, swing: MT.swingHot, chartStr: RALLY_CHART, seed: MT.seed + 6 });
       partBass(R, P, t0, { inst: 'tuba', four: true });
@@ -1751,13 +1907,26 @@ const CUES = {
         partBass(R, P, t0, { from, to, inst: 'tuba', gain: g });
         partBrushes(R, P, t0, { from, to, gain: g, ticks: 'all' });
       }
-      // the break on bar 8: one bass note and then the clarinet on its own
+      // the break on bar 8: one bass note and then the clarinet on its own —
+      // and the hole is a level, not just an absence (see `title`)
       R.note('tuba', 34, t0 + tAt(P, 7, 0), 0.5, 0.95, { bus: 'bass' });
+      R.arrangeAt(t0 + barT(P, 7), -8, barT(P, 8) - barT(P, 7), 0.12, 0.04);
       partLead(R, P, t0, TRIO_MEL, 'clarinet', { gain: 1.05 });
       // cornet takes the last four bars, because a rag needs a shout chorus
       const tail = TRIO_MEL.filter((n) => n.e >= 64);
       tail.eighths = TRIO_MEL.eighths;
       partHarmony(R, P, t0, tail, 'cornet_plunger', { below: 5, gain: 0.7 });
+      /**
+       * FOUR BARS OF HARMONICA BETWEEN INNINGS. ONLY FOUR.
+       * The Gooch says this out loud, Otto's roster charm says it, and his art
+       * prop is a harmonica — so it happens, in the music, in bars 9-12, and then
+       * the cue loops back to bar 1 where there is none. Nobody ever hears the
+       * fifth.
+       */
+      partLead(R, P, t0, mel(`
+        F5:2 D5:2 Bb4:2 D5:2 | F5:3 G5:1 F5:2 D5:2 |
+        Eb5:2 G5:2 Bb5:3 A5:1 | Bb5:4 r:2 F5:2
+      `), 'harmonica', { bar: 8, gain: 0.62, legato: 0.7, lagMs: 12 });
       R.note('cymbal', 0, t0 + tAt(P, 11, 6), 1.4, 0.7, {});
     },
   },
@@ -1790,11 +1959,16 @@ const CUES = {
       R.note('tuba', nearest(c.bass, 28, 43, 36), t0 + tAt(P, 4, 0), 0.5, 0.95, { bus: 'bass' });
       partLead(R, P, t0, mel('F5:3 A5:1 C6:4'), 'cornet', { bar: 4, gain: 1.15 });
       R.note('snare_roll', 0, t0 + tAt(P, 4, 1), P.beat * 3.0, 0.42, {});
+      // and it is a HOLE: -10 dB across bar 5 (5.4545-6.8182 s at 176), back on
+      // the downbeat of 6. A win theme has the shape of a joke — setup, a beat of
+      // nothing, then the thing you were waiting for — and the beat of nothing
+      // only works if it is actually quieter than what surrounds it.
+      R.arrangeAt(t0 + barT(P, 4), -10, barT(P, 5) - barT(P, 4), 0.12, 0.04);
 
       // --- the payoff: everybody, on the one, and then it rings out ----------
-      partShout(R, P, t0, 5, 0, { hold: 1.15, gain: 1.05 });
+      partShout(R, P, t0, 5, 0, { hold: 1.15, gain: 1.6 });
       partBanjoTremolo(R, P, t0, 5, 2.6, { rate: 17, gain: 0.45 });
-      R.note('cymbal', 0, t0 + barT(P, 5), 2.4, 0.9, {});
+      R.note('cymbal', 0, t0 + barT(P, 5), 2.4, 1.2, {});
       R.note('bass_drum', 0, t0 + barT(P, 5), 0.5, 0.7, {});
     },
   },
@@ -1970,8 +2144,12 @@ class Music {
     });
     const total = opts.seconds ?? cue.seconds ?? 6;
     const span = this.span(name);
+    // Which pass this is. A loop cue gets to know, so it can rotate its own
+    // arrangement instead of stamping the identical four bars forever — offline
+    // it counts up inside one render, live it counts up across retiles.
+    let pass = opts.pass | 0;
     let t = t0; let guard = 0;
-    do { cue.build(R, t, opts); t += span; }
+    do { cue.build(R, t, { ...opts, pass }); t += span; pass++; }
     while (cue.loop && t < t0 + total - 0.05 && ++guard < 24);
     return R;
   }
@@ -2006,12 +2184,32 @@ class Music {
     const t0 = ctx.currentTime + 0.06 + (opts.delay || 0);
     const loop = !!CUES[name].loop;
     const len = loop ? this.span(name) : (CUES[name].seconds || 6);
-    const R = this.renderInto(ctx, name, t0, { ...opts, seconds: len, dest: this.dest() });
+    const R = this.renderInto(ctx, name, t0, { ...opts, seconds: len, pass: 0, dest: this.dest() });
     if (!R) return false;
-    const entry = { R, cue: name, t0, endsAt: t0 + len, loop };
+    const entry = { R, cue: name, t0, endsAt: t0 + len, loop, pass: 0 };
     if (opts.layer) { (this.layers = this.layers || []).push(entry); }
     else { this.live = entry; this.current = name; }
     return true;
+  }
+
+  /**
+   * BIBLE §7.1 made audible instead of explained: whenever the in-play bed comes
+   * up, the radio in the third-floor window comes up under it. Same band, 1925
+   * signal path, band-limited 200 Hz-4 kHz — so the player hears the boundary
+   * between the world's music and the game's music without ever being told there
+   * is one. It layers, so a stinger can fire straight over the top of it.
+   */
+  ensureWorldRadio() {
+    if (!this.enabled || !CUES.world_radio) return false;
+    if ((this.layers || []).some((l) => l.cue === 'world_radio')) return false;
+    return this.play('world_radio', { layer: true });
+  }
+  /** Start (or switch to) the bed the game is currently asking for. */
+  startBed() {
+    const want = this.bedFor();
+    if (this.current !== want) this.play(want);
+    this.ensureWorldRadio();
+    return this.current;
   }
   stop(fade = 0.25) {
     const ctx = this.ctx();
@@ -2042,9 +2240,16 @@ class Music {
     if (this.mood.tension > 0.5) return 'bed_tension';
     return 'bed_play';
   }
+  /**
+   * The old guard was `if (this.current && this.current.startsWith('bed_') && ...)`
+   * — which can only ever be true if a bed is ALREADY playing, and nothing in the
+   * game started the first one. The score was written, measured, and silent.
+   * Now: if a bed should be running and nothing is, start it.
+   */
   refreshBed() {
     const want = this.bedFor();
-    if (this.current && this.current.startsWith('bed_') && this.current !== want) this.play(want);
+    if (this.current === want) return;
+    if (!this.current || this.current.startsWith('bed_')) this.startBed();
   }
   state(patch = {}) { Object.assign(this.mood, patch); this.refreshBed(); return this.mood; }
 
@@ -2055,7 +2260,17 @@ class Music {
     // layered stingers were accumulating forever: one per big hit, for a whole
     // game, each holding a graph. Retire them once they have rung out.
     if (this.layers && this.layers.length && ctxNow) {
-      this.layers = this.layers.filter((e) => ctxNow.currentTime < e.endsAt + 3);
+      // a looping layer (the third-floor radio) retiles like the bed does;
+      // a one-shot layer (a sting) is retired once it has rung out
+      for (const e of this.layers) {
+        if (e.loop && ctxNow.currentTime > e.endsAt - 0.45) {
+          const len = this.span(e.cue);
+          e.pass = (e.pass | 0) + 1;
+          e.R = this.renderInto(ctxNow, e.cue, e.endsAt, { seconds: len, pass: e.pass, dest: this.dest() });
+          e.t0 = e.endsAt; e.endsAt += len;
+        }
+      }
+      this.layers = this.layers.filter((e) => e.loop || ctxNow.currentTime < e.endsAt + 3);
     }
     if (!this.live) return;
     const ctx = ctxNow;
@@ -2064,8 +2279,9 @@ class Music {
       const name = this.live.cue;
       const t0 = this.live.endsAt;
       const len = this.span(name);
-      const R = this.renderInto(ctx, name, t0, { seconds: len, dest: this.dest() });
-      this.live = { R, cue: name, t0, endsAt: t0 + len, loop: true };
+      const pass = (this.live.pass | 0) + 1;
+      const R = this.renderInto(ctx, name, t0, { seconds: len, pass, dest: this.dest() });
+      this.live = { R, cue: name, t0, endsAt: t0 + len, loop: true, pass };
     } else if (!this.live.loop && ctx.currentTime > this.live.endsAt + 1.5) {
       this.live = null; this.current = null;
     }
@@ -2150,10 +2366,23 @@ function attachToEngine(app) {
   const prevRender = typeof A.renderOffline === 'function' ? A.renderOffline.bind(A) : null;
   const prevList = typeof A.listCues === 'function' ? A.listCues.bind(A) : null;
 
+  /**
+   * MEASURE THROUGH THE MIX, NOT AROUND IT.
+   * The old override intercepted every music cue and rendered it straight to
+   * ctx.destination — so every number tools/audition.mjs printed was taken
+   * OUTSIDE MIX.buses.music (0.62) and outside the engine's master soft clip.
+   * The cues were registered with A.registerCue in exactly the right shape and
+   * then that registration was made unreachable. Now the engine's own path runs
+   * first, which means an audition measures the graph the player hears; our bare
+   * renderer is only the fallback for a cue the engine cannot resolve at all.
+   */
   A.renderOffline = async (opts = {}) => {
-    if (music.has(opts.cue)) return music.renderOffline(opts);
-    if (prevRender) return prevRender(opts);
-    return music.renderOffline({ ...opts, cue: 'title' });
+    const o = { ...opts };
+    if (music.has(o.cue) && !o.seconds) o.seconds = CUES[o.cue].seconds || 6;
+    if (prevRender) {
+      try { return await prevRender(o); } catch (e) { if (!music.has(o.cue)) throw e; }
+    }
+    return music.renderOffline(o);
   };
   A.listCues = () => {
     const theirs = prevList ? (prevList() || []) : [];
@@ -2188,6 +2417,25 @@ export default registerSystem({
     installHarness();
     Promise.resolve().then(installHarness);
     this._installHarness = installHarness;
+
+    /* --- STARTING THE SCORE -------------------------------------------- */
+    /**
+     * The score used to be unreachable: nothing in the game ever called play().
+     * Three entry points now, and they are all events the game already emits.
+     *   - the title screen, at boot
+     *   - the team-select vamp and the title, on their scenarios
+     *   - the in-play bed, the first time a batter steps up (with `pitch:called`
+     *     as a backstop, because a scenario can drop straight into a pitch)
+     * Each of them is idempotent: it only starts something if nothing better is
+     * already playing, so an at-bat during a between-innings rag does not cut it off.
+     */
+    const wantBed = () => {
+      if (!music.enabled) return;
+      if (!music.current || music.current.startsWith('bed_')) music.startBed();
+    };
+    bus.on('atbat:begin', wantBed);
+    bus.on('pitch:called', wantBed);
+    if (!app.flags.harness) music.play('title');
 
     /* --- the score answers the game ------------------------------------ */
     // The announcer and the bat both outrank the band. Every plausible name the
@@ -2231,6 +2479,14 @@ export default registerSystem({
      */
     const kidId = (p) => {
       if (!p) return null;
+      // src/game/sim.js:50 emits `{ batter: <index into the lineup> }` — a NUMBER.
+      // The old reader only understood string ids, so it returned null on the one
+      // event the game actually fires, the walk-up never sounded at the plate, and
+      // `atBat` was never set, which killed the sewer-shot trot sting as well.
+      // Two of BIBLE §7.3's three firing places were dead because of this line.
+      if (typeof p.batter === 'number' && ROSTER && ROSTER.length) {
+        return ROSTER[((p.batter % ROSTER.length) + ROSTER.length) % ROSTER.length].id;
+      }
       const c = p.id || p.kid || p.who || p.batterId ||
         (p.batter && (p.batter.id || (typeof p.batter === 'string' ? p.batter : null)));
       return (typeof c === 'string' && CUES[`walkup_${c}`]) ? c : null;
@@ -2256,6 +2512,18 @@ export default registerSystem({
       music.play(s.home >= s.away ? 'win' : 'loss');
     });
     bus.on('roster:picked', (p) => { if (p && p.id) music.play(`walkup_${p.id}`, { layer: true }); });
+  },
+  /**
+   * A screen is a cue. `__SB.scenario()` calls this on every system before it
+   * sets the scene up, so jumping to the team-select card wall starts the vamp
+   * and jumping to the title starts the title — the same way clicking there in a
+   * running game does, because it is the same call.
+   */
+  onScenario(name, app) {
+    if (!music.enabled) return;
+    if (name === 'team_select') music.play('team_select');
+    else if (name === 'title') music.play('title');
+    else music.startBed();
   },
   update(dt, app) {
     if (app.audio && app.audio !== attachedTo) attachToEngine(app);

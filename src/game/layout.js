@@ -117,69 +117,136 @@ export const SECOND = { x: 0.4, z: 60.0 };
 export const THIRD = { x: -19.4, z: 30.0 };
 export const BASES = [FIRST, SECOND, THIRD];
 
-/** The batter's box: he stands off the casting, on the open side, half a step back. */
-export const PLATE_BOX = { x: 2.9, z: -0.6, look: [0.4, 40] };
-
 /**
- * The nine. `slot` is the screen slot each body was placed for — x/(z+82),
- * roughly its NDC x over the solved lens — and it is here so that the next
- * person to move somebody can see, without rendering, whose frame they are
- * standing in. Keep consecutive slots about 0.025 apart.
+ * CASTING IS PART OF THE LAYOUT, because on a long lens height is the only thing that
+ * survives distance. A kid's on-screen height is 50·h/(t·depth), so a 3.96-unit Fireplug at
+ * z=31 and a 5.36-unit Beanpole at z=64 measure the SAME. That is a free 60 units of stage:
+ * cast the tall silhouettes deep and the short ones near, and the whole street clears the
+ * 12% floor without the camera moving an inch.
+ *
+ * It happens to be how a sandlot picks sides anyway — the big kids go out, the barrel-chested
+ * one squats behind the plate, the one who is all leg pitches — so the arithmetic and the
+ * character design want the same nine kids in the same nine places. Families per §5.4:
+ *
+ *   Fireplug 3.96 · Sack 4.06 · Barefoot 4.30 · Melon 4.40 · Bandbox 4.62 · Brace 4.68
+ *   Ears 4.72 · Ribbon 4.86 · Beanpole 5.36
  */
-export const POSTS = [
-  // id        x       z     y     clip           look at        slot     why
-  { id: 'catcher', x: -2.2, z: -4.6, clip: 'crouch', look: [0.8, 27], slot: -0.028,
-    note: 'squats behind the casting, shaded to the batter\'s open side' },
-  { id: 'pitcher', x: 0.8, z: 27.0, clip: 'pitch_set', look: [2.9, 0], slot: 0.007,
-    note: 'halfway to second on the scratch — 27, not 42, or he cannot make 18% of frame' },
-  { id: 'first', x: 16.8, z: 31.5, clip: 'ready', look: [0, 0], slot: 0.148,
-    note: 'a step off the bag toward the plate, the Ford at his back' },
-  { id: 'third', x: -17.8, z: 31.0, clip: 'ready', look: [0, 0], slot: -0.157,
-    note: 'the lamppost corner, mirror of first' },
-  { id: 'short', x: -7.2, z: 40.0, clip: 'idle_bounce', look: [0, 0], slot: -0.059,
-    note: 'the hole between second and third — the only kid who never stops moving' },
-  { id: 'right', x: 15.0, z: 50.0, clip: 'ready', look: [0, 0], slot: 0.114,
-    note: 'deep on the Ford side and playing the fender: he knows it kicks left' },
-  { id: 'center', x: 9.0, z: 64.0, clip: 'idle', look: [0, 0], slot: 0.062,
-    note: 'off the crown on purpose — the crown projects onto the batter\'s head' },
-  { id: 'left', x: -14.6, z: 60.0, clip: 'idle_slouch', look: [0, 0], slot: -0.103,
-    note: 'deepest on the lamppost side, bored, and about to be very busy' },
-];
+
+/** The batter's box: he stands off the casting, on the open side, half a step back. */
+export const PLATE_BOX = { x: 2.9, z: -0.6, kid: 'otto', look: [0.9, 27], slot: 0.035 };
 
 /** The pitcher's scratch, kept next to the pitcher so the two can never drift. */
-export const PITCH_SCRATCH = { x: 0.8, z: 27.0 };
-
-/** The kid with the next turn, down on one knee in the gutter with his stick. */
-export const ON_DECK = { x: -9.6, z: -5.5, clip: 'bat_wait', look: [0.8, 27], slot: -0.126 };
+export const PITCH_SCRATCH = { x: 0.9, z: 27.0 };
 
 /**
- * The rest of the batting side, along the north gutter from the plate up. They
- * are the bodies the runner rigs wear when nobody is running, which is why they
- * stand in the order they bat.
+ * The nine. `slot` is the screen slot each body was placed for — x/(z+83), which is very
+ * nearly its NDC x over the solved lens — and it is written down so the next person to move
+ * somebody can see, without rendering, whose piece of frame they are standing in. Consecutive
+ * slots want ~0.025 between them; anything past ±0.16 is at the edge of the picture.
+ */
+export const POSTS = [
+  {
+    id: 'catcher', x: -3.0, z: -4.4, kid: 'sal', clip: 'crouch', look: [9.5, 22], slot: -0.036,
+    note: 'The Fireplug: barrel torso, no neck, jammed cap. Squats on the casting, shaded to '
+        + 'the batter\'s open side and turned a third of the way toward first, because the '
+        + 'batting camera sits almost square behind him and a crouching kid seen dead astern '
+        + 'is a rectangle with a cap on it. Nearest lead, so the SHORTEST kid on the block — his 26% '
+        + 'ceiling is what decides how close the camera may come, and every other kid on the '
+        + 'street is standing in the room he leaves.',
+  },
+  {
+    id: 'pitcher', x: 0.9, z: 27.0, kid: 'irving', clip: 'pitch_set', look: [2.9, 0], slot: 0.008,
+    note: 'The Beanpole, all leg. Halfway to second on the scratch — 27, not the old 42. At 42 '
+        + 'he is 1.5x the catcher\'s depth and cannot reach 18% of frame at any legal lens; '
+        + 'casting the tallest kid here buys back the rest.',
+  },
+  {
+    id: 'first', x: 16.8, z: 31.5, kid: 'rocco', clip: 'ready', look: [0, 0], slot: 0.147,
+    note: 'A step off the bag toward the plate, the black Ford at his back.',
+  },
+  {
+    id: 'third', x: -17.8, z: 31.0, kid: 'luz', clip: 'ready', look: [0, 0], slot: -0.156,
+    note: 'The lamppost corner, mirror of first, and the far edge of the picture on that side.',
+  },
+  {
+    id: 'short', x: -7.2, z: 40.0, kid: 'reese', clip: 'idle_bounce', look: [0, 0], slot: -0.059,
+    note: 'The hole between second and third. Never stops moving, which is the only thing in '
+        + 'the middle of the frame that is not the pitcher.',
+  },
+  {
+    id: 'right', x: 15.0, z: 50.0, kid: 'ethel', clip: 'ready', look: [0, 0], slot: 0.113,
+    note: 'Deep on the Ford side and playing the fender: he knows it kicks left.',
+  },
+  {
+    id: 'center', x: 9.0, z: 64.0, kid: 'herman', clip: 'idle', look: [0, 0], slot: 0.061,
+    note: 'The deepest body on the stage and therefore the tallest kid on the block. Off the '
+        + 'crown on purpose: the crown projects straight onto the batter\'s head.',
+  },
+  {
+    id: 'left', x: -14.6, z: 60.0, kid: 'kathleen', clip: 'idle_slouch', look: [0, 0], slot: -0.102,
+    note: 'Deepest on the lamppost side, bored, and about to be very busy.',
+  },
+];
+
+/** The kid with the next turn, out of the swing path, watching the pitcher and not the ball. */
+/**
+ * The kid with the next turn, out of the swing path. He watches the BATTER, not the pitcher:
+ * from a camera behind the plate that turns him broadside, and a kid in profile with a broom
+ * handle is a silhouette while a kid seen from behind is a coat.
+ */
+export const ON_DECK = { x: -9.6, z: -5.5, kid: 'bessie', clip: 'bat_wait', look: [2.9, -0.6], slot: -0.124 };
+
+/**
+ * The rest of the batting side, waiting in the north gutter from the plate up, in the order
+ * they bat. These are the three rigs baserunning wears, so a kid leaves the curb exactly when
+ * it is his turn to be on the bases.
+ *
+ * They stand out at the curb rather than beside the plate for a reason worth writing down.
+ * T.stage.framings.batting looks up the street on a 3.5 degree yaw, and a yaw costs lateral
+ * frame in proportion to depth: at z=130 it drags everything 7.8 units toward screen right.
+ * So in that framing world −x reaches the edge of the picture at depth and world +x never can
+ * — the left quarter of the batting frame is unreachable by anything more than 40 up the
+ * street. The only thing that can fill it is a body that is NEAR and far over on +x. That is
+ * where the kids waiting to bat go, and it is also where they would really be standing.
  */
 export const BENCH = [
-  { x: 12.0, z: 4.0, clip: 'curb_wait', look: [0.8, 27], slot: 0.140 },
-  { x: 13.4, z: 8.5, clip: 'idle_slouch', look: [0.8, 27], slot: 0.148 },
-  { x: 14.6, z: 13.0, clip: 'idle', look: [0.8, 27], slot: 0.154 },
+  { x: 17.6, z: 4.5, kid: 'connie', clip: 'curb_wait', look: [2.9, -0.6], slot: 0.201 },
+  { x: 18.6, z: 9.5, kid: 'peggy', clip: 'idle_slouch', look: [0.9, 27], slot: 0.201 },
+  { x: 19.4, z: 14.5, kid: 'gertie', clip: 'idle', look: [0.9, 27], slot: 0.199 },
 ];
 
 /**
- * The block, watching. Three of them, on three different planes, because §13
- * asks for clusters and distinct silhouettes rather than a row.
+ * The block, watching. Three of them on three different planes, because §13 asks for clusters
+ * and distinct silhouettes rather than a row of heads.
  *
- * `y` is explicit here: the curb kids are up on the bluestone at 0.55, and the
- * umpire is on the load bed of the ice-and-coal truck src/world/vehicles.js
- * parks at (−18.2, 26). Its cargo roof caps at local y 7.78 over a deck that
- * sits at 0.047, and the stake posts are forward of local z 0.9, so (−18.35,
- * 22.4, 7.83) is on the boards and clear of the ironwork.
+ * The curb pair sit DEEP on purpose. A body at the curb subtends x/(z+83), so the nearer he
+ * stands the further out of frame he is: at z=30 a kid on the north curb is past the edge of
+ * the picture, and at z=47 he is inside it. They are cast tall to pay for the depth.
+ *
+ * `y` is explicit: the gutter kids sit on the dish of the roadway with their backs to the
+ * granite, and the umpire is on the load bed of the ice-and-coal truck src/world/vehicles.js
+ * parks at (−18.2, 26, ry 0.04). Its cargo roof caps at local y 7.78 over a deck at 0.047, the
+ * bed runs local z −8.1…1.3 and the stake posts are forward of local z 0.9 — so local
+ * (+0.9, −1.0) is on the boards, on the street side, and clear of the ironwork.
  */
 export const SPECTATORS = [
-  { id: 'cards', x: 22.2, z: 44.0, y: GROUND.walkTop, clip: 'sit_flip', face: 'grin',
-    look: [0, 6], slot: 0.176, note: 'north curb at the foot of the stoop, flipping cards' },
-  { id: 'watcher', x: -22.3, z: 36.0, y: GROUND.walkTop, clip: 'idle_slouch', face: 'squint',
-    look: [2.9, 0], slot: -0.189, note: 'south curb on the areaway rail, arms folded' },
-  { id: 'umpire', x: -18.35, z: 22.4, y: 7.83, clip: 'idle_bounce', face: 'taunt',
-    look: [2.9, 0], slot: -0.176, note: 'on the ice truck\'s load bed — nobody asked him' },
+  {
+    id: 'cards', x: 20.8, z: 52.0, kid: 'carmen', clip: 'sit_flip', face: 'grin',
+    look: [2.9, 0], slot: 0.154,
+    note: 'north gutter at the foot of the stoop, flipping cigarette cards against the granite',
+  },
+  {
+    id: 'watcher', x: -20.9, z: 53.0, kid: 'rose', clip: 'idle_slouch', face: 'squint',
+    look: [2.9, 0], slot: -0.154,
+    note: 'south gutter by the areaway rail, arms folded, has opinions',
+  },
+  {
+    id: 'umpire', x: -17.3, z: 25.0, y: 7.83, kid: 'cheech', clip: 'idle_bounce', face: 'taunt',
+    look: [2.9, 0], slot: -0.160,
+    note: 'up on the ice truck\'s load bed calling balls and strikes. Nobody asked him. Eight '
+        + 'feet of elevation is half a frame of vertical separation for free, which is the '
+        + 'only reason a fourth body fits down that side of the street.',
+  },
 ];
 
 /** Where a scoring kid gets mobbed, and the ring the block piles into. */
@@ -255,7 +322,7 @@ function chalkCross(ctx, x, z, r, label, seed) {
   const line = (a, b, s, alpha, wid) => chalkStroke(g, [[X(a[0]), Z(a[1])], [X(b[0]), Z(b[1])]], wid, s, alpha);
   line([x - r, z - r], [x + r, z + r], seed, 0.95, W * 1.7);
   line([x + r, z - r], [x - r, z + r], seed + 2, 0.95, W * 1.7);
-  if (label) groundText(g, label, X(x), Z(z - r - 1.5), 1.5 * PPF, { seed: seed + 4, weight: 0.16 });
+  if (label) groundText(g, label, X(x), Z(z - r - 1.4), 1.05 * PPF, { seed: seed + 4, weight: 0.16, alpha: 0.8 });
 }
 
 function buildChalk(scene) {
@@ -310,10 +377,14 @@ function buildDiagram(scene) {
   for (let i = 0; i < 4; i++) dash([ring[i].x, ring[i].z], [ring[i + 1].x, ring[i + 1].z], 301 + i * 11);
 
   for (const b of LAYOUT.all()) {
-    const y = b.y || 0;
-    // a body up on the truck gets his word on the road under him, with a tick
-    if (y > 2) chalkStroke(g, [[X(b.x), Z(b.z - 1.1)], [X(b.x), Z(b.z + 1.1)]], W, 401, 0.5);
-    groundText(g, b.label, X(b.x), Z(b.z + 3.1), 1.35 * PPF, { seed: 411, weight: 0.15, alpha: 0.8 });
+    // The word goes UNDER the feet — smaller z is nearer the lens, so it lands below the kid
+    // instead of across his knees — and it is drawn small and faint, because a diagram that
+    // shouts louder than the thing it is describing is not a diagram.
+    if ((b.y || 0) > 2) {
+      // a body standing on something gets a tick on the road beneath him
+      chalkStroke(g, [[X(b.x), Z(b.z - 2.4)], [X(b.x), Z(b.z + 0.6)]], W * 0.8, 401, 0.45);
+    }
+    groundText(g, b.label, X(b.x), Z(b.z - 3.4), 0.82 * PPF, { seed: 411, weight: 0.15, alpha: 0.62 });
   }
   const tex = canvasTexture(ctx.c);
   const mesh = new THREE.Mesh(crownedPlane(CX1 - CX0, CZ1 - CZ0, (CZ0 + CZ1) / 2, 0.05),

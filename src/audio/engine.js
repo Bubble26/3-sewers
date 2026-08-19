@@ -45,10 +45,16 @@ import { CUES, registerCue, listCues, getCue, clamp, gain as gainNode } from './
  * MIX — the whole audio tuning surface. Published on T.audio.
  * ========================================================================== */
 export const MIX = {
-  master: 0.78,
+  // 0.40, not 0.78. A realistic game instant is FOUR things at once — the bed on
+  // ambience, a sewer shot on sfx, a kid yelling on chatter and Dot calling it on
+  // voice — and at 0.78 that instant measured 0.9905, i.e. it only stayed legal by
+  // sitting on the soft-clip knee, and the thing the knee shaves first is the crest
+  // factor of the pock, which is the most important sound in the game. 6 dB back.
+  // `mix_headroom` at the bottom of this file is the standing proof: <= 0.82.
+  master: 0.40,
   // §7.5 is a bus list: kid chatter is its OWN bus with its own volume control,
   // sitting 8-12 dB under the announcers and ducking to -18 dB while a line plays.
-  buses: { sfx: 1.0, voice: 1.0, chatter: 0.32, music: 0.62, ambience: 0.58, reverb: 0.42 },
+  buses: { sfx: 0.86, voice: 1.0, chatter: 0.32, music: 0.62, ambience: 0.58, reverb: 0.42 },
   busAlias: { effects: 'sfx', announcer: 'voice', amb: 'ambience' },
   duck: {
     voice: { chatter: -18, ambience: -18, music: -12, sfx: -4 },
@@ -62,9 +68,15 @@ export const MIX = {
   // and at 20:1 it took the pock down 15 dB below where it belonged. So the
   // ceiling is a real soft-clip transfer curve instead — sample-accurate, dead
   // transparent below the knee (0.4991 in -> 0.4977 out), asymptotic to 1.0 above
-  // it. Nothing can leave this graph clipped, and a transient keeps the crest
-  // factor it was built with.
-  limiter: { knee: 0.68, range: 2.0 },
+  // it. A transient keeps the crest factor it was built with.
+  //
+  // WHAT IT GUARANTEES, measured rather than claimed: at 2x oversampling and a
+  // 0.62 knee, a 3x-gain stress render of every loud cue in the set comes out at
+  // or under 1.000. The old 4x path overshot to 1.007-1.013 — inaudible, but the
+  // old header said "nothing can leave this graph clipped" and that was false,
+  // and a false absolute is worse in a comment than a true bound is. This is the
+  // true bound, and `mix_headroom` below is the standing test of the normal case.
+  limiter: { knee: 0.62, range: 2.0 },
   space: {
     refDist: 14,        // feet at which a sound is half as loud
     rolloff: 0.85,
@@ -80,7 +92,7 @@ export const MIX = {
     taps: [[0.031, 0.42], [0.054, 0.30], [0.089, 0.21], [0.131, 0.14]],
     tail: 0.95, damp: 4200, predelay: 0.008,
   },
-  ambience: { gap: [20, 60] },   // §7.5: a sporadic layer every 20-60 s, never on a cycle
+  ambience: { gap: [22, 55] },   // §7.5: a sporadic layer every 22-55 s, never on a cycle
 };
 
 /* =============================================================================
@@ -133,7 +145,7 @@ export function buildGraph(ctx) {
     const y = a <= k ? a : k + (1 - k) * Math.tanh((a - k) / (1 - k));
     curve[i] = Math.sign(x) * y / L.range;
   }
-  clip.curve = curve; clip.oversample = '4x';
+  clip.curve = curve; clip.oversample = '2x';
   const post = ctx.createGain(); post.gain.value = L.range;
 
   mix.connect(pre); pre.connect(clip); clip.connect(post); post.connect(ctx.destination);
@@ -228,6 +240,7 @@ export class AudioEngine {
     this.rnd = new RNG(1925);
     this.bedAt = 0;
     this.sporadicAt = 0;
+    this.lastEl = -1e9;      // §7.5: the El is rate-limited, not merely unlikely
     this.lastPlay = new Map();
     this.log = [];
   }
@@ -365,8 +378,19 @@ export class AudioEngine {
     if (this.now >= this.bedAt) this.startBed();
     if (this.now >= this.sporadicAt) {
       if (this.sporadicAt > 0) {
-        const pick = SPORADIC_LIST[this.rnd.int(0, SPORADIC_LIST.length - 1)];
-        this.play(pick, { gain: 0.55, dist: this.rnd.range(90, 240), pan: this.rnd.range(-0.8, 0.8), gate: 0 });
+        let pick = SPORADIC_LIST[this.rnd.int(0, SPORADIC_LIST.length - 1)];
+        // the El came up too soon — re-roll off the rest of the list
+        if (pick === 'el_train' && this.now - this.lastEl < EL_MIN_GAP) {
+          const rest = SPORADIC_LIST.slice(1);
+          pick = rest[this.rnd.int(0, rest.length - 1)];
+        }
+        if (pick === 'el_train') this.lastEl = this.now;
+        const O = SPORADIC_OPTS[pick] || { gain: 0.55, dist: [90, 240], pan: [-0.8, 0.8] };
+        this.play(pick, {
+          gain: O.gain, gate: 0,
+          dist: this.rnd.range(O.dist[0], O.dist[1]),
+          pan: this.rnd.range(O.pan[0], O.pan[1]),
+        });
       }
       const G = MIX.ambience.gap;
       this.sporadicAt = this.now + this.rnd.range(G[0], G[1]);
@@ -413,7 +437,62 @@ registerCue('mix_distance_demo', {
   },
 });
 
-const SPORADIC_LIST = ['klaxon', 'dog', 'church_bells', 'knife_grinder', 'pigeons', 'el_train', 'horse_cart', 'mother_calling'];
+registerCue('mix_headroom', {
+  bus: 'sfx', gain: 1.0, dur: 4.2,
+  note: 'THE HEADROOM TEST: one real game instant — the block, a sewer shot, a kid yelling and Dot calling it, all inside 300 ms, ducking OFF so it is the worst case. Must render at or under 0.82.',
+  build(ctx, out, t0, o) {
+    const graph = o.graph;
+    if (!graph) return;
+    // A cue rendered alone tells you nothing about headroom; the game never plays
+    // one cue alone. This is the instant that actually happens — every bus lit at
+    // once — and it is registered rather than thrown away so the claim in MIX
+    // stays checkable by anybody with `node tools/audition.mjs mix_headroom`.
+    const bed = gainNode(ctx, 0.60); bed.connect(graph.buses.ambience);
+    CUES.city_bed.build(ctx, bed, t0, { ...o, seconds: 4.2, rnd: new RNG(4041) });
+
+    const T0 = t0 + 1.30;                                  // the moment of contact
+    const hit = voiceChain(graph, CUES.crack_wallop, { ...o, dist: 6, pan: 0, gain: 1 });
+    CUES.crack_wallop.build(ctx, hit, T0, { ...o, rnd: new RNG(4042) });
+
+    const yellCue = getCue('kid_yell');
+    if (yellCue) {
+      const y = voiceChain(graph, yellCue, { ...o, dist: 42, pan: -0.35, gain: 1 });
+      yellCue.build(ctx, y, T0 + 0.12, { ...o, text: 'some wallop', rnd: new RNG(4043) });
+    }
+    const dot = getCue('dot_line');
+    if (dot) {
+      const d = voiceChain(graph, dot, { ...o, dist: 30, pan: 0.4, gain: 1 });
+      dot.build(ctx, d, T0 + 0.28, { ...o, text: 'and that one is gone down the sewer', rnd: new RNG(4044) });
+    }
+  },
+});
+
+/* =============================================================================
+ * THE SPORADIC LAYER — §7.5's "at least one layer firing every 20-60 s"
+ * ---------------------------------------------------------------------------
+ * These are EVENTS. The bed (sfx.js `city_bed`) is now only the four things this
+ * block does continuously — the avenue, a cart, the cornice pigeons and one
+ * radio in one window. Everything below happens sometimes, which is the whole
+ * reason it is worth hearing: an El pass that arrives every eight seconds is
+ * wallpaper; an El pass that arrives twice in five minutes is New York.
+ *
+ * The El is the biggest event the block owns and the one that would give the
+ * loop away fastest, so it is hard-limited to once per 90 s and the roll is
+ * taken again if it comes up early. SPORADIC_OPTS is how each event gets its own
+ * place on the street instead of all of them arriving from the same random
+ * distance — the church is always downtown, the dog is always in the areaway.
+ * ========================================================================== */
+const SPORADIC_LIST = ['el_train', 'klaxon', 'dog', 'church_bells', 'knife_grinder', 'mother_calling', 'horse_cart'];
+const EL_MIN_GAP = 90;                       // seconds. §7.5: never a cycle you can count.
+const SPORADIC_OPTS = {
+  el_train:       { gain: 0.95, dist: [95, 135],  pan: [0.15, 0.55] },
+  klaxon:         { gain: 0.60, dist: [110, 190], pan: [-0.8, 0.8] },
+  dog:            { gain: 0.62, dist: [60, 120],  pan: [-0.7, 0.7] },
+  church_bells:   { gain: 0.50, dist: [230, 320], pan: [-0.5, -0.1] },
+  knife_grinder:  { gain: 0.58, dist: [70, 150],  pan: [-0.8, 0.8] },
+  mother_calling: { gain: 0.55, dist: [55, 95],   pan: [-0.6, 0.6] },
+  horse_cart:     { gain: 0.50, dist: [80, 160],  pan: [-0.8, 0.8] },
+};
 
 export const audio = new AudioEngine();
 
@@ -442,10 +521,24 @@ export default registerSystem({
     // still works — it builds its own context and never touches this one.
     if (app.flags.harness) audio.enabled = false;
 
-    /* --- the bat ------------------------------------------------------- */
-    bus.on('bat:swing', (p) => audio.play('whiff', { speed: p?.kind === 'power' ? 1.15 : 1, gain: 0.8 }));
+    /* --- the bat -------------------------------------------------------
+     * ONE FOLLOW-THROUGH PER SWING. `bat:swing` fires a 340 ms whiff and, ~200 ms
+     * later, `bat:contact` fires a tier that carries its own air burst — so a big
+     * hit used to play two overlapping swooshes, which is the seam you notice
+     * before you notice anything else. Keep a handle on the whiff; if it is still
+     * going when the ball is struck, pass { air: 0 } and the tier stands its own
+     * burst down (see `broomstick()` in sfx.js).
+     */
+    let swingAt = -1e9;
+    bus.on('bat:swing', (p) => {
+      swingAt = audio.play('whiff', { speed: p?.kind === 'power' ? 1.15 : 1, gain: 0.8 }) ?? -1e9;
+    });
     bus.on('bat:contact', (hit) => {
-      audio.play(contactTier(hit), { gain: 0.95 + (hit?.quality ?? 0.5) * 0.2, gate: 0 });
+      const stillSwooshing = audio.now - swingAt < 0.22;
+      audio.play(contactTier(hit), {
+        gain: 0.95 + (hit?.quality ?? 0.5) * 0.2, gate: 0,
+        ...(stillSwooshing ? { air: 0 } : {}),
+      });
     });
 
     /* --- the ball against the block ------------------------------------ */

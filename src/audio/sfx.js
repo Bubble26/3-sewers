@@ -223,7 +223,7 @@ export function partial(ctx, dest, t0, o) {
   // Ramping it up over even half a millisecond throws away the phase alignment
   // between partials, and with it the entire front edge of the sound.
   const a = o.a ?? (cos ? 0 : 0.0012);
-  const e = envGain(ctx, t0, { peak: o.g ?? 0.3, a, hold: o.hold ?? 0, d: o.d ?? 0.2, shapeA: o.shapeA });
+  const e = envGain(ctx, t0, { peak: o.g ?? 0.3, a, hold: o.hold ?? 0, d: o.d ?? 0.2, shapeA: o.shapeA, shapeD: o.shapeD });
   osc.connect(e).connect(dest);
   osc.start(t0);
   osc.stop(t0 + a + (o.hold ?? 0) + (o.d ?? 0.2) + 0.03);
@@ -444,12 +444,20 @@ function broomstick(ctx, out, t0, o, tier) {
   // 4. grain — the dry scrape of a painted handle
   burst(ctx, body, t0, { f: 1700, q: 0.7, g: P.g * 0.34, a: 0.0006, d: 0.022, color: 'pink' });
   if (P.thump) {
-    // the wallop: the whole street feels it a beat after the pock
-    partial(ctx, out, t0 + 0.022, { f: 92, glideTo: 58, glideTime: 0.18, g: P.thump, d: 0.30, a: 0.010 });
+    // THE WALLOP'S WEIGHT. A sewer shot is not a louder pock, it is a pock with a
+    // building's worth of low end hung under it: 78 Hz sagging to 46 over a quarter
+    // of a second, which is long enough that you hear it arrive AFTER the click.
+    partial(ctx, out, t0 + 0.022, { f: 78, glideTo: 46, glideTime: 0.26, g: P.thump, d: 0.52, a: 0.010, hold: 0.050 });
+    // and one octave under that, so the stoop feels it. Starts 30 ms late on purpose
+    // — the block is bigger than the stick and it answers a beat behind.
+    partial(ctx, out, t0 + 0.030, { f: 39, g: 0.09, d: 0.60, a: 0.014, hold: 0.055 });
     burst(ctx, out, t0 + 0.024, { f: 220, type: 'lp', q: 0.8, g: 0.07, a: 0.006, d: 0.14 });
   }
-  if (P.air) {
-    // the follow-through the stick is still doing after the ball has gone
+  // The follow-through the stick is still doing after the ball has gone. `bat:swing`
+  // already fired `whiff` ~200 ms ago, and two swooshes for one swing is the seam a
+  // critic hears first — so engine.js passes { air: 0 } when the whiff is still live
+  // and this burst stands down. One follow-through per swing, never two.
+  if (P.air && o.air !== 0) {
     burst(ctx, out, t0 + 0.012, { f: 900, fTo: 2600, fTime: 0.10, q: 0.7, g: P.air, a: 0.02, d: 0.10, color: 'pink' });
   }
 }
@@ -469,23 +477,25 @@ const TIER_THOCK = {
 const TIER_WALLOP = {
   f0: 360, g: 0.31, tubeF: 700, tubeDb: 7, lpf: 6400,
   clickF: 2500, click: 0.36, clickD: 0.008,
-  modes: [[1, 0.36, 0.120], [1.96, 1.0, 0.110], [2.76, 0.72, 0.064], [4.24, 0.44, 0.038], [6.2, 0.24, 0.022]],
+  // 1.5x the pock's mode decays: the rod is loaded harder and it rings longer, which
+  // is the whole difference between "he got it" and "he GOT it".
+  modes: [[1, 0.36, 0.180], [1.96, 1.0, 0.165], [2.76, 0.72, 0.096], [4.24, 0.44, 0.057], [6.2, 0.24, 0.033]],
   ballF: 205, ball: 0.30, ballD: 0.10,
-  thump: 0.115, air: 0.055,
+  thump: 0.26, air: 0.055,
 };
 
 registerCue('crack', {
-  bus: 'sfx', gain: 1.3, dur: 0.5, send: 0.19,
+  bus: 'sfx', gain: 1.5, dur: 0.5, send: 0.19,
   note: 'broomstick meets spaldeen, square on. Hollow pock, not a baseball crack.',
   build(ctx, out, t0, o) { broomstick(ctx, out, t0, o, TIER_POCK); },
 });
 registerCue('crack_weak', {
-  bus: 'sfx', gain: 1.3, dur: 0.4,
+  bus: 'sfx', gain: 1.35, dur: 0.4,
   note: 'off the end of the stick. Dull thock, all ball and no rod.',
   build(ctx, out, t0, o) { broomstick(ctx, out, t0, o, TIER_THOCK); },
 });
 registerCue('crack_wallop', {
-  bus: 'sfx', gain: 1.45, dur: 0.9, send: 0.17,
+  bus: 'sfx', gain: 2.4, dur: 1.1, send: 0.17,
   note: 'two sewers worth. Pock + a low thump the whole block feels.',
   build(ctx, out, t0, o) { broomstick(ctx, out, t0, o, TIER_WALLOP); },
 });
@@ -653,35 +663,74 @@ registerCue('thud_wood', {
   },
 });
 
-/* --- fire-escape iron: it rings, and it rings DOWN THE LADDER -------------- */
+/* --- fire-escape iron: it rings, and it rings DOWN THE LADDER --------------
+ * §7.4 asks for one thing here and it is not a clang: "pitched, and it rings
+ * down the ladder rung by rung." That is a STAIRCASE, and a staircase is only a
+ * staircase if you can count the steps. Seven rungs, each a fifth of a tone
+ * lower than the last, and the gaps get WIDER as the ball runs out of bounce.
+ *
+ * That widening is deliberate and it is the opposite of `ashcan_lid`, whose
+ * contacts accelerate to a buzz like a dropped coin. Two cartoon lies about two
+ * different objects: the lid is falling FLAT and speeds up; the ball is walking
+ * DOWN and slows down. Put the two analysis PNGs side by side and they are
+ * mirror images, which is how you know they are not the same sound twice.
+ * ------------------------------------------------------------------------- */
 registerCue('clang_iron', {
-  bus: 'sfx', gain: 0.44, dur: 1.6, send: 0.18,
-  note: 'fire-escape iron. §7.4: pitched, and it walks down the ladder rung by rung.',
+  bus: 'sfx', gain: 0.62, dur: 1.95, send: 0.18,
+  note: '§7.4: fire-escape iron, pitched, walking DOWN the ladder — 7 countable rungs over ~0.92 s, gaps widening as the bounce dies. The mirror of ashcan_lid.',
   build(ctx, out, t0, o) {
     const p = clamp(o.pitch ?? 1, 0.45, 1.5);
     const s = clamp(o.speed ?? 1, 0.4, 1.5);
-    const ring = (t, f0, g) => metal(ctx, out, t, {
-      f0, g, strike: 0.42, strikeF: f0 * 4.1, strikeD: 0.010, beat: 1.6,
+    const f0 = 645 * p;
+
+    // 0. THE LADDER ITSELF. A fire escape is forty feet of bolted steel bolted to
+    //    a brick wall: touch it anywhere and the whole frame answers for two
+    //    seconds. This is the only envelope in the file that fades LINEARLY —
+    //    a big welded structure does not decay like a struck bar, and, practically,
+    //    it is the smooth floor the seven rungs have to stand on to be countable.
+    const frame = gain(ctx, 1);
+    chain(frame, lp(ctx, 950, 0.9), pk(ctx, 205 * p, 1.1, 4), out);
+    for (const [mult, g] of [[0.181, 1.0], [0.290, 0.62], [0.410, 0.34], [0.735, 0.16]]) {
+      partial(ctx, frame, t0 + 0.003, { f: f0 * mult, g: 0.128 * s * g, d: 1.82, a: 0.010, hold: 0.03, shapeD: 'lin', phase: 'cos' });
+    }
+
+    // 1. THE PLATFORM GRATING, clipped on the way in. Many modes, long decays,
+    //    and it is the brightest thing here — the ball hits it edge-on.
+    metal(ctx, out, t0, {
+      f0, g: 0.150 * s, strike: 0.42, strikeF: f0 * 4.1, strikeD: 0.010, beat: 1.6,
       ratios: [1, 1.52, 2.34, 3.06, 4.21, 5.44, 7.1],
       gains: [0.85, 1.0, 0.66, 0.44, 0.30, 0.19, 0.10],
       decays: [0.44, 0.52, 0.34, 0.25, 0.17, 0.12, 0.075],
     });
-    const f0 = 645 * p;
-    ring(t0, f0, 0.30 * s);
-    // the cascade — each rung lower and quieter and closer together than the last
-    let t = t0 + 0.082, f = f0 * 0.86, g = 0.30 * s * 0.52, dt = 0.082;
-    for (let i = 0; i < 4; i++) {
-      ring(t, f, g);
-      t += dt; dt *= 0.94; f *= 0.855; g *= 0.60;
+
+    // 2. THE DESCENT. A rung is one 3/4-inch bar, so it is a NOTE and not a crash:
+    //    four modes, short decays, gone before the next one lands. Tight on purpose
+    //    — the rungs are the spikes, the frame is the floor, and keeping those two
+    //    jobs in separate objects is what makes the staircase readable.
+    const rung = (t, ff, g) => metal(ctx, out, t, {
+      f0: ff, g, strike: 0.55, strikeF: ff * 3.4, strikeD: 0.006, beat: 1.15,
+      ratios: [1, 2.44, 3.92, 6.05],
+      gains: [1.0, 0.50, 0.26, 0.11],
+      decays: [0.155, 0.100, 0.068, 0.042],
+    });
+    // dt GROWS 6% a rung. The ball has less bounce left every time, so it takes
+    // longer to reach the next bar — the exact opposite of ashcan_lid, whose
+    // contacts accelerate. Same cartoon lie, two different objects, and the two
+    // analysis PNGs are mirror images of each other.
+    let t = t0 + 0.115, f = f0 * 0.90, g = 0.30 * s, dt = 0.115;
+    for (let i = 0; i < 7; i++) {
+      rung(t, f, g);
+      t += dt; dt *= 1.06; f *= 0.90; g *= 0.72;
     }
-    // and the whole grating buzzing about it afterwards
-    const bz = noiseSrc(ctx, t0 + 0.02, 0.5, 'white', 2.3);
+
+    // 3. the grating buzzing about it, all the way down
+    const bz = noiseSrc(ctx, t0 + 0.02, 1.05, 'white', 2.3);
     const bf = bp(ctx, 2400 * p, 6);
     const am = gain(ctx, 0.5);
     const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 47;
     lfo.connect(gain(ctx, 0.5)).connect(am.gain);
-    lfo.start(t0 + 0.02); lfo.stop(t0 + 0.55);
-    chain(bz, bf, am, envGain(ctx, t0 + 0.02, { peak: 0.045 * s, a: 0.004, d: 0.42 }), out);
+    lfo.start(t0 + 0.02); lfo.stop(t0 + 1.08);
+    chain(bz, bf, am, envGain(ctx, t0 + 0.02, { peak: 0.038 * s, a: 0.004, hold: 0.26, d: 0.62 }), out);
   },
 });
 
@@ -785,7 +834,7 @@ registerCue('canvas_whump', {
 
 /* --- plate glass: the boom that does NOT break, and the beat of silence ----- */
 registerCue('window_flex', {
-  bus: 'sfx', gain: 1.55, dur: 2.4, send: 0.22,
+  bus: 'sfx', gain: 1.7, dur: 2.4, send: 0.22,
   note: "§7.4/§9.5: a flat terrifying boom, then ONE FULL BEAT of nothing, then one small thing.",
   build(ctx, out, t0, o) {
     const s = clamp(o.speed ?? 1, 0.5, 1.4);
@@ -813,7 +862,7 @@ registerCue('window_flex', {
 });
 
 registerCue('window_break', {
-  bus: 'sfx', gain: 1.15, dur: 2.6, send: 0.20,
+  bus: 'sfx', gain: 1.3, dur: 2.6, send: 0.20,
   note: 'the deli pane, and then everybody runs. Snap, shower, and shards on the sidewalk.',
   build(ctx, out, t0, o) {
     const r = o.rnd;
@@ -844,7 +893,7 @@ registerCue('window_break', {
 });
 
 registerCue('sewer_swallow', {
-  bus: 'sfx', gain: 1.5, dur: 2.2, send: 0.26,
+  bus: 'sfx', gain: 1.65, dur: 2.2, send: 0.26,
   note: "§7.4: a plink on the grate, a descending slide whistle, and it is gone. Game over for that ball.",
   build(ctx, out, t0, o) {
     // the plink: the ball clipping an iron bar on the way in
@@ -1447,37 +1496,45 @@ registerCue('mother_calling', {
  * ------------------------------------------------------------------------- */
 registerCue('city_bed', {
   bus: 'ambience', gain: 1.3, dur: 8.0,
-  note: '§7.5: the whole block at once — traffic, a cart, the El two avenues over, a dog, a radio.',
+  note: '§7.5: the FOUR things this block does all the time — the avenue, a cart, the cornice pigeons, one radio in one window. Everything rarer than that belongs to the sporadic scheduler, not to the bed.',
   build(ctx, out, t0, o) {
     const r = o.rnd, dur = o.seconds ?? 8;
-    // every layer gets its own stream so the bed can be re-drawn every pass and
-    // never repeats — §7.5: the loop must never become audible
+    // Every layer gets its own stream so the bed can be re-drawn every pass and
+    // never repeats. But the LIST is fixed and short, which is the actual §7.5
+    // rule: a bed is what is true of this block continuously. An El pass, a dog,
+    // a knife grinder and a mother at a window are EVENTS, and an event that
+    // happens on every pass of an 8 s bed is a carousel, not a place. Those four
+    // moved out to engine.js SPORADIC_LIST, where they fire once every 22-55 s
+    // and the El at most once every 90 s.
     const sub = () => new RNG(r.int(1, 1000000));
+
+    // 1. THE AVENUE, two blocks over. The floor of the whole mix, and the only
+    //    thing in here allowed to run at full level.
     CUES.city_traffic.build(ctx, out, t0, { ...o, seconds: dur, rnd: sub() });
+
     // everything else is FAR — the bed must never fight the play (§7.5)
     const far = gain(ctx, 0.78);
     chain(far, lp(ctx, 2600, 0.8), out);
+
+    // 2. A HORSE CART. PERIOD: in 1925 half the deliveries on this block are
+    //    still a horse, and the four-beat walk is slow enough to be furniture.
     CUES.horse_cart.build(ctx, far, t0 + r.range(0.2, 1.4), { ...o, rnd: sub() });
-    const els = gain(ctx, 0.30); chain(els, lp(ctx, 900, 0.9), out);
-    CUES.el_train.build(ctx, els, t0 + Math.max(0, dur - 6.6), { ...o, rnd: sub() });
+
+    // 3. THE CORNICE PIGEONS. They never all leave and they never all settle.
     CUES.pigeons.build(ctx, far, t0 + dur * r.range(0.20, 0.40), { ...o, rnd: sub() });
-    const dogs = gain(ctx, 0.70); chain(dogs, lp(ctx, 2600, 0.8), out);
-    CUES.dog.build(ctx, dogs, t0 + dur * r.range(0.50, 0.72), { ...o, rnd: sub() });
+
+    // 4. ONE RADIO, ONE WINDOW, thin and far — §7.1 states that as an absolute,
+    //    and "one radio in one window" is a continuous fact about the block, so
+    //    this is the one non-traffic layer that is right to hear every pass.
     const rad = gain(ctx, 0.40); chain(rad, lp(ctx, 2400, 0.8), out);
     CUES.radio_window.build(ctx, rad, t0 + r.range(0.05, 0.6), { ...o, rnd: sub() });
-    if (dur > 5) {
-      const grind = gain(ctx, 0.55); grind.connect(far);
-      CUES.knife_grinder.build(ctx, grind, t0 + dur * r.range(0.66, 0.80), { ...o, rnd: sub() });
-    }
-    // somebody two stoops down is being called in, and it is not one of ours
-    if (dur > 6 && r.chance(0.7)) {
-      const away = gain(ctx, 0.42); chain(away, hp(ctx, 320, 0.7), lp(ctx, 1500, 0.8), out);
-      CUES.mother_calling.build(ctx, away, t0 + dur * r.range(0.36, 0.56), { ...o, rnd: sub() });
-    }
   },
 });
 
-/* --- the sporadic layer: one of these every 20-60 s, never on a cycle ------- */
-export const SPORADIC = ['klaxon', 'dog', 'church_bells', 'knife_grinder', 'pigeons', 'el_train', 'horse_cart', 'mother_calling'];
+/* --- the sporadic layer: one of these every 22-55 s, never on a cycle -------
+ * The scheduler lives in engine.js (tickAmbience); this is the same list, exported
+ * so anything else that wants to know what the block is capable of can read it.
+ * ------------------------------------------------------------------------- */
+export const SPORADIC = ['el_train', 'klaxon', 'dog', 'church_bells', 'knife_grinder', 'mother_calling', 'horse_cart'];
 
 export default CUES;

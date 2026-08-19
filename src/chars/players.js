@@ -356,36 +356,42 @@ export default registerSystem({
     this.scriptT = 0;
     this.script = null;
 
-    const mk = (i, opts) => { const k = new Kid(app.scene, i, opts); this.kids.push(k); return k; };
-    /** Every kid remembers the layout entry he came from; homePose() only ever reads that. */
-    const post = (k, h, clip) => {
+    /**
+     * One kid per layout entry, and the layout says WHICH kid: the casting is a size decision
+     * as much as a character one (see src/game/layout.js — tall silhouettes deep, short ones
+     * near), so it lives there and this only builds what it is told to build.
+     */
+    let n = 0;
+    const post = (h, opts) => {
+      const k = new Kid(app.scene, h.kid ?? n, opts);
+      n++;
+      this.kids.push(k);
       k.home = h;
-      k.restClip = k.homeClip = clip || h.clip || 'ready';
+      k.restClip = k.homeClip = h.clip || 'ready';
       if (h.face) k.baseFace = k.homeFace = h.face;
       k.goHome();
       k.anim.play(k.restClip, { at: arng.range(0, 2) });
       return k;
     };
 
+    // offence first, so the batter is kids[0] for anybody counting
+    this.batter = post(PLATE_BOX, { stick: true });
+    this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW());
+    this.batter.anim.play('stance');
+    this.onDeck = post(LAYOUT.ON_DECK, { stick: true });
+
     // defence — eight posts, spread across the frame rather than up the street
-    this.fielders = POSTS.map((p, i) => post(mk(i + 2), p));
+    this.fielders = POSTS.map((p) => post(p));
     this.catcher = this.fielders[0];
     this.pitcher = this.fielders[1];
 
-    // offence
-    this.batter = post(mk(0, { stick: true }), PLATE_BOX, 'bat_wait');
-    this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW());
-    this.batter.anim.play('stance');
+    // The rest of the batting side. These three rigs are the ones baserunning wears, so they
+    // wait off the picture until somebody is actually on the bases: thirteen bodies is the most
+    // a 16:9 frame holds at 12% a head, and the fourteenth costs everybody size.
+    this.runners = LAYOUT.BENCH.map((b) => post(b));
 
-    this.onDeck = post(mk(1, { stick: true }), LAYOUT.ON_DECK, 'bat_wait');
-
-    // the rest of the batting side, waiting along the gutter. They are the same three rigs the
-    // baserunning uses: a kid leaves the curb when it is his turn to be on the bases, which is
-    // both why they are here and why there are exactly three of them.
-    this.runners = LAYOUT.BENCH.map((b, i) => post(mk(10 + i), b));
-
-    // the block, watching: two on the curb, one on the roof of the ice truck
-    this.spectators = LAYOUT.SPECTATORS.map((sp, i) => post(mk(13 + i), sp));
+    // the block, watching: two in the gutter by the stoops, one up on the ice truck
+    this.spectators = LAYOUT.SPECTATORS.map((sp) => post(sp));
     this.stoopKid = this.spectators[0];
 
     this.wire(app);
@@ -495,7 +501,6 @@ export default registerSystem({
   sendRunner(bases) {
     const r = this.runners.find((k) => !k.onBase) || this.runners[0];
     r.onBase = true;
-    r.group.visible = true;
     r.setLook((APP.sim.state.batterIdx + 4) % 9);
     // The cut to the FIELD framing is already in flight when this fires (cameras.js holds it
     // for the hitstop), so the kid leaving the curb for the plate changes seats on a cut.
@@ -518,15 +523,17 @@ export default registerSystem({
     return r;
   },
 
-  /** The play is over: everybody who was on the bases trots back to the curb he came from. */
+  /** The play is over: whoever was on the bases trots back to the curb he came off. */
   clearRunners() {
     for (const r of this.runners) {
       r.target = null; r.speed = 0;
-      if (!r.onBase) { r.goHome(); continue; }
+      if (!r.onBase) continue;
       r.onBase = false;
-      r.group.visible = true;
       const h = r.home;
-      r.goTo(h.x, h.z, { gait: 'trot', speed: 10, onArrive: (k) => { k.goHome(); k.anim.play(k.restClip, { fade: 0.25 }); } });
+      r.goTo(h.x, h.z, {
+        gait: 'trot', speed: 11,
+        onArrive: (k) => { k.goHome(); k.anim.play(k.restClip, { fade: 0.25 }); },
+      });
     }
   },
 
@@ -583,6 +590,7 @@ export default registerSystem({
       k.anim.stopLayers();
       k.group.visible = true;
       k.goHome();
+      k.onBase = false;
       // a fifth of a period apart, so no two kids in the street are on the same frame
       k.anim.play(k.restClip, { at: arng.range(0, 2), fade: 0 });
       k.fidgetIn = arng.range(0.5, 4.4);
@@ -672,7 +680,7 @@ function cam(at, { dist = 21, elev = 21, yaw = -22, fov = 44, aim = 0 } = {}) {
 /** Take a set of kids off duty and make them available as demo actors, in a known state. */
 function cast(n) {
   const p = sys();
-  const pool = [p.batter, p.onDeck, ...p.fielders, ...p.runners, ...p.spectators];
+  const pool = [p.batter, p.onDeck, ...p.fielders, ...p.spectators, ...p.runners];
   const out = [];
   for (const k of pool) {
     if (out.length >= n) break;
