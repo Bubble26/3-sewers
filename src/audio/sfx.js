@@ -447,10 +447,10 @@ function broomstick(ctx, out, t0, o, tier) {
     // THE WALLOP'S WEIGHT. A sewer shot is not a louder pock, it is a pock with a
     // building's worth of low end hung under it: 78 Hz sagging to 46 over a quarter
     // of a second, which is long enough that you hear it arrive AFTER the click.
-    partial(ctx, out, t0 + 0.022, { f: 78, glideTo: 46, glideTime: 0.26, g: P.thump, d: 0.52, a: 0.010, hold: 0.050 });
+    partial(ctx, out, t0 + 0.022, { f: 78, glideTo: 46, glideTime: 0.26, g: P.thump, d: 0.52, a: 0.010, hold: 0.062 });
     // and one octave under that, so the stoop feels it. Starts 30 ms late on purpose
     // — the block is bigger than the stick and it answers a beat behind.
-    partial(ctx, out, t0 + 0.030, { f: 39, g: 0.09, d: 0.60, a: 0.014, hold: 0.055 });
+    partial(ctx, out, t0 + 0.030, { f: 39, g: 0.09, d: 0.60, a: 0.014, hold: 0.070 });
     burst(ctx, out, t0 + 0.024, { f: 220, type: 'lp', q: 0.8, g: 0.07, a: 0.006, d: 0.14 });
   }
   // The follow-through the stick is still doing after the ball has gone. `bat:swing`
@@ -676,7 +676,7 @@ registerCue('thud_wood', {
  * mirror images, which is how you know they are not the same sound twice.
  * ------------------------------------------------------------------------- */
 registerCue('clang_iron', {
-  bus: 'sfx', gain: 0.62, dur: 1.95, send: 0.18,
+  bus: 'sfx', gain: 1.05, dur: 1.95, send: 0.18,
   note: '§7.4: fire-escape iron, pitched, walking DOWN the ladder — 7 countable rungs over ~0.92 s, gaps widening as the bounce dies. The mirror of ashcan_lid.',
   build(ctx, out, t0, o) {
     const p = clamp(o.pitch ?? 1, 0.45, 1.5);
@@ -691,7 +691,7 @@ registerCue('clang_iron', {
     const frame = gain(ctx, 1);
     chain(frame, lp(ctx, 950, 0.9), pk(ctx, 205 * p, 1.1, 4), out);
     for (const [mult, g] of [[0.181, 1.0], [0.290, 0.62], [0.410, 0.34], [0.735, 0.16]]) {
-      partial(ctx, frame, t0 + 0.003, { f: f0 * mult, g: 0.128 * s * g, d: 1.82, a: 0.010, hold: 0.03, shapeD: 'lin', phase: 'cos' });
+      partial(ctx, frame, t0 + 0.003, { f: f0 * mult, g: 0.090 * s * g, d: 1.95, a: 0.010, hold: 0.03, shapeD: 'lin', phase: 'cos' });
     }
 
     // 1. THE PLATFORM GRATING, clipped on the way in. Many modes, long decays,
@@ -707,8 +707,13 @@ registerCue('clang_iron', {
     //    four modes, short decays, gone before the next one lands. Tight on purpose
     //    — the rungs are the spikes, the frame is the floor, and keeping those two
     //    jobs in separate objects is what makes the staircase readable.
-    const rung = (t, ff, g) => metal(ctx, out, t, {
-      f0: ff, g, strike: 0.55, strikeF: ff * 3.4, strikeD: 0.006, beat: 1.15,
+    // `tick` is the contact click, and it is deliberately NOT on the same taper as
+    // the ring: the ring is how hard the bar was excited (0.72 a rung), the tick is
+    // just rubber touching steel and it barely cares (0.90 a rung). That is why you
+    // can still count rung seven after the ringing has gone — which is the whole
+    // point of the cue, and the thing the last build got wrong.
+    const rung = (t, ff, g, i) => metal(ctx, out, t, {
+      f0: ff, g, strike: 0.55 * Math.pow(0.90 / 0.72, i), strikeF: ff * 3.4, strikeD: 0.006, beat: 1.15,
       ratios: [1, 2.44, 3.92, 6.05],
       gains: [1.0, 0.50, 0.26, 0.11],
       decays: [0.155, 0.100, 0.068, 0.042],
@@ -719,7 +724,7 @@ registerCue('clang_iron', {
     // analysis PNGs are mirror images of each other.
     let t = t0 + 0.115, f = f0 * 0.90, g = 0.30 * s, dt = 0.115;
     for (let i = 0; i < 7; i++) {
-      rung(t, f, g);
+      rung(t, f, g, i);
       t += dt; dt *= 1.06; f *= 0.90; g *= 0.72;
     }
 
