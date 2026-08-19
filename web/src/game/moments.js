@@ -53,7 +53,7 @@ import { T } from '../core/tuning.js';
 import { registerScenario } from '../core/scenarios.js';
 import { liveMatch } from './core.js';
 import { street, STREET } from './rules.js';
-import { LAYOUT, BASES, GROUND } from './layout.js';
+import { BASES, groundAt } from './layout.js';
 
 /* ============================================================================
    0. PALETTE AND HAND
@@ -71,6 +71,7 @@ const COP_COAT_LIT = '#5A6688';
 const COP_SKIN = '#EFC199';
 const COP_BRASS = '#E3A32B';
 const COP_STICK = '#A85E2A';
+const BLUSH = '#DE8062';
 const SHADOW = '#3E4658';       // §2.7, the only shadow colour in the game
 const TIN = '#9A9188';
 const TIN_DARK = '#6E6A62';
@@ -139,7 +140,9 @@ const GLYPHS = {
   G: [[[1, 0.1], [0.2, 0], [0, 0.5], [0.2, 1], [1, 0.9], [1, 0.58], [0.55, 0.58]]],
   H: [[[0, 0], [0, 1]], [[1, 0], [1, 1]], [[0, 0.52], [1, 0.52]]],
   I: [[[0.5, 0], [0.5, 1]]],
+  J: [[[0.9, 0], [0.9, 0.8], [0.45, 1], [0.05, 0.78]]],
   K: [[[0, 0], [0, 1]], [[0.95, 0], [0, 0.55]], [[0.25, 0.42], [1, 1]]],
+  Q: [[[0.5, 0], [0, 0.42], [0.2, 1], [0.85, 0.92], [1, 0.35], [0.5, 0]], [[0.62, 0.72], [1, 1.05]]],
   L: [[[0, 0], [0, 1], [0.95, 1]]],
   M: [[[0, 1], [0, 0], [0.5, 0.5], [1, 0], [1, 1]]],
   N: [[[0, 1], [0, 0], [1, 1], [1, 0]]],
@@ -167,9 +170,16 @@ const GLYPHS = {
   ' ': [],
 };
 
-function chalkText(g, text, x, y, size, { w = Math.max(3, size * 0.13), gap = 0.32, alpha = 0.95, rnd = mrng, tilt = 0 } = {}) {
+/**
+ * `squash` narrows the ADVANCE without shortening the glyph, which is how road
+ * lettering has always been painted: tall and thin on the ground so that it
+ * comes back square to somebody standing up. Ours is chalked on a street seen at
+ * eleven degrees, so 0.42 is the number that makes a 45-pixel-tall letter also
+ * 45 pixels wide on screen. Without it the ledger is a smear.
+ */
+function chalkText(g, text, x, y, size, { w = Math.max(3, size * 0.13), gap = 0.32, alpha = 0.95, rnd = mrng, tilt = 0, squash = 1 } = {}) {
   let cx = x;
-  const step = size * 0.62;
+  const step = size * 0.62 * squash;
   for (const ch of text.toUpperCase()) {
     const strokes = GLYPHS[ch];
     if (strokes) {
@@ -217,53 +227,86 @@ function cardMesh(tex, w, h, { name = 'street:card', order = 6 } = {}) {
    and §12 wants three visible poses out of everything.
    ========================================================================= */
 
-function drawGhost(g, W, H, frame) {
-  const rnd = new RNG(4711 + frame);
-  const cx = W * 0.5;
-  const S = H / 100;                                  // 100 units tall, cap to heel
-  const lean = frame ? 1.6 : -1.4;                    // the fidget: he shifts his weight
-  const arm = frame ? 6 : -4;
-  const P = (x, y) => [cx + (x + lean * (1 - y / 100) * 0.5) * S, (y) * S];
-  const line = (pts, w) => chalkPath(g, pts.map(([x, y]) => P(x, y)), { w: w * S * 0.9, rnd, alpha: 0.86, jitter: S * 0.5 });
-
-  // cap — the brim is the whole silhouette read at 96 px
-  line([[-11, 12], [-12, 6], [-4, 2], [6, 3], [11, 9], [10, 13]], 2.0);
-  line([[-13, 13], [7, 15]], 2.2);                    // the brim, pulled down over one eye
-  // head and ears
-  line([[-10, 13], [-11, 22], [-6, 27], [4, 27], [9, 21], [9, 13]], 2.0);
-  line([[-11, 18], [-14, 19], [-11, 22]], 1.5);
-  line([[9, 18], [12, 19], [9, 22]], 1.5);
-  // shoulders and shirt — a hand-me-down, so it is a size wrong
-  line([[-15, 34], [-9, 29], [6, 29], [14, 34]], 2.2);
-  line([[-15, 34], [-16, 56], [15, 56], [14, 34]], 2.0);
-  // arms, one of which is doing the fidget
-  line([[-15, 35], [-20, 46], [-18 + arm, 57]], 1.8);
-  line([[14, 35], [20, 45], [17 - arm, 56]], 1.8);
-  // knickers, buckled under the knee
-  line([[-16, 56], [-15, 72], [-2, 72], [-1, 56]], 1.8);
-  line([[15, 56], [14, 72], [2, 72], [1, 56]], 1.8);
-  // stockings — one up, one down, always
-  line([[-14, 72], [-13, 88]], 1.6);
-  line([[13, 72], [12, 82]], 1.6);
-  line([[-16, 88], [-9, 88]], 1.4);
-  // boots
-  line([[-15, 88], [-17, 96], [-7, 96], [-8, 88]], 1.6);
-  line([[11, 82], [9, 96], [19, 96], [17, 82]], 1.6);
-  // the face is two dots and nothing else: a ghost has no expression to have
+/**
+ * Chalk does not draw a wireframe. A kid chalked on asphalt is a FILLED shape
+ * with a heavy edge, because that is what a stick of soft rock does when a
+ * ten-year-old is pressing on it — and a wireframe at a hundred pixels reads as
+ * a coat hanger, which is exactly what round 1 of this file shipped.
+ *
+ * So: every part is a shape, filled at 0.30 (he is translucent, §9.8), edged at
+ * 0.95, with an ink line under the edge so he survives both a light sidewalk and
+ * a dark shadow (§2.5). Two frames, alternated: he shifts his weight and his
+ * near arm swings, which is the "small idle fidget" the reference asks for.
+ */
+function chalkShape(g, pts, { fill = 0.3, edge = 0.95, w = 6, rnd = mrng, ink = true, close = true } = {}) {
+  const path = () => {
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    if (close) g.closePath();
+  };
+  if (fill > 0) { g.save(); g.globalAlpha = fill; g.fillStyle = CHALK; path(); g.fill(); g.restore(); }
+  if (ink) {
+    g.save(); g.globalAlpha = 0.42; g.strokeStyle = INK;
+    g.lineWidth = w + 4; g.lineJoin = 'round'; g.lineCap = 'round'; path(); g.stroke(); g.restore();
+  }
   g.save();
-  g.globalAlpha = 0.8; g.fillStyle = CHALK;
-  for (const [x, y] of [[-5, 19], [4, 19]]) { const p = P(x, y); g.beginPath(); g.arc(p[0], p[1], 2.1 * S, 0, 6.283); g.fill(); }
+  g.globalAlpha = edge; g.strokeStyle = CHALK;
+  g.lineWidth = w; g.lineJoin = 'round'; g.lineCap = 'round';
+  path(); g.stroke();
+  // the second pass a hand makes going back over a line it was not happy with
+  g.globalAlpha = edge * 0.5; g.lineWidth = w * 0.55;
+  g.translate(rnd.range(-2, 2), rnd.range(-2, 2));
+  path(); g.stroke();
+  g.restore();
+}
+
+function drawGhost(g, W, H, frame) {
+  const rnd = new RNG(4711 + frame * 13);
+  const cx = W * 0.5;
+  const S = H / 108;                                  // 108 units of chalk, cap to heel
+  const lean = frame ? 1.8 : -1.6;
+  const swing = frame ? 5 : -4;
+  const P = (x, y) => [cx + (x + lean * (1 - y / 100) * 0.6) * S, (y + 4) * S];
+  const shape = (pts, o) => chalkShape(g, pts.map(([x, y]) => P(x, y)), { w: 5.4 * (S / 2.66), rnd, ...o });
+
+  // legs and boots first: everything above overlaps them, the way chalk does
+  shape([[-13, 62], [-15, 84], [-16, 92], [-6, 92], [-5, 84], [-3, 62]]);
+  shape([[3, 62], [5 + swing * 0.4, 84], [6 + swing * 0.4, 92], [16 + swing * 0.4, 92], [15 + swing * 0.4, 84], [13, 62]]);
+  shape([[-17, 90], [-19, 99], [-4, 99], [-5, 90]]);
+  shape([[5 + swing * 0.4, 90], [4 + swing * 0.4, 99], [18 + swing * 0.4, 99], [17 + swing * 0.4, 90]]);
+  // knickers: buckled under the knee, a size wrong, like everything on this block
+  shape([[-16, 40], [-18, 64], [-1, 64], [0, 52], [1, 64], [17, 64], [15, 40]]);
+  // the shirt
+  shape([[-15, 30], [-17, 44], [16, 44], [14, 30], [7, 25], [-8, 25]]);
+  // arms — the near one is the fidget
+  shape([[-15, 31], [-22, 44], [-19 - swing, 58], [-13 - swing, 57], [-15, 45], [-10, 34]]);
+  shape([[14, 31], [21, 44], [18 + swing, 57], [12 + swing, 56], [14, 45], [9, 34]]);
+  // head, ears, and the cap that is the whole silhouette
+  shape([[-10, 24], [-11, 13], [-6, 8], [5, 8], [10, 13], [9, 24], [4, 27], [-5, 27]]);
+  shape([[-11, 17], [-14, 18], [-11, 22]], { fill: 0.24, w: 4 });
+  shape([[9, 17], [12, 18], [9, 22]], { fill: 0.24, w: 4 });
+  shape([[-11, 10], [-9, 3], [-2, 0], [6, 1], [10, 6], [10, 11]]);
+  shape([[-13, 11], [11, 12], [9, 15], [-12, 14]]);      // the brim, pulled down over one eye
+  // two dots and nothing else: a ghost has no expression to have
+  g.save();
+  g.globalAlpha = 0.9; g.fillStyle = CHALK;
+  for (const [x, y] of [[-4, 19], [4, 19]]) { const p = P(x, y); g.beginPath(); g.arc(p[0], p[1], 2.4 * S, 0, 6.283); g.fill(); }
+  g.restore();
+  // the dust the stick left beside every line
+  g.save();
+  g.globalAlpha = 0.2; g.fillStyle = CHALK;
+  for (let i = 0; i < 130; i++) g.fillRect(cx + rnd.range(-24, 24) * S, rnd.range(2, 104) * S, 1.8, 1.8);
   g.restore();
 }
 
 class ChalkGhost {
   constructor(scene) {
     this.frames = [0, 1].map((f) => {
-      const { c, g } = canvas2d(192, 288);
-      drawGhost(g, 192, 288, f);
+      const { c, g } = canvas2d(256, 384);
+      drawGhost(g, 256, 384, f);
       return texFrom(c);
     });
-    this.mesh = cardMesh(this.frames[0], 3.6, 5.4, { name: 'street:ghost', order: 7 });
+    this.mesh = cardMesh(this.frames[0], 4.0, 6.0, { name: 'street:ghost', order: 7 });
     this.mesh.visible = false;
     // the mandatory contact shadow (§2.7) — chalk or not, he stands on the road
     this.shadow = new THREE.Mesh(
@@ -281,8 +324,10 @@ class ChalkGhost {
   show(base) {
     const b = BASES[Math.max(0, Math.min(2, base))];
     this.base = base;
-    this.mesh.position.set(b.x, 2.72, b.z);
-    this.shadow.position.set(b.x, 0.09, b.z);
+    const y = groundAt(b.x);
+    this.y = y + 3.02;
+    this.mesh.position.set(b.x, this.y, b.z);
+    this.shadow.position.set(b.x, y + 0.03, b.z);
     this.mesh.visible = true;
     this.shadow.visible = true;
     this.t = 0;
@@ -294,7 +339,7 @@ class ChalkGhost {
     // 4 Hz, so he reads at the twelves-per-second the rest of the game moves at
     const f = (Math.floor(this.t * 4) % 2) | 0;
     if (this.mesh.material.map !== this.frames[f]) { this.mesh.material.map = this.frames[f]; this.mesh.material.needsUpdate = true; }
-    this.mesh.position.y = 2.72 + Math.sin(this.t * 2.1) * 0.055;
+    this.mesh.position.y = (this.y ?? 3.02) + Math.sin(this.t * 2.1) * 0.055;
     if (camera) this.mesh.quaternion.copy(camera.quaternion);
   }
 }
@@ -309,41 +354,89 @@ class ChalkGhost {
    the third inning the curb is a scoreboard nobody agreed to keep.
    ========================================================================= */
 
-const TALLY = { x: 19.2, z0: 4.0, dz: 4.4, w: 7.2, h: 4.0, max: 7 };
+/**
+ * WHERE IT GOES, and why it is not on the curb stone itself.
+ *
+ * The reference says "on the curb". The curb stone is 0.36 units of granite and
+ * a mark on its face measures eleven pixels at 1600x900 from either locked
+ * framing — which is not a mark, it is a smudge. So the ledger is chalked on the
+ * ROAD instead, on the south side between the plate and the ice wagon: measured
+ * against both locked framings that is the largest piece of empty roadway in the
+ * picture, it is inside frame in both, and nobody stands on it.
+ *
+ * It is written square and comes back squashed, because the ground plane is seen
+ * at eleven degrees from BATTING. That is what chalk on a street looks like from
+ * standing height and it is the correct answer rather than a defect: the LEGIBLE
+ * copy of the same fact is the placard over the kid's head, two seconds later.
+ */
+const LEDGER = { x: -13.5, z: 12.0, w: 10.0, d: 28.0, rows: 5, cw: 448, ch: 1024 };
 
 class CurbTally {
   constructor(scene) {
     this.scene = scene;
-    this.rows = [];
-    this.group = new THREE.Group();
-    this.group.name = 'street:tally';
-    scene.add(this.group);
+    this.entries = [];
+    this.mesh = null;
+    this.build();
   }
-  clear() {
-    for (const r of this.rows) { this.group.remove(r); r.material.map?.dispose(); r.material.dispose(); r.geometry.dispose(); }
-    this.rows.length = 0;
-  }
-  /** initial + one stroke per sewer, laid flat on the road and 2° off the kerb line. */
+  clear() { this.entries.length = 0; this.build(); }
+
+  /** initial + one stroke per sewer, added to the bottom of the column. */
   add(initial, sewers) {
-    if (this.rows.length >= TALLY.max) {
-      const old = this.rows.shift();
-      this.group.remove(old); old.material.map?.dispose(); old.material.dispose(); old.geometry.dispose();
+    this.entries.push({ initial: (initial || '?').slice(0, 1), sewers: Math.max(1, sewers | 0) });
+    if (this.entries.length > LEDGER.rows) this.entries.shift();
+    this.build();
+    return this.mesh;
+  }
+
+  build() {
+    const { c, g } = canvas2d(LEDGER.cw, LEDGER.ch);
+    const rnd = new RNG(1925);
+    if (this.entries.length) {
+      // the heading, written once at the top of the afternoon and gone over twice
+      chalkText(g, 'SEWERS', 22, 16, 150, { w: 13, rnd, tilt: 0.06, alpha: 0.82, squash: 0.42 });
+      chalkPath(g, [[18, 182], [330, 190]], { w: 10, rnd, alpha: 0.7 });
+      this.entries.forEach((e, i) => {
+        const y = 212 + i * 162;
+        chalkText(g, e.initial, 26, y, 140, { w: 14, rnd, tilt: 0.05, squash: 0.42 });
+        for (let k = 0; k < e.sewers; k++) {
+          chalkPath(g, [[124 + k * 62 + rnd.range(-4, 4), y + 6], [108 + k * 62, y + 136]],
+            { w: 14, rnd, alpha: 0.9, jitter: 3.0 });
+        }
+      });
     }
-    const { c, g } = canvas2d(320, 176);
-    const rnd = new RNG(1925 + this.rows.length * 7 + sewers);
-    chalkText(g, initial, 12, 30, 108, { w: 11, rnd, tilt: 0.06 });
-    for (let i = 0; i < sewers; i++) {
-      chalkPath(g, [[150 + i * 44, 28 + rnd.range(-3, 3)], [140 + i * 44, 148 + rnd.range(-3, 3)]],
-        { w: 12, rnd, alpha: 0.9, jitter: 2.4 });
+    const tex = texFrom(c);
+    if (this.mesh) {
+      this.mesh.material.map?.dispose();
+      this.mesh.material.map = tex;
+      this.mesh.material.needsUpdate = true;
+      return;
     }
-    const m = cardMesh(texFrom(c), TALLY.w, TALLY.h, { name: 'street:tally_row', order: 5 });
-    m.rotation.x = -Math.PI / 2;
-    m.rotation.z = 0.035;                         // the hand was kneeling, not surveying
-    m.position.set(TALLY.x, 0.075, TALLY.z0 + this.rows.length * TALLY.dz);
-    m.material.opacity = 0.94;
-    this.group.add(m);
-    this.rows.push(m);
-    return m;
+    // THE ROAD IS CROWNED. src/world/props.js `roadHeight` puts the middle of the
+    // street half a unit above the gutter, so a flat decal laid at y=0.075 is
+    // BURIED for two thirds of its width — which is exactly what round 1 shipped
+    // and why the first tally was invisible. The plane is segmented and each
+    // vertex is lifted onto the real road.
+    const geo = new THREE.PlaneGeometry(LEDGER.w, LEDGER.d, 20, 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      // rotation.z = PI mirrors local x into world -x (see below), so the road is
+      // sampled at the world x this vertex will actually land on.
+      pos.setZ(i, groundAt(LEDGER.x - pos.getX(i)) + 0.022);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, depthWrite: false, toneMapped: false, opacity: 0.95,
+    }));
+    this.mesh.name = 'street:tally';
+    this.mesh.renderOrder = 5;
+    this.mesh.frustumCulled = false;
+    // -90 about X lays it on the road; 180 about Z turns the writing the right way
+    // round for a camera that looks UP the street with world +x on screen left.
+    // Without the second rotation the block's own chalk came out mirrored.
+    this.mesh.rotation.set(-Math.PI / 2, 0, Math.PI);
+    this.mesh.position.set(LEDGER.x, 0, LEDGER.z);
+    this.scene.add(this.mesh);
   }
 }
 
@@ -361,23 +454,48 @@ function drawLabel(g, W, H, text) {
   // the paper: torn top and bottom, never an axis-aligned rectangle (§11)
   g.save();
   g.beginPath();
-  g.moveTo(6, 14);
-  for (let x = 6; x <= W - 6; x += 22) g.lineTo(x, 12 + rnd.range(-5, 5));
-  g.lineTo(W - 6, H - 14);
-  for (let x = W - 6; x >= 6; x -= 26) g.lineTo(x, H - 12 + rnd.range(-6, 6));
+  g.moveTo(7, 16);
+  for (let x = 7; x <= W - 7; x += 21) g.lineTo(x, 13 + rnd.range(-6, 6));
+  g.lineTo(W - 7, H - 15);
+  for (let x = W - 7; x >= 7; x -= 25) g.lineTo(x, H - 13 + rnd.range(-7, 7));
   g.closePath();
   g.fillStyle = '#E7DCC2';                    // newsprint, L* 87 — under the chalk ceiling
   g.fill();
-  g.lineWidth = 3.5; g.strokeStyle = INK; g.globalAlpha = 0.85; g.stroke();
+  g.lineWidth = 4.5; g.strokeStyle = INK; g.globalAlpha = 0.9; g.stroke();
   g.restore();
-  const w = chalkText(g, text, 0, 0, 10, { w: 1 });   // measure
-  const size = Math.min(H * 0.52, (W - 40) / (text.length * 0.62 * 1.32) );
-  const used = text.length * size * 0.62 * 1.32;
+  // two pin-holes, because it is pegged to something
   g.save();
-  g.globalAlpha = 1;
-  chalkText(g, text, (W - used) / 2 + size * 0.1, (H - size) / 2, size, { w: Math.max(3, size * 0.16), rnd, tilt: 0.05 });
+  g.globalAlpha = 0.5; g.fillStyle = INK;
+  for (const x of [26, W - 26]) { g.beginPath(); g.arc(x, H * 0.5, 4, 0, 6.283); g.fill(); }
   g.restore();
-  return w;
+  // THE LETTERING IS INK, not chalk. Chalk on newsprint is two near-identical
+  // high values and it disappeared at ninety pixels; the rest of this game's
+  // type is black hand-lettering on paper and the placard now matches it.
+  const size = Math.min(H * 0.46, (W - 76) / (text.length * 0.62 * 1.32));
+  const used = text.length * size * 0.62 * 1.32;
+  const x0 = (W - used) / 2 + size * 0.12;
+  const y0 = (H - size) / 2;
+  g.save();
+  g.strokeStyle = INK; g.lineWidth = Math.max(3, size * 0.19);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const step = size * 0.62;
+  let cx = x0;
+  for (const ch of text.toUpperCase()) {
+    const strokes = GLYPHS[ch];
+    if (strokes) for (const st of strokes) {
+      g.beginPath();
+      st.forEach(([u, v], i) => {
+        const px = cx + u * step + (v - 0.5) * size * 0.05;
+        const py = y0 + v * size;
+        i ? g.lineTo(px, py) : g.moveTo(px, py);
+      });
+      g.stroke();
+    }
+    cx += step * 1.32;
+  }
+  g.restore();
+  // one chalk stroke under it, because a kid could not resist
+  chalkPath(g, [[x0 - 4, y0 + size + 12], [x0 + used, y0 + size + 8]], { w: 5, alpha: 0.7, rnd, ink: false });
 }
 
 class Placard {
@@ -388,13 +506,16 @@ class Placard {
     this.text = '';
     this.t = 0;
   }
-  set(text, kid) {
-    if (this.mesh && this.text === text && this.kid === kid) return;
+  set(text, kid, hold = Infinity) {
+    this.hold = hold;
+    if (this.mesh && this.text === text && this.kid === kid) { this.t = 0; return; }
     this.text = text; this.kid = kid;
     if (this.mesh) { this.scene.remove(this.mesh); this.mesh.material.map?.dispose(); this.mesh.material.dispose(); this.mesh.geometry.dispose(); }
-    const { c, g } = canvas2d(512, 128);
-    drawLabel(g, 512, 128, text);
-    this.mesh = cardMesh(texFrom(c), 6.4, 1.6, { name: 'street:placard', order: 9 });
+    const wpx = Math.round(Math.max(220, Math.min(640, 62 + text.length * 34)));
+    const { c, g } = canvas2d(wpx, 150);
+    drawLabel(g, wpx, 150, text);
+    const wide = (wpx / 150) * 1.55;
+    this.mesh = cardMesh(texFrom(c), wide, 1.55, { name: 'street:placard', order: 9 });
     this.scene.add(this.mesh);
     this.t = 0;
   }
@@ -407,6 +528,7 @@ class Placard {
   update(dt, camera) {
     if (!this.mesh) return;
     this.t += dt;
+    if (this.t > (this.hold ?? Infinity)) { this.clear(); return; }
     const k = this.kid;
     if (!k || !k.group || !k.group.visible) { this.mesh.visible = false; return; }
     this.mesh.visible = true;
@@ -433,91 +555,155 @@ class Placard {
    so the walk is compressed and the joke is not.
    ========================================================================= */
 
+/**
+ * Round 1 of this file drew him out of straight lines and he came back a
+ * nutcracker: symmetric, boxed, flat, and about as funny as a fire hydrant. So
+ * he is redrawn the way the rest of the cast is built — silhouette first, curves
+ * everywhere, head and hat at forty per cent of the body, and a belly.
+ *
+ * The read, in order: bell-crown helmet · walrus moustache · brass · belly ·
+ * boots. If the first two do not land at eighty pixels the drawing has failed,
+ * because those two are the entire character.
+ */
+function smooth(g, pts, close = true) {
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const n = pts.length;
+  g.beginPath();
+  g.moveTo(...mid(pts[n - 1], pts[0]));
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], q = pts[(i + 1) % n];
+    const m = mid(p, q);
+    g.quadraticCurveTo(p[0], p[1], m[0], m[1]);
+  }
+  if (close) g.closePath();
+}
+
 function drawCop(g, W, H, frame) {
   const rnd = new RNG(1861 + frame * 31);
-  const S = H / 100;
+  const S = H / 116;
   const cx = W * 0.5;
-  const P = (x, y) => [cx + x * S, y * S];
-  const poly = (pts, fill, { line = INK, w = 3.2, alpha = 1 } = {}) => {
+  const bob = frame ? -0.9 : 0.4;                 // he rolls a little; a beat cop is not a soldier
+  const P = (x, y) => [cx + x * S, (y + 8 + bob) * S];
+  const part = (pts, fill, { line = INK, w = 2.6, alpha = 1, curve = true } = {}) => {
     g.save(); g.globalAlpha = alpha;
-    g.beginPath();
-    pts.forEach(([x, y], i) => { const p = P(x, y); i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); });
-    g.closePath();
+    const q = pts.map(([x, y]) => P(x, y));
+    if (curve) smooth(g, q);
+    else { g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); }
     if (fill) { g.fillStyle = fill; g.fill(); }
-    if (line) { g.lineWidth = w * S * 0.32; g.strokeStyle = line; g.lineJoin = 'round'; g.stroke(); }
+    if (line) { g.lineWidth = w * S; g.strokeStyle = line; g.lineJoin = 'round'; g.stroke(); }
     g.restore();
   };
   const swing = frame ? 1 : -1;
 
-  // the shadow he stands in, so the card is never floating
+  // the contact shadow he stands in (§2.7). Nothing in this game floats.
   g.save();
-  g.globalAlpha = 0.34; g.fillStyle = SHADOW;
-  g.beginPath(); g.ellipse(cx, 98.5 * S, 15 * S, 3.4 * S, 0, 0, 6.283); g.fill();
+  g.globalAlpha = 0.36; g.fillStyle = SHADOW;
+  g.beginPath(); g.ellipse(cx, (104 + bob) * S, 18 * S, 4.0 * S, 0, 0, 6.283); g.fill();
   g.restore();
 
-  // legs — trousers, one forward. He walks like a man being paid by the hour.
-  poly([[-3, 62], [-11 + swing * 5, 92], [-4 + swing * 5, 94], [2, 64]], COP_COAT);
-  poly([[2, 62], [9 - swing * 5, 92], [16 - swing * 5, 94], [7, 64]], COP_COAT_LIT);
-  // boots
-  poly([[-12 + swing * 5, 91], [-14 + swing * 5, 97], [-2 + swing * 5, 97], [-3 + swing * 5, 91]], INK, { line: null });
-  poly([[8 - swing * 5, 91], [7 - swing * 5, 97], [18 - swing * 5, 97], [17 - swing * 5, 91]], INK, { line: null });
+  // ── legs and boots, under everything, because the coat hangs over them ──
+  part([[-5, 70], [-11 + swing * 6, 84], [-12 + swing * 6, 94], [-2 + swing * 6, 94], [0, 82], [3, 70]], COP_COAT);
+  part([[3, 70], [8 - swing * 6, 84], [9 - swing * 6, 94], [18 - swing * 6, 94], [13, 82], [9, 70]], COP_COAT_LIT);
+  part([[-14 + swing * 6, 92], [-15 + swing * 6, 99], [-11 + swing * 6, 102], [-1 + swing * 6, 102], [1 + swing * 6, 96], [-2 + swing * 6, 92]], '#2E2A28');
+  part([[8 - swing * 6, 92], [5 - swing * 6, 96], [7 - swing * 6, 102], [17 - swing * 6, 102], [21 - swing * 6, 99], [19 - swing * 6, 92]], '#2E2A28');
 
-  // the blouse: long, double-breasted, and it has never been taken in
-  poly([[-14, 34], [-16, 66], [16, 66], [14, 34], [7, 28], [-7, 28]], COP_COAT);
-  poly([[0, 29], [3, 66], [16, 66], [14, 34], [7, 28]], COP_COAT_LIT, { line: null, alpha: 0.55 });
-  // belt
-  poly([[-15, 56], [-15, 61], [15, 61], [15, 56]], '#3A3franc'.slice(0, 7) === '#3A3fra' ? '#3A4056' : '#3A4056');
-  // two rows of brass, and they are the only saturated thing on him (§Law 4)
+  // ── THE COAT. Shoulders narrow, belly wide, hem flared: a navy pear. ──
+  part([[-15, 36], [-19, 48], [-21, 59], [-19, 70], [-17, 76], [17, 76], [19, 70], [21, 59], [19, 48], [15, 36],
+    [8, 32], [-8, 32]], COP_COAT, { w: 3.0 });
+  // the lit side. One sun, high, slightly behind the camera (§3.2) — so his right.
   g.save();
-  g.fillStyle = COP_BRASS; g.strokeStyle = INK; g.lineWidth = 1.1;
-  for (let i = 0; i < 5; i++) for (const x of [-6.2, 6.2]) {
-    const p = P(x, 33 + i * 5.4);
-    g.beginPath(); g.arc(p[0], p[1], 1.9 * S, 0, 6.283); g.fill(); g.stroke();
+  g.globalAlpha = 0.55;
+  const lit = [[2, 33], [6, 44], [8, 59], [6, 74], [17, 76], [19, 70], [21, 59], [19, 48], [15, 36], [8, 32]].map(([x, y]) => P(x, y));
+  smooth(g, lit); g.fillStyle = COP_COAT_LIT; g.fill();
+  g.restore();
+  // the belt, the buckle, and the belly they are losing an argument with
+  part([[-20, 60], [-20, 66], [20, 66], [20, 60]], '#39405C', { curve: false, w: 2.0 });
+  part([[-4, 59], [-4, 67], [5, 67], [5, 59]], COP_BRASS, { curve: false, w: 2.0 });
+  // two rows of brass, the only saturated thing on him, and Law 4's whole payment
+  g.save();
+  g.fillStyle = COP_BRASS; g.strokeStyle = INK; g.lineWidth = 1.4 * S;
+  for (let i = 0; i < 5; i++) for (const x of [-8.4, 8.4]) {
+    const p = P(x * (1 + i * 0.055), 38 + i * 5.6);
+    g.beginPath(); g.arc(p[0], p[1], 2.3 * S, 0, 6.283); g.fill(); g.stroke();
   }
   g.restore();
 
-  // arms — one swings the nightstick, the other is behind his back
-  poly([[-14, 36], [-21, 52], [-16 - swing * 3, 66], [-11, 64], [-14, 50]], COP_COAT);
-  poly([[14, 36], [21, 52], [18 + swing * 3, 64], [13, 62], [15, 48]], COP_COAT_LIT);
-  // the nightstick, hanging, never used
-  poly([[-17 - swing * 3, 64], [-19 - swing * 3, 80], [-15 - swing * 3, 81], [-13 - swing * 3, 65]], COP_STICK);
+  // ── arms. One hangs with the stick, one is folded behind his back. ──
+  part([[-15, 38], [-22, 48], [-24, 59], [-20 - swing * 2, 66], [-14, 65], [-16, 55], [-12, 43]], COP_COAT, { w: 2.4 });
+  part([[15, 38], [22, 48], [24, 57], [21 + swing * 2, 64], [15, 62], [17, 53], [12, 43]], COP_COAT_LIT, { w: 2.4 });
+  part([[-21, 62], [-24, 68], [-19, 71], [-14, 68], [-15, 62]], COP_SKIN, { w: 2.2 });    // the bare hand
+  // the nightstick on its leather thong. Never once swung, in eleven years.
+  part([[-22 - swing, 68], [-25 - swing, 84], [-22 - swing, 88], [-18 - swing, 86], [-17 - swing, 69]], COP_STICK, { w: 2.0 });
 
-  // collar, face, moustache
-  poly([[-8, 28], [-8, 24], [8, 24], [8, 28]], COP_COAT_LIT);
-  poly([[-8, 24], [-9, 12], [-4, 7], [4, 7], [9, 12], [8, 24]], COP_SKIN);
-  poly([[-7, 17], [7, 17], [6, 21], [-6, 21]], '#8A8378', { line: null });   // the moustache
+  // ── collar, jowls, face ──
+  // The face lives BELOW the brim, not behind it. Round 2 of this drawing put the
+  // eyes at y=15 and then drew the brim over them, so he had no eyes at all —
+  // which is the single fastest way to make a character read as furniture.
+  part([[-11, 30], [-12, 24], [12, 24], [11, 30]], COP_COAT_LIT, { w: 2.2 });
+  part([[-12, 30], [-13, 20], [-10, 13], [0, 10], [10, 13], [13, 20], [12, 30], [6, 34], [-6, 34]], COP_SKIN, { w: 2.6 });
+  // under-brim shade: the whole reason a helmet reads as a helmet
   g.save();
+  g.globalAlpha = 0.28;
+  const sh = [[-13, 20], [-11, 13], [0, 10], [11, 13], [13, 20], [0, 21]].map(([x, y]) => P(x, y));
+  smooth(g, sh); g.fillStyle = INK; g.fill();
+  g.restore();
+  g.save();                                                     // thick brows, permanently level
+  g.strokeStyle = INK; g.lineWidth = 2.2 * S; g.lineCap = 'round';
+  for (const x of [-5.4, 5.4]) {
+    const p0 = P(x - 3, 19.6), p1 = P(x + 3, 18.8);
+    g.beginPath(); g.moveTo(p0[0], p0[1]); g.lineTo(p1[0], p1[1]); g.stroke();
+  }
+  g.restore();
+  g.save();                                                     // eyes, small and unimpressed
   g.fillStyle = INK;
-  for (const x of [-4.4, 4.4]) { const p = P(x, 14); g.beginPath(); g.arc(p[0], p[1], 1.3 * S, 0, 6.283); g.fill(); }
+  for (const x of [-5.0, 5.0]) { const p = P(x, 22.4); g.beginPath(); g.ellipse(p[0], p[1], 1.6 * S, 1.9 * S, 0, 0, 6.283); g.fill(); }
   g.restore();
-  // the bell-crown helmet with the brass plate. It is the entire silhouette.
-  poly([[-11, 10], [-10, 2], [-4, -4], [4, -4], [10, 2], [11, 10]], COP_COAT);
-  poly([[-13, 10], [13, 10], [12, 13], [-12, 13]], COP_COAT_LIT);
-  g.save();
-  g.fillStyle = COP_BRASS; g.strokeStyle = INK; g.lineWidth = 1.4;
-  const b = P(0, 3);
-  g.beginPath(); g.moveTo(b[0], b[1] - 4 * S); g.lineTo(b[0] + 3.4 * S, b[1] + 2 * S);
-  g.lineTo(b[0], b[1] + 4.4 * S); g.lineTo(b[0] - 3.4 * S, b[1] + 2 * S); g.closePath();
-  g.fill(); g.stroke();
+  g.save();                                                     // cheeks, at 20% (§2.8)
+  g.globalAlpha = 0.24; g.fillStyle = BLUSH;
+  for (const x of [-9.0, 9.0]) { const p = P(x, 25); g.beginPath(); g.ellipse(p[0], p[1], 3.2 * S, 2.4 * S, 0, 0, 6.283); g.fill(); }
   g.restore();
-  // the ink outline that separates him from the brick, drawn last and drawn once
+  part([[-3.0, 24], [3.0, 24], [3.8, 27.6], [0, 29.2], [-3.8, 27.6]], '#DFA377', { w: 1.8 });   // the nose
+  // THE WALRUS. Two lobes under the nose, and it is half his personality.
+  part([[-11, 28.4], [-4, 27.6], [0, 29.6], [4, 27.6], [11, 28.4], [11.6, 32], [5.6, 34], [0, 31.6], [-5.6, 34], [-11.6, 32]],
+    '#9A9188', { w: 2.2 });
+
+  // ── THE BELL-CROWN HELMET. Everything above the brows is this hat. ──
+  part([[-12, 14], [-13, 3], [-9, -6], [0, -11], [9, -6], [13, 3], [12, 14]], COP_COAT, { w: 3.0 });
   g.save();
-  g.globalAlpha = 0.16; g.fillStyle = INK;
-  for (let i = 0; i < 90; i++) g.fillRect(rnd.range(0, W), rnd.range(0, H), 1, 1);
+  g.globalAlpha = 0.5;
+  const hl = [[1, -10], [9, -6], [13, 3], [12, 14], [4, 14], [4, -9]].map(([x, y]) => P(x, y));
+  smooth(g, hl); g.fillStyle = COP_COAT_LIT; g.fill();
+  g.restore();
+  part([[-18, 12], [-19, 15.5], [-13, 17.5], [0, 18.5], [13, 17.5], [19, 15.5], [18, 12], [0, 10]], COP_COAT, { w: 2.6 });
+  g.save();                                                     // the brass shield, and the crown knob
+  g.fillStyle = COP_BRASS; g.strokeStyle = INK; g.lineWidth = 1.8 * S;
+  const bb = P(0, 3);
+  g.beginPath();
+  g.moveTo(bb[0], bb[1] - 5.6 * S); g.lineTo(bb[0] + 4.4 * S, bb[1] + 1.4 * S);
+  g.lineTo(bb[0], bb[1] + 5.8 * S); g.lineTo(bb[0] - 4.4 * S, bb[1] + 1.4 * S);
+  g.closePath(); g.fill(); g.stroke();
+  const kn = P(0, -12.5);
+  g.beginPath(); g.arc(kn[0], kn[1], 2.2 * S, 0, 6.283); g.fill(); g.stroke();
+  g.restore();
+
+  // serge has tooth. Drawn, never filtered (Law 3).
+  g.save();
+  g.globalAlpha = 0.09; g.fillStyle = INK;
+  for (let i = 0; i < 170; i++) g.fillRect(cx + rnd.range(-22, 22) * S, rnd.range(28, 96) * S, 1.5, 1.5);
   g.restore();
 }
 
 /** Where the cop walks: up the north gutter, past the game, and round the far corner. */
-const BEAT = { x0: 20.6, z0: 6.0, x1: 16.4, z1: 58.0, y: 0.12, h: 6.2 };
+const BEAT = { x0: 15.8, z0: 7.0, x1: 9.6, z1: 53.0, y: 0.10, h: 7.4 };
 
 class Patrolman {
   constructor(scene) {
     this.frames = [0, 1].map((f) => {
-      const { c, g } = canvas2d(200, 320);
-      drawCop(g, 200, 320, f);
+      const { c, g } = canvas2d(240, 400);
+      drawCop(g, 240, 400, f);
       return texFrom(c);
     });
-    this.mesh = cardMesh(this.frames[0], BEAT.h * 0.63, BEAT.h, { name: 'street:cop', order: 8 });
+    this.mesh = cardMesh(this.frames[0], BEAT.h * 0.60, BEAT.h, { name: 'street:cop', order: 8 });
     this.mesh.visible = false;
     scene.add(this.mesh);
     this.u = 0;
@@ -533,7 +719,7 @@ class Patrolman {
     const e = this.u;                               // constant pace: he is not in a hurry
     const x = BEAT.x0 + (BEAT.x1 - BEAT.x0) * e;
     const z = BEAT.z0 + (BEAT.z1 - BEAT.z0) * e;
-    this.mesh.position.set(x, BEAT.y + BEAT.h / 2, z);
+    this.mesh.position.set(x, groundAt(x) + BEAT.h * 0.5 - 0.1, z);
     const f = (Math.floor(this.t * 4.2) % 2) | 0;   // 12 fps feel on a 60 fps render (§12)
     if (this.mesh.material.map !== this.frames[f]) { this.mesh.material.map = this.frames[f]; this.mesh.material.needsUpdate = true; }
     // he fades out round the far corner rather than popping
@@ -766,7 +952,12 @@ const players = () => APP.get('players');
 const cameras = () => APP.get('cameras');
 const ann = () => APP.announcer;
 
-function sfx(cue, o = {}) { try { APP.audio?.play?.(cue, o); } catch { /* no graph in this mode */ } }
+function sfx(cue, o = {}) {
+  const a = APP.audio;
+  if (!a) return;
+  if (cue === 'cop_whistle') whistleCue(a);      // src/audio/engine.js boots after us
+  try { a.play(cue, o); } catch { /* no graph in this mode */ }
+}
 function sting(id) { if (id) bus.emit('roster:picked', { id }); }          // §7.3 per-kid instrument
 function pigeons(x, y, z, r, urg) { try { APP.atmosphere?.flock?.scatter?.(x, y, z, r, urg); } catch { /* no flock */ } }
 function puff(pos, n = 6, power = 2.4) { try { APP.puffs?.burst?.(pos, n, power); } catch { /* no puffs */ } }
@@ -794,11 +985,32 @@ function unpin() {
 /** The slow push §17.4 allows on a celebration, asked for by its own name. */
 function push() { const c = cameras(); if (c) c.pushT = 0; }
 
-/** Everybody who is standing in the street right now. */
+/**
+ * Everybody this file is allowed to move.
+ *
+ * A kid standing on a bag is NOT on this list: src/game/baserunning.js has
+ * borrowed that rig and steps it every frame from its own system, so a `goTo`
+ * from here would be two directors pulling one body. Runners therefore do not
+ * join the freeze, and that is a real seam rather than an oversight — it is in
+ * the report.
+ */
 function cast() {
   const p = players();
   if (!p) return [];
-  return p.kids.filter((k) => k && k.group && k.group.visible);
+  return p.kids.filter((k) => k && k.group && k.group.visible && !k.onBase);
+}
+
+/** Put everybody this file moved back on the mark src/game/layout.js gave him. */
+function sendHome() {
+  for (const k of cast()) {
+    k.target = null; k.speed = 0; k.lock = 0;
+    k.restClip = k.homeClip || k.idleClip;
+    k.goHome?.();
+    k.anim?.play?.(k.restClip, { fade: 0.2 });
+  }
+  const p = players();
+  if (p?.batter) { p.batter.showStick(true); p.batter.anim.play('stance', { fade: 0.2 }); }
+  if (p?.onDeck) { p.onDeck.showStick(true); p.onDeck.anim.play('bat_wait', { fade: 0.2 }); }
 }
 function kidBody(id) {
   const p = players();
@@ -852,19 +1064,19 @@ function cheeseIt(p) {
       // the freeze: everybody, mid-stride, and the sticks go behind backs
       for (const k of cast()) {
         k.target = null; k.speed = 0;
-        k.act?.('freeze', { state: 'freeze', lock: Math.max(1.2, len - 0.6) });
+        k.act?.('freeze', { state: 'freeze', lock: Math.max(1.5, len - 2.6) });
         k.setFace?.('shock', 0.9);
       }
       bat?.showStick?.(false);
     }],
-    [1.05, () => {
+    [1.75, () => {
       // …and then the innocent conversation, which is the actual joke
       for (const k of cast()) { k.lock = 0; k.act?.('idle_slouch', { state: 'idle', lock: len }); }
       if (bat && ss) { bat.lookAt(ss.pos.x, ss.pos.y); ss.lookAt(bat.pos.x, bat.pos.y); }
       says('Some weather.', bat);
     }],
-    [1.95, () => { says('Sure is.', ss); }],
-    [2.55, () => {
+    [2.45, () => { says('Sure is.', ss); }],
+    [2.95, () => {
       if (holder) { holder.setFace('shock', 1.6); holder.act?.('sulk', { state: 'sulk', lock: 1.4 }); }
       gooch('The Gooch counts one kid holding a ball and nowhere on this earth to put it.');
     }],
@@ -873,8 +1085,7 @@ function cheeseIt(p) {
     [len - 0.05, () => {
       M.cop?.stop();
       unpin();
-      for (const k of cast()) { k.lock = 0; }
-      players()?.batter?.showStick?.(true);
+      sendHome();
     }],
     [len + 0.18, () => {
       // resumes MID-SENTENCE (§9.6). She was mid-word when he turned the corner.
@@ -915,7 +1126,7 @@ function carComing(p) {
     }],
     [2.30, () => { sfx('thunk_fender', { gain: 0.85, dist: 22, pan: -0.3 }); says('Nice machine, mister!', cast()[3]); }],
     [2.70, () => { sfx('klaxon', { gain: 0.5, dist: 60, pan: 0.2 }); gooch('The Gooch has seen that fist before. The Gooch is not impressed by it.'); }],
-    [len - 0.1, () => { unpin(); for (const k of cast()) k.lock = 0; }],
+    [len - 0.1, () => { unpin(); sendHome(); }],
   ]);
 }
 
@@ -961,10 +1172,15 @@ function sewerShot(p) {
     [1.15 + s * 0.62, () => {
       M.tally?.add(initialOf(who), s);
       sfx('ui_clack', { gain: 0.5, dist: 14, pan: 0.5 });
-      says('Put it on the curb! Put his letter on the curb!', cast()[5]);
+      says('His letter on the curb! Chalk it!', cast()[5]);
     }],
     [1.85 + s * 0.62, () => {
-      if (s >= 2 && body) M.placard?.set(`${s === 3 ? 'THREE' : 'TWO'}-SEWER ${nick(who)}`.toUpperCase(), body);
+      if (s >= 2 && body) {
+        // his own rig keeps the label for the afternoon; the batter's box is shared
+        // by whoever is up, so a label hung there is only true for nine seconds
+        M.placard?.set(`${s === 3 ? 'THREE' : 'TWO'}-SEWER ${nick(who)}`.toUpperCase(), body,
+          kidBody(who) ? Infinity : 9);
+      }
     }],
   ]);
 }
@@ -982,7 +1198,7 @@ function sewerShot(p) {
 function windowHeld(p) {
   fired('window_held');
   const at = p?.pos ? p.pos.clone() : new THREE.Vector3(-24, 15, 34);
-  street.interrupt?.('glass', { seconds: 1.15, doOver: false, why: 'the glass held' });
+  street.interrupt?.('glass', { seconds: 1.15, doOver: false, defer: false, why: 'the glass held' });
   beats.play('glass', [
     [0.00, () => {
       // THE SILENCE. Everything on the mix goes down to a whisper for one beat,
@@ -995,7 +1211,7 @@ function windowHeld(p) {
     [1.25, () => { sfx('window_flex', { gain: 0.28, dist: 40, pan: -0.3 }); }],
     [1.60, () => {
       unpin();
-      for (const k of cast()) k.lock = 0;
+      sendHome();
       // "the game resumes at double speed" — the pitcher's theatre, rushed, for
       // three at-bats. sim.windupRate is the sim's own knob for exactly this.
       if (APP.sim) { APP.sim.windupRate = 1.9; M.rushed = 3; }
@@ -1025,15 +1241,33 @@ function windowBroke(p) {
     [1.10, () => { says('IT WASN\'T ME! IT WAS HIM!', cast()[4]); }],
     [1.90, () => { M.tally?.add(initialOf(p?.batter || ''), 3); }],
     [2.40, () => { gooch('The Gooch saw nothing. The Gooch was looking at the ice.'); }],
+    [3.30, () => { sendHome(); }],
   ]);
 }
 
-/** Push the whole world down to a whisper and let it back up. §7.4's "full beat". */
+/**
+ * Push the whole world down to a whisper and let it back UP TO WHERE IT WAS.
+ * §7.4's "one full beat of total silence" after the plate glass booms. The mix
+ * levels are captured on the way down rather than assumed, because restoring a
+ * bus to 1.0 that was mixed at 0.58 is not a restore, it is a new mix.
+ */
+const MIX_HELD = new Map();
+const HUSH = ['sfx', 'ambience', 'music', 'chatter'];
 function duckWorld(level, ramp = 0.05) {
   const a = APP.audio;
-  if (!a || !a.setBus) return;
-  for (const b of ['sfx', 'ambience', 'music', 'chatter']) {
-    try { a.setBus(b, level, ramp); } catch { /* bus not in this mix */ }
+  if (!a) return;
+  const mix = a.mix || T.audio;
+  if (!a.setBus || !mix || !mix.buses) return;
+  for (const b of HUSH) {
+    try {
+      if (level < 1) {
+        if (!MIX_HELD.has(b)) MIX_HELD.set(b, mix.buses[b]);
+        a.setBus(b, MIX_HELD.get(b) * level, ramp);
+      } else if (MIX_HELD.has(b)) {
+        a.setBus(b, MIX_HELD.get(b), ramp);
+        MIX_HELD.delete(b);
+      }
+    } catch { /* bus not in this mix */ }
   }
 }
 
@@ -1084,7 +1318,7 @@ function flivver(p) {
 function downTheSewer(p) {
   fired('down_sewer');
   const at = p?.pos ? p.pos.clone() : new THREE.Vector3(16, 0.2, 12);
-  street.interrupt?.('sewer', { seconds: 2.6, doOver: false, why: 'down the grate' });
+  street.interrupt?.('sewer', { seconds: 2.6, doOver: false, defer: false, why: 'down the grate' });
   beats.play('sewer', [
     [0.00, () => { framing('field'); sfx('sewer_swallow', { gain: 0.95, pos: at, gate: 0 }); }],
     [0.35, () => {
@@ -1101,7 +1335,7 @@ function downTheSewer(p) {
     }],
     [1.30, () => { argue(); }],
     [2.05, () => { says('Who has got the coat hanger? Somebody has got the coat hanger.', cast()[1]); }],
-    [2.60, () => { unpin(); for (const k of cast()) k.lock = 0; }],
+    [2.60, () => { unpin(); sendHome(); }],
   ]);
 }
 
@@ -1141,18 +1375,33 @@ function ghostGone(p) {
   ]);
 }
 
+/**
+ * A mother's two-syllable call from a fourth-floor window, "held long and
+ * dropping" (§9.10). Any nickname on the block becomes one: the first vowel is
+ * stretched, a dash goes in before the last syllable, and it ends on the long
+ * fall. FANNY -> FAAAAAN-NYEEE!  ·  SOCKS -> SOOOOOCK-SEEE!
+ */
+function holler(name) {
+  const n = String(name || 'Frankie').toUpperCase().replace(/[^A-Z]/g, '');
+  if (n.length < 3) return `${n}EEEE!`;
+  const v = Math.max(1, n.search(/[AEIOUY]/));
+  const stretched = n.slice(0, v + 1) + n[v].repeat(4) + n.slice(v + 1);
+  const cut = Math.max(v + 5, stretched.length - 2);
+  return `${stretched.slice(0, cut)}-${stretched.slice(cut)}EEE!`;
+}
+
 /* --- 10. FRAAAAN-KIEEE! (§9.10) -------------------------------------------- */
 function mother(p) {
   fired('mother', { who: p?.who });
   const body = kidBody(p?.who);
   const brother = players()?.stoopKid || null;
-  const name = (p?.name || 'FRANKIE').toUpperCase();
+  const name = holler(p?.name || 'Frankie');
   beats.play('mother', [
     [0.00, () => {
       framing('field');
       sfx('mother_calling', { gain: 0.95, dist: 40, pan: 0.35, gate: 0 });
       for (const k of cast()) { k.target = null; k.speed = 0; k.lookAt?.(k.pos.x + 6, k.pos.y + 30); }
-      dot(`${name.slice(0, 4)}AAAN-${name.slice(-3)}EEE!`, 'shout');
+      dot(name, 'shout');
     }],
     [0.85, () => {
       if (body) { body.setFace('disappointed', 2.4); body.act?.('sulk', { state: 'sulk', lock: 1.6 }); }
@@ -1165,6 +1414,7 @@ function mother(p) {
     }],
     [2.40, () => { says('I am UP! I have been up since ELEVEN!', brother); }],
     [3.05, () => { gooch('The Gooch has met that mother. The Gooch went upstairs too.'); }],
+    [3.60, () => { unpin(); sendHome(); if (body) body.group.visible = false; }],
   ]);
 }
 
@@ -1182,6 +1432,7 @@ function onRoof(p) {
       dot(p?.last ? 'That was the last one out of the box. That was the last one.' : 'On the roof. Somebody is going up.');
     }],
     [2.10, () => { gooch('Somebody is going up. It is not going to be the Gooch.'); }],
+    [3.20, () => { sendHome(); }],
   ]);
 }
 
@@ -1322,7 +1573,10 @@ function wire() {
 
   // --- the two that belong to the game rather than to the ball
   bus.on('atbat:begin', () => {
-    if (street.atBats === 1) beats.play('__hands', [[0.25, handOverHand]]);
+    // The ritual opens a GAME, not a screenshot. `onScenario` marks this build as
+    // being driven by the harness, and a harness frame belonging to another piece
+    // must never pick up our speech cards or our camera pin.
+    if (street.atBats === 1 && !M.inScenario) beats.play('__hands', [[0.25, handOverHand]]);
     if (M.rushed > 0 && APP.sim) { M.rushed -= 1; if (M.rushed === 0) APP.sim.windupRate = 1; }
     // §9.12: the last half-inning of a three-inning game, once
     const s = APP.sim?.state;
@@ -1375,6 +1629,7 @@ export default registerSystem({
   },
 
   onScenario(name, app) {
+    M.inScenario = true;
     mrng.reset(19250922);
     beats.clear();
     beats.faults.length = 0;
@@ -1414,7 +1669,10 @@ registerScenario('rule_cheese_it', {
   setup: () => {
     setUp(1920, 0.5);
     street.cheeseIt(false);
-    APP.clock.advance(1.35);        // stop the clock at the freeze, with the cop in the road
+    // the SETUP frame: everybody frozen mid-stride, sticks behind backs, and the
+    // hat already halfway up the block. The payoff (the innocent conversation) is
+    // two seconds later and is what `tools/film.mjs rule_cheese_it` is for.
+    APP.clock.advance(1.15);
   },
   settle: 0,
 });
@@ -1448,7 +1706,8 @@ registerScenario('rule_sewers', {
     bus.emit('street:sewers', { batter: who, sewers: 2, window: false });
     // …and one already on the curb from earlier in the afternoon
     M.tally?.add('F', 3);
-    APP.clock.advance(2.9);
+    M.tally?.add('S', 1);
+    APP.clock.advance(3.5);
   },
   settle: 0,
 });
@@ -1460,6 +1719,7 @@ registerScenario('rule_ghost', {
     const who = liveMatch.lineups[liveMatch.battingSide()][2];
     street.ghostOn(1, who, liveMatch.battingSide(), 'short');
     APP.clock.advance(1.4);
+    framing('field');
   },
   settle: 0,
 });

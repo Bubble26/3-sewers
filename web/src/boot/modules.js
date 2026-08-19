@@ -21,6 +21,7 @@ import '../game/core.js';   // the ported rules core: street rules, quirks, the 
 import '../game/batting.js'; // the hop off the block, the swing window, and what a press means
 import '../game/fielding.js'; // the chase, the catch, the dive, the muff, and the throw prompt
 import '../game/baserunning.js'; // the runners: the break, the turn at first, the slide, the close play
+import '../game/moments.js'; // the street rules the core lacks, and the twelve signature moments staged
 // --- fx / ui / audio -------------------------------------------------------
 import '../fx/particles.js';
 import '../ui/hud.js';

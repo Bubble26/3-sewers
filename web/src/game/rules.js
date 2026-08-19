@@ -205,14 +205,19 @@ function interruptible(sim) {
  *
  * Returns true if the block actually stopped.
  */
-export function interrupt(kind, { seconds = 3.0, doOver = false, why = '', ...extra } = {}) {
+export function interrupt(kind, { seconds = 3.0, doOver = false, why = '', defer = true, ...extra } = {}) {
   const sim = APP.sim;
   if (!sim) return false;
   if (sim.state.phase === 'in_play' || street.hold) {
     // Note it and take him at the top of the next at-bat. A cop who waits for the
     // play to finish is out of character and it is the only decent thing the block
     // will admit he has ever done.
-    if (!street.hold && !street.pending) street.pending = { kind, seconds, doOver, why, extra };
+    //
+    // `defer: false` is for the interrupts that are ABOUT the ball in flight — the
+    // pane that booms, the grate that swallows it. Those have already had their beat
+    // by the time the play ends, so re-firing them two pitches later would be a
+    // second, quieter copy of a joke that has been told.
+    if (defer && !street.hold && !street.pending) street.pending = { kind, seconds, doOver, why, extra };
     return false;
   }
   if (!interruptible(sim)) return false;

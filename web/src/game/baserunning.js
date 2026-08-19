@@ -220,6 +220,19 @@ function outward(ax, az, bx, bz) {
   return { nx, nz };
 }
 
+/** Where along a path a body already standing somewhere belongs. */
+function nearestS(built, p) {
+  const N = 48;
+  let best = 0, bd = 1e9;
+  for (let i = 0; i <= N; i++) {
+    const u = (i / N) * 0.34;                 // only ever the first third of a leg
+    const q = built.curve.getPointAt(u);
+    const d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2;
+    if (d < bd) { bd = d; best = u; }
+  }
+  return bd > 90 ? 0 : best * built.len;      // ten feet out and he is not on this path
+}
+
 /**
  * The path a runner actually takes, as a curve rather than a set of corners.
  *
@@ -233,7 +246,7 @@ function outward(ax, az, bx, bz) {
  * follower. The bows are why the curve stays outside the chalk line the way a
  * real base path is worn outside it.
  */
-function buildPath(from, to, tail) {
+function buildPath(from, to, tail, opt = {}) {
   const a = startAt(from);
   const pts = [new THREE.Vector3(a.x, 0, a.z)];
   let px = a.x, pz = a.z;
@@ -257,7 +270,7 @@ function buildPath(from, to, tail) {
       // where he is heading next: the following bag, or straight up the line
       const nxt = i + 1 <= 3 ? BAGS[Math.min(i + 1, 3)] : BAGS[3];
       const { nx, nz } = outward(bag.x, bag.z, nxt.x, nxt.z);
-      const run = last ? RT.roundOut : Math.hypot(nxt.x - bag.x, nxt.z - bag.z) * 0.22;
+      const run = last ? (opt.round || RT.roundOut) : Math.hypot(nxt.x - bag.x, nxt.z - bag.z) * 0.22;
       const ux = (nxt.x - bag.x), uz = (nxt.z - bag.z);
       const L = Math.hypot(ux, uz) || 1;
       pts.push(new THREE.Vector3(
@@ -604,7 +617,8 @@ class Lane {
     let i = 0;
     for (const r of runners) {
       if (!r.path) continue;
-      if (r.st !== 'run' && r.st !== 'slide') continue;
+      const power = r.lanePower ?? 0;
+      if (power <= 0.02) continue;
       const end = r.bagS();
       const step = RT.laneStep;
       const first = Math.max(1.4, Math.min(r.s - 12.0, end - step * 20));
@@ -618,11 +632,11 @@ class Lane {
         const gone = clamp((r.s - sv) / 13, 0, 1);
         this.dummy.position.set(q.x, roadHeight(q.x) + 0.085, q.z);
         this.dummy.rotation.set(0, Math.atan2(tg.x, tg.z) + Math.PI / 2, 0);
-        this.dummy.scale.set(step * 1.16, 1, RT.laneWidth * (ahead ? 1 : 0.94 - 0.3 * gone));
+        this.dummy.scale.set(step * 1.16, 1, RT.laneWidth * (ahead ? 1 : 0.94 - 0.3 * gone) * (0.35 + 0.65 * power));
         this.dummy.updateMatrix();
         this.mesh.setMatrixAt(i, this.dummy.matrix);
         const wave = 0.5 + 0.5 * Math.sin(this.t * 5.6 - (sv - first) * 0.30);
-        const bright = ahead ? 0.84 + 0.16 * wave : 0.80 - 0.18 * gone;
+        const bright = (ahead ? 0.84 + 0.16 * wave : 0.80 - 0.18 * gone) * (0.30 + 0.70 * power);
         this.col.copy(this.road).lerp(this.chalkC, clamp(bright, 0, 1));
         this.mesh.setColorAt(i, this.col);
         i++;
@@ -805,9 +819,17 @@ class Runner {
     if (to <= this.at && this.st !== 'hold') return;
     this.to = to;
     this.tail = tail;
-    const built = buildPath(this.at, to, tail);
+    // Speed's quirk is `extra` and the core pays her a base for it 40% of the time
+    // (T.play.run.extraOdds). This is what that looks like from the kerb: she takes
+    // half as long to decide and she rounds the bag half again as wide, which is
+    // why she is already three strides up the line when everybody else is looking
+    // for the ball.
+    const built = buildPath(this.at, to, tail, { round: RT.roundOut * (this.eager ? 1.5 : 1) });
     this.path = built;
-    this.s = 0;
+    // He is not standing ON the bag: he has a lead, or he broke three steps and
+    // stopped on a fly. Start him where his feet actually are, or the frame he
+    // breaks on is a frame where he teleports backwards onto the chalk.
+    this.s = nearestS(built, this.p);
     this.st = 'run';
     this.wait = lag;
     this.slid = false;
@@ -889,6 +911,11 @@ class Runner {
 
   step(dt, ctx) {
     this.t += dt;
+    // how much of his chalk lane is still on the road (see Lane): full while he is
+    // running, scuffed out over a beat after he gets there, because a mark that
+    // vanishes on the frame he arrives takes the composition with it
+    const live = this.st === 'run' || this.st === 'slide';
+    this.lanePower = live ? 1 : Math.max(0, (this.lanePower ?? 0) - dt / 0.9);
     if (this.pend && ctx.now >= this.pend.at) { const f = this.pend.fn; this.pend = null; f(); }
     switch (this.st) {
       case 'set': this.stepSet(dt, ctx); break;
@@ -1345,12 +1372,14 @@ class Runner {
       at: ctx.now + (this.slid ? 0.62 : 0.16),
       fn: () => {
         const k = this.kid;
-        if (!k) return;
-        k.lock = 0;
-        k.act(called ? 'argue_jab' : 'argue_appeal', { state: 'argue', lock: RT.arguePause });
-        k.setFace(called ? 'taunt' : 'shock', RT.arguePause);
-        const b = BAGS[clamp(this.to, 0, 3)];
-        k.faceGoal = headingTo(b.x - this.p.x || 1, b.z - this.p.z || 0.01);
+        if (k) {
+          k.lock = 0;
+          k.act(called ? 'argue_jab' : 'argue_appeal', { state: 'argue', lock: RT.arguePause });
+          k.setFace(called ? 'taunt' : 'shock', RT.arguePause);
+          const b = BAGS[clamp(this.to, 0, 3)];
+          k.faceGoal = headingTo(b.x - this.p.x || 1, b.z - this.p.z || 0.01);
+        }
+        ctx.blockArgues(this, bag, called);
       },
     };
     bus.emit('run:close', {
@@ -1623,7 +1652,8 @@ class Crew {
 
   lagFor(r, loft) {
     const base = clamp(RT.lagBase - r.spd * RT.lagPerSpd, 0.08, 0.30);
-    return base + (loft === 'fly' ? RT.lagFly : loft === 'line' ? RT.lagLine : 0);
+    const lag = base + (loft === 'fly' ? RT.lagFly : loft === 'line' ? RT.lagLine : 0);
+    return r.eager ? lag * 0.55 : lag;
   }
 
   /**
@@ -1795,6 +1825,41 @@ class Crew {
         if (r.st === 'run' || r.st === 'slide') want[clamp(r.to, 0, 3)] = 1;
       }
       for (let i = 0; i < 4; i++) this.bags.set(i, want[i]);
+    }
+  }
+
+  /**
+   * EVERY DISPUTE IS SETTLED BY VOLUME (DESIGN-BIBLE §8.1), so a close play is not
+   * one kid pointing at a bag — it is the whole block having an opinion about it
+   * within half a second.
+   *
+   * Only bodies this piece may touch join in: the three on the curb, the kid on
+   * deck, and any runner not otherwise busy. The nine fielders belong to
+   * src/game/fielding.js and it stages their half of the argument off the same
+   * `run:argue` event, which is why the event carries the bag, the gap in frames
+   * and the word rather than just a flag.
+   */
+  blockArgues(from, bag, called) {
+    const pl = players();
+    if (!pl) return;
+    const at = BAGS[TAG_INDEX[bag] ?? 0];
+    let n = 0;
+    for (const sp of pl.spectators || []) {
+      if (!sp || sp.lock > 0.4) continue;
+      sp.lookAt(at.x, at.z);
+      sp.flavour(n % 2 ? 'cheer_wave' : 'argue_jab', { life: RT.arguePause, amp: 0.95 });
+      sp.setFace(n % 2 ? 'taunt' : 'shock', RT.arguePause);
+      n++;
+    }
+    if (pl.onDeck && pl.onDeck.lock <= 0) {
+      pl.onDeck.lookAt(at.x, at.z);
+      pl.onDeck.flavour('argue_appeal', { life: RT.arguePause, amp: 0.9 });
+      pl.onDeck.setFace('shock', RT.arguePause);
+    }
+    for (const r of this.runners) {
+      if (r === from || !r.kid || r.kid.lock > 0.4) continue;
+      r.kid.lookAt(at.x, at.z);
+      r.kid.flavour('cheer_wave', { life: RT.arguePause, amp: 0.8 });
     }
   }
 
@@ -2210,7 +2275,7 @@ export const STAGED = {
  */
 registerScenario('run_single', {
   seed: 4111,
-  setup: ({ app }) => { stage(app, { ...STAGED.single, settle: 2.44 }); },
+  setup: ({ app }) => { stage(app, { ...STAGED.single, settle: 3.02 }); },
   settle: 0,
 });
 
