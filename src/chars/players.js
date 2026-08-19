@@ -59,6 +59,11 @@ class Kid {
     scene.add(this.group);
 
     this.pos = new THREE.Vector2(0, 0);
+    // Kids stand ON the road, not through it: the roadway is crowned half a foot proud at the
+    // centre line (src/world/props.js roadHeight), so a kid pinned to y=0 is buried to the
+    // ankles at the plate and floating at the gutter. `perch` overrides it for the one kid who
+    // is standing on a truck.
+    this.groundY = 0; this.perch = null;
     this.face = 0; this.faceGoal = 0;
     this.speed = 0; this.maxSpeed = T.run.speed;
     this.target = null; this.arrive = null; this.hardStop = false;
@@ -93,7 +98,7 @@ class Kid {
     if (name.startsWith('face:')) return this.setFace(name.slice(5), 1.1);
     const P = APP.puffs;
     if (!P) return;
-    _v.set(this.pos.x, 0.12, this.pos.y);
+    _v.set(this.pos.x, this.groundY + 0.12, this.pos.y);
     if (name === 'skid') { P.burst(_v, 22, 4.2); this.glide = Math.max(this.glide || 0, this.speed * 0.5); }
     else if (name === 'dust') P.burst(_v, 30, 5.0);
     else if (name === 'land') P.burst(_v, 12, 2.6);
@@ -116,12 +121,25 @@ class Kid {
   }
   showStick(v) { if (this.rig.get('stick')) this.rig.get('stick').visible = v; if (this.trail && !v) this.trail.clear(); }
 
-  at(x, z, face) {
+  at(x, z, face, y) {
     this.pos.set(x, z);
-    this.group.position.set(x, 0, z);
+    this.perch = y === undefined || y === null ? null : y;
+    this.groundY = this.perch === null ? LAYOUT.groundAt(x) : this.perch;
+    this.group.position.set(x, this.groundY, z);
     if (face !== undefined) { this.face = face; this.faceGoal = face; this.group.rotation.y = face; }
     this.target = null; this.speed = 0;
     this.rig.resetSprings();
+    return this;
+  }
+
+  /** Put a kid back exactly where src/game/layout.js says he lives. */
+  goHome() {
+    const h = this.home;
+    if (!h) return this;
+    this.at(h.x, h.z, undefined, h.y);
+    if (h.look) this.lookAt(h.look[0], h.look[1]);
+    else this.faceGoal = YAW(0, -1);
+    this.snapFacing();
     return this;
   }
   lookAt(x, z) { this.faceGoal = YAW(x - this.pos.x, z - this.pos.y); return this; }
@@ -204,7 +222,7 @@ class Kid {
         const cb = this.arrive; this.arrive = null;
         if (this.hardStop && this.speed > 7) {
           this.act('run_stop', { state: 'stop' });
-          if (APP.puffs) APP.puffs.burst(new THREE.Vector3(this.pos.x, 0.15, this.pos.y), 6, 2.4);
+          if (APP.puffs) APP.puffs.burst(new THREE.Vector3(this.pos.x, this.groundY + 0.15, this.pos.y), 6, 2.4);
         }
         this.speed = 0;
         if (cb) cb(this);
@@ -223,7 +241,8 @@ class Kid {
       if (this.lock <= 0) this.glide = 0;
     }
 
-    this.group.position.set(this.pos.x, 0, this.pos.y);
+    this.groundY = this.perch === null ? LAYOUT.groundAt(this.pos.x) : this.perch;
+    this.group.position.set(this.pos.x, this.groundY, this.pos.y);
     let d = this.faceGoal - this.face;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
@@ -247,7 +266,7 @@ class Kid {
       const steps = Math.floor(this.runDist / (stride * 0.5));
       if (steps !== this._steps) {
         if (this._steps !== undefined && this.speed > 9 && APP.puffs) {
-          _v.set(this.pos.x, 0.1, this.pos.y);
+          _v.set(this.pos.x, this.groundY + 0.1, this.pos.y);
           APP.puffs.burst(_v, 2, 1.3);
         }
         this._steps = steps;
@@ -306,25 +325,6 @@ class Kid {
   }
 }
 
-// ── chalk on the road ───────────────────────────────────────────────────────
-function chalkMarks(scene) {
-  if (scene.getObjectByName('chalk_bases')) return null;
-  const g = new THREE.Group();
-  g.name = 'chalk_bases';
-  const mat = new THREE.MeshBasicMaterial({ color: CHALK, transparent: true, opacity: 0.72, depthWrite: false });
-  const ring = (x, z, r, w) => {
-    const m = new THREE.Mesh(new THREE.RingGeometry(r - w, r, 4, 1), mat);
-    m.rotation.x = -Math.PI / 2; m.rotation.z = Math.PI / 4;
-    m.position.set(x, 0.03, z);
-    m.renderOrder = 1;
-    g.add(m);
-  };
-  for (const b of BASES) ring(b.x, b.z, 2.3, 0.34);
-  ring(HOME.x, HOME.z, 2.6, 0.36);
-  scene.add(g);
-  return g;
-}
-
 /** A single extra chalk bag for the locomotion reel, so the slide slides INTO something. */
 function reelBase(scene, x, z) {
   let g = scene.getObjectByName('reel_base');
@@ -357,38 +357,37 @@ export default registerSystem({
     this.script = null;
 
     const mk = (i, opts) => { const k = new Kid(app.scene, i, opts); this.kids.push(k); return k; };
-
-    // defence
-    this.fielders = POSTS.map((p, i) => {
-      const k = mk(i + 2);
-      k.post = p;
-      k.restClip = k.homeClip = p.clip || 'ready';
-      k.at(p.x, p.z, p.face === undefined ? YAW(0, -1) : p.face);
-      if (p.clip) k.anim.play(p.clip, { at: arng.range(0, 2) });
+    /** Every kid remembers the layout entry he came from; homePose() only ever reads that. */
+    const post = (k, h, clip) => {
+      k.home = h;
+      k.restClip = k.homeClip = clip || h.clip || 'ready';
+      if (h.face) k.baseFace = k.homeFace = h.face;
+      k.goHome();
+      k.anim.play(k.restClip, { at: arng.range(0, 2) });
       return k;
-    });
+    };
+
+    // defence — eight posts, spread across the frame rather than up the street
+    this.fielders = POSTS.map((p, i) => post(mk(i + 2), p));
     this.catcher = this.fielders[0];
     this.pitcher = this.fielders[1];
 
     // offence
-    this.batter = mk(0, { stick: true });
+    this.batter = post(mk(0, { stick: true }), PLATE_BOX, 'bat_wait');
     this.batter.at(PLATE_BOX.x, PLATE_BOX.z, BAT_YAW());
-    this.batter.restClip = this.batter.homeClip = 'bat_wait';
     this.batter.anim.play('stance');
 
-    this.onDeck = mk(1, { stick: true });
-    this.onDeck.at(10.5, T.street.plateZ - 8.5, 0).lookAt(0, T.street.moundZ).snapFacing();
-    this.onDeck.restClip = this.onDeck.homeClip = 'bat_wait';
+    this.onDeck = post(mk(1, { stick: true }), LAYOUT.ON_DECK, 'bat_wait');
 
-    this.runners = [mk(10), mk(11), mk(12)];
-    for (const r of this.runners) { r.homeClip = 'ready'; r.group.visible = false; r.at(HOME.x, HOME.z, 0); }
+    // the rest of the batting side, waiting along the gutter. They are the same three rigs the
+    // baserunning uses: a kid leaves the curb when it is his turn to be on the bases, which is
+    // both why they are here and why there are exactly three of them.
+    this.runners = LAYOUT.BENCH.map((b, i) => post(mk(10 + i), b));
 
-    this.stoopKid = mk(13);
-    this.stoopKid.at(-23.5, 26, YAW(1, 0));
-    this.stoopKid.restClip = this.stoopKid.homeClip = 'sit_flip';
-    this.stoopKid.anim.play('sit_flip', { at: 1.1 });
+    // the block, watching: two on the curb, one on the roof of the ice truck
+    this.spectators = LAYOUT.SPECTATORS.map((sp, i) => post(mk(13 + i), sp));
+    this.stoopKid = this.spectators[0];
 
-    chalkMarks(app.scene);
     this.wire(app);
     this.homePose();
   },

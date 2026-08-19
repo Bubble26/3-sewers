@@ -21,6 +21,11 @@ const W = 1600, H = 900;
 // docs/DESIGN-BIBLE.md §17.3
 const LIMITS = {
   fovMax: 26,
+  // A floor as well as a ceiling. Without it the height rules can be satisfied by collapsing
+  // the lens and pulling the camera into the next borough, which is not a stage, it is a
+  // telescope — a round-2 builder did exactly that and scored 3/10 for it.
+  fovMin: 16,
+  maxCamDistance: 150,  // from the plate; past this the "stage" is a surveillance feed
   kidMinPct: 12,        // every kid in play
   leadMinPct: 18,       // batter / pitcher / catcher
   leadMaxPct: 26,
@@ -88,9 +93,24 @@ for (const name of scenarios) {
         const b = c.clone().add(new THREE.Vector3(0, r * 2, 0)).project(cam);
         ballPx = Math.abs((a.y - b.y) / 2 * H);
       }
+      // Stage contract: nothing playable past T.stage.playDepth. Fielders parked beyond it are
+      // what forces a camera into illegal territory, so name them here rather than let the
+      // camera piece take the blame.
+      const depth = app.T?.stage?.playDepth ?? 70;
+      const deep = [];
+      app.scene.traverse((o) => {
+        const isKid = o.userData?.isKid || /^kid[:.]|^(batter|pitcher|catcher|fielder|runner)/i.test(o.name || '');
+        if (!isKid) return;
+        const z = o.getWorldPosition(new THREE.Vector3()).z;
+        if (z > depth + 0.5) deep.push({ name: o.name || 'kid', z: +z.toFixed(1) });
+      });
+
       return {
         fov: cam.isPerspectiveCamera ? cam.fov : null,
         ortho: !!cam.isOrthographicCamera,
+        camDistance: +cam.position.distanceTo(new THREE.Vector3(0, 2, 0)).toFixed(1),
+        playDepth: depth,
+        deep,
         kids: kids.sort((x, y) => x.px - y.px),
         ballPx: ballPx == null ? null : Math.round(ballPx),
       };
@@ -102,6 +122,9 @@ for (const name of scenarios) {
 
   const v = [];
   if (m.fov != null && m.fov > LIMITS.fovMax) v.push(`lens too wide: fov ${m.fov}° > ${LIMITS.fovMax}° (§17.2)`);
+  if (m.fov != null && m.fov < LIMITS.fovMin) v.push(`lens collapsed: fov ${m.fov}° < ${LIMITS.fovMin}° — you cannot buy the height floor by pulling back (§17.2)`);
+  if (m.camDistance > LIMITS.maxCamDistance) v.push(`camera ${m.camDistance} units from the plate, ceiling is ${LIMITS.maxCamDistance} (§17.2)`);
+  for (const d of m.deep || []) v.push(`${d.name} at z=${d.z} is outside the ${m.playDepth}-unit play plane — field layout must bring it in (§17.2)`);
   for (const k of m.kids) {
     if (k.pct < LIMITS.kidMinPct) v.push(`${k.name} is ${k.pct}% of frame, floor is ${LIMITS.kidMinPct}% (§17.3)`);
     else if (k.lead && (k.pct < LIMITS.leadMinPct || k.pct > LIMITS.leadMaxPct)) v.push(`${k.name} (lead) is ${k.pct}%, wanted ${LIMITS.leadMinPct}–${LIMITS.leadMaxPct}% (§17.3)`);

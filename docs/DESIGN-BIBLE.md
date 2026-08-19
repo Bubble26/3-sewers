@@ -1045,7 +1045,12 @@ painted field and characters played across it at a size where you could read the
 ### 17.2 The projection
 
 * **Long lens, not wide.** Perspective camera at **FOV 20°**, pulled back to suit. This flattens
-  the street to near-parallel and kills the convergence. Anything above FOV 26° is a bug.
+  the street to near-parallel and kills the convergence. Anything above FOV 26° is a bug —
+  **and so is anything below 16°.** The height floors in §17.3 exist to make the cast readable,
+  not to be bought by collapsing the lens and retreating: a round-2 builder hit every height
+  rule at FOV 9.8° from 136 units back and scored 3/10, because that is a telescope, not a
+  stage. The camera also stays within **150 units of the plate**. If the numbers will not
+  reconcile, the fielders are in the wrong place — fix the layout, never the lens.
 * **The play plane is shallow.** The whole playable street compresses into **≤ 70 units of
   depth**, not 340. Home plate at z=0, the deepest fielder no further than z=70.
 * **Everything past the play plane is backdrop**, not geometry you can walk into: flat cards at
