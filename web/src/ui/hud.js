@@ -1,6 +1,7 @@
 import { registerSystem } from '../app.js';
 import { chalkText, chalkTally, chalkWidth } from './chalkfont.js';
 import { CHALK, INK, PAVEMENT, TEAMS, ACCENTS, hexCSS } from '../render/palette.js';
+import { screen } from '../chars/portraits.js';
 
 /**
  * The HUD, per DESIGN-BIBLE §11: every element is a depicted physical object with a nameable
@@ -258,6 +259,11 @@ export default registerSystem({
     this.hud = new HUD(document.getElementById('ui'));
   },
   lateUpdate(dt, app) {
+    // A full-screen card owns the frame while it is up; the kerb chalk has no business
+    // showing through the title or the box score.
+    const covered = screen.name === 'title' || screen.name === 'results' || screen.name === 'team_select';
+    this.hud.canvas.style.display = covered ? 'none' : 'block';
+    if (covered) { this.hud.last = ''; return; }
     const s = app.sim.state;
     let batter = '';
     try { batter = app.sim.core?.kidName?.(app.sim.batterId) || ''; } catch { /* roster not up yet */ }
